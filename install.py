@@ -3,12 +3,32 @@
 # Original Copyright 2021 An-Jun Liu
 # Modified 2026 for v3.7 (NTNU fork)
 # ===============================================================================
+#
+# Self-contained: package list is embedded below, no separate requirements.txt
+# needed (though one is kept in the repo for users who prefer manual install).
 
 import platform
 import sys
 import subprocess
 import os
 import shutil
+
+# ---------------------------------------------------------------------------
+# Required Python packages (embedded — install.py is self-contained)
+# ---------------------------------------------------------------------------
+REQUIRED_PACKAGES = [
+    "PyQt5>=5.15",
+    "numpy>=1.21",
+    "scipy>=1.7",
+    "matplotlib>=3.5",
+    "pandas>=1.3",
+    "openpyxl>=3.0",
+    "scikit-learn>=1.0",
+    "seaborn>=0.11",
+    "requests>=2.25",
+    "winotify>=1.4",      # Windows-only; pip will skip on macOS/Linux
+]
+
 
 print(r'''
                   __     ______  ______
@@ -58,19 +78,22 @@ if IS_WINDOWS:
         print("  Warning: path contains Chinese characters; may break Excel export.")
     print("  OK")
 
-# 3. Pip install
-step(3, "Installing Python packages from requirements.txt")
-req = os.path.join(dir_path, 'requirements.txt')
-if os.path.exists(req):
-    try:
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r', req])
-        print("  OK")
-    except subprocess.CalledProcessError as e:
-        print(f"  pip install FAILED (exit {e.returncode}).")
-        if input("  Continue with rest of install? [y/N] ").strip().lower() != 'y':
-            sys.exit(1)
-else:
-    print(f"  requirements.txt not found at {req}")
+# 3. Install Python packages (embedded list — no requirements.txt needed)
+step(3, f"Installing {len(REQUIRED_PACKAGES)} Python packages")
+for p in REQUIRED_PACKAGES:
+    print(f"    - {p}")
+print()
+try:
+    subprocess.check_call(
+        [sys.executable, '-m', 'pip', 'install', '--upgrade'] + REQUIRED_PACKAGES
+    )
+    print("  OK — all packages installed")
+except subprocess.CalledProcessError as e:
+    print(f"  pip install FAILED (exit {e.returncode}).")
+    print("  Check internet connection and try again, or install manually:")
+    print(f"    pip install {' '.join(REQUIRED_PACKAGES)}")
+    if input("  Continue with rest of install? [y/N] ").strip().lower() != 'y':
+        sys.exit(1)
 
 # 4. Folder structure
 step(4, "Creating folder structure (Data/, Figures/)")
