@@ -3201,8 +3201,12 @@ class App():
                 self.numCycle = int(self.parameters[self.parameters_name.index("numCycle")])
                 with open(self.Dfilename, 'r') as f:
                     self.data = f.readlines()
-                if self.data[0].rstrip() != "Samp#,Min,IRR,deg C,J,J_std,J_int,36Ar(a),36Ar(a)_std,37Ar(ca),37Ar(ca)_std,38Ar(cl),38Ar(cl)_std,39Ar(k),39Ar(k)_std,40Ar(r),40Ar(r)_std,Age(Ma),Age_std(Ma),40Ar(r)(%),39Ar(k)(%),40Ar(r)(%)(step heating),39Ar(k)(%)(step heating),K/Ca,K/Ca_std,Degassing Patterns,36Ar(a),36Ar(a)_std,36Ar(c),36Ar(c)_std,36Ar(ca),36Ar(ca)_std,36Ar(cl),36Ar(cl)_std,37Ar(ca),37Ar(ca)_std,38Ar(a),38Ar(a)_std,38Ar(c),38Ar(c)_std,38Ar(k),38Ar(k)_std,38Ar(ca),38Ar(ca)_std,38Ar(cl),38Ar(cl)_std,39Ar(k),39Ar(k)_std,39Ar(ca),39Ar(ca)_std,40Ar(r),40Ar(r)_std,40Ar(a),40Ar(a)_std,40Ar(c),40Ar(c)_std,40Ar(k),40Ar(k)_std,Additional Parameters,40(r)/39(k),40(r)/39(k)_std,40(r+a),40(r+a)_std,40Ar/39Ar,40Ar/39Ar_std,37Ar/39Ar,37Ar/39Ar_std,36Ar/39Ar,36Ar/39Ar_std,Parameters,39Ar/37Ar(ca),39Ar/37Ar(ca)_std,36Ar/37Ar(ca),36Ar/37Ar(ca)_std,40Ar/39Ar(k),40Ar/39Ar(k)_std,38Ar/39Ar(k),38Ar/39Ar(k)_std,39Ar/37Ar(k),39Ar/37Ar(k)_std,36Ar/38Ar(cl),36Ar/38Ar(cl)_std,40Ar/36Ar(a),40Ar/36Ar(a)_std,38Ar/36Ar(a),38Ar/36Ar(a)_std,Lambda,numCycle":
-                    raise Exception("Wrong data format!")
+                # Normalize V2.0 (88-col K/Ca) to V3.7 (98-col Ca/K) in memory
+                self.data = Utilities.normalize_csv_to_v37(self.data)
+                # Now the header should be V3.7 form; only check column count loosely
+                _hdr_cols = self.data[0].rstrip().split(',') if self.data else []
+                if len(_hdr_cols) not in (88, 98):
+                    raise Exception(f"Wrong data format! Expected 88 or 98 cols, got {len(_hdr_cols)}")
                 j = 0
                 for i in range (len(self.data)-2):
                     if float(self.data[i+1-j].split(',')[46])/float(self.data[i+1-j].split(',')[7]) < 0 or float(self.data[i+1-j].split(',')[61])/float(self.data[i+1-j].split(',')[7]) < 0 :
@@ -3273,6 +3277,8 @@ class App():
                     
                     with open(self.Dfilename, 'r', encoding='utf-8') as f:
                         self.data = f.readlines()
+                    # Normalize V2.0 (88-col K/Ca) to V3.7 (98-col Ca/K) in memory
+                    self.data = Utilities.normalize_csv_to_v37(self.data)
                     print(f"File read: {len(self.data)} lines")
                     
                     # Header check - accept both 88 and 98 column formats
@@ -4459,7 +4465,7 @@ class App():
                 f = open(outfile, 'w', newline='', encoding="utf-8")
                 writer = csv.writer(f, lineterminator="\n")
 
-                # 1. 寫入標頭 (88 欄)
+                # 1. 寫入標頭 (98 欄, V3.7 完整格式 — Ca/K + isochron section)
                 writer.writerow([
                     "Samp#","Min","IRR","deg C","J","J_std","J_int",
                     "36Ar(a)","36Ar(a)_std","37Ar(ca)","37Ar(ca)_std",
@@ -4630,7 +4636,7 @@ class App():
                     row[21] = ar40r_step_per
                     row[22] = ar39k_step_per
                     
-                    # [23-24] Ca/K (FIXED: was inverted and used wrong constant)
+                    # [23-24] Ca/K (FIXED in V3.0.1: was inverted and used wrong constant)
                     # Ca/K = 37Ar(ca) × R / 39Ar(k), R=0.52 (lab calibration, same as getJVolumeStatistics)
                     # 原本用 pr_ratio(39/37_ca=0.000377) 當 R，且分子分母接反 → 錯誤
                     _ar37 = float(g(5))

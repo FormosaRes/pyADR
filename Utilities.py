@@ -16,6 +16,110 @@ import seaborn as sns; sns.set()
 from datetime import date
 DEBUG = 1
 
+# ===============================================================================
+# CSV format normalization (V2.0 88-col K/Ca → V3.7 98-col Ca/K, in-memory)
+# ===============================================================================
+def normalize_csv_to_v37(data):
+    """Detect V2.0 (88 cols, K/Ca) vs V3.7 (98 cols, Ca/K) and return V3.7-form.
+
+    V2.0 → V3.7 transformations:
+      1. col 23-24 K/Ca → Ca/K (1/x with std propagation)
+      2. Append 10 isochron cols (88-97) computed from raw Ar component cols
+    V3.7 → unchanged.
+
+    Input  : list of CSV lines (with newlines)
+    Output : list of CSV lines (V3.7 format)
+    """
+    if not data:
+        return data
+    header = data[0].rstrip()
+    cols = header.split(',')
+    n = len(cols)
+    if n == 98 and len(cols) > 23 and cols[23] == 'Ca/K':
+        return data  # already V3.7
+    if not (n == 88 and len(cols) > 23 and cols[23] == 'K/Ca'):
+        return data  # unknown format — pass through
+
+    # Build new V3.7 header
+    new_cols = list(cols)
+    new_cols[23] = 'Ca/K'
+    new_cols[24] = 'Ca/K_std'
+    new_cols += [
+        'normal isochron', '40Ar(m)/36Ar(m)', '40Ar(m)/36Ar(m)_std',
+        '39Ar(m)/36Ar(m)', '39Ar(m)/36Ar(m)_std',
+        'inverse isochron', '36Ar(m)/40Ar(m)', '36Ar(m)/40Ar(m)_std',
+        '39Ar(m)/40Ar(m)', '39Ar(m)/40Ar(m)_std',
+    ]
+    new_data = [','.join(new_cols) + '\n']
+
+    def _f(parts, idx):
+        try:
+            return float(parts[idx])
+        except (ValueError, IndexError):
+            return 0.0
+
+    for line in data[1:]:
+        if not line.strip():
+            new_data.append(line)
+            continue
+        parts = line.rstrip('\n\r').split(',')
+        if len(parts) < 88:
+            new_data.append(line)
+            continue
+
+        # 1. col 23-24 K/Ca → Ca/K
+        kca = _f(parts, 23)
+        kca_std = _f(parts, 24)
+        if kca > 0:
+            cak = 1.0 / kca
+            cak_std = kca_std / (kca * kca)
+        else:
+            cak, cak_std = 0.0, 0.0
+        parts[23] = repr(cak)
+        parts[24] = repr(cak_std)
+
+        # 2. compute isochron sums + ratios from raw Ar components
+        ar36_a, ar36_a_s = _f(parts, 26), _f(parts, 27)
+        ar36_c, ar36_c_s = _f(parts, 28), _f(parts, 29)
+        ar36_ca, ar36_ca_s = _f(parts, 30), _f(parts, 31)
+        ar36_cl, ar36_cl_s = _f(parts, 32), _f(parts, 33)
+        ar39_k, ar39_k_s = _f(parts, 46), _f(parts, 47)
+        ar39_ca, ar39_ca_s = _f(parts, 48), _f(parts, 49)
+        ar40_r, ar40_r_s = _f(parts, 50), _f(parts, 51)
+        ar40_a, ar40_a_s = _f(parts, 52), _f(parts, 53)
+        ar40_c, ar40_c_s = _f(parts, 54), _f(parts, 55)
+        ar40_k, ar40_k_s = _f(parts, 56), _f(parts, 57)
+
+        ar36_m = ar36_a + ar36_c + ar36_ca + ar36_cl
+        ar36_m_s = (ar36_a_s**2 + ar36_c_s**2 + ar36_ca_s**2 + ar36_cl_s**2) ** 0.5
+        ar39_m = ar39_k + ar39_ca
+        ar39_m_s = (ar39_k_s**2 + ar39_ca_s**2) ** 0.5
+        ar40_m = ar40_r + ar40_a + ar40_c + ar40_k
+        ar40_m_s = (ar40_r_s**2 + ar40_a_s**2 + ar40_c_s**2 + ar40_k_s**2) ** 0.5
+
+        def _ratio(num, num_s, den, den_s):
+            if den == 0 or num == 0:
+                return 0.0, 0.0
+            r = num / den
+            r_s = abs(r) * ((num_s / num) ** 2 + (den_s / den) ** 2) ** 0.5
+            return r, r_s
+
+        r40_36, r40_36_s = _ratio(ar40_m, ar40_m_s, ar36_m, ar36_m_s)
+        r39_36, r39_36_s = _ratio(ar39_m, ar39_m_s, ar36_m, ar36_m_s)
+        r36_40, r36_40_s = _ratio(ar36_m, ar36_m_s, ar40_m, ar40_m_s)
+        r39_40, r39_40_s = _ratio(ar39_m, ar39_m_s, ar40_m, ar40_m_s)
+
+        parts.extend([
+            'normal isochron', repr(r40_36), repr(r40_36_s),
+            repr(r39_36), repr(r39_36_s),
+            'inverse isochron', repr(r36_40), repr(r36_40_s),
+            repr(r39_40), repr(r39_40_s),
+        ])
+        new_data.append(','.join(parts) + '\n')
+
+    return new_data
+
+
 # Utilities function
 def ratioSigma(mu_y, sigma_y, mu_x, sigma_x,ratio):
     return np.sqrt((sigma_y/mu_y)**2 + (sigma_x/mu_x)**2)*ratio
@@ -204,10 +308,12 @@ def getDFStatistics_ls(file, mask,constants, Ncolor, Nmaker):
     fig, n = plt.subplots()
     with open(file, 'r') as f:
         data = f.readlines()
-            
-    # check header here
-    if data[0].rstrip() != "Samp#,Min,IRR,deg C,J,J_std,J_int,36Ar(a),36Ar(a)_std,37Ar(ca),37Ar(ca)_std,38Ar(cl),38Ar(cl)_std,39Ar(k),39Ar(k)_std,40Ar(r),40Ar(r)_std,Age(Ma),Age_std(Ma),40Ar(r)(%),39Ar(k)(%),40Ar(r)(%)(step heating),39Ar(k)(%)(step heating),Ca/K,Ca/K_std,Degassing Patterns,36Ar(a),36Ar(a)_std,36Ar(c),36Ar(c)_std,36Ar(ca),36Ar(ca)_std,36Ar(cl),36Ar(cl)_std,37Ar(ca),37Ar(ca)_std,38Ar(a),38Ar(a)_std,38Ar(c),38Ar(c)_std,38Ar(k),38Ar(k)_std,38Ar(ca),38Ar(ca)_std,38Ar(cl),38Ar(cl)_std,39Ar(k),39Ar(k)_std,39Ar(ca),39Ar(ca)_std,40Ar(r),40Ar(r)_std,40Ar(a),40Ar(a)_std,40Ar(c),40Ar(c)_std,40Ar(k),40Ar(k)_std,Additional Parameters,40(r)/39(k),40(r)/39(k)_std,40(r+a),40(r+a)_std,40Ar/39Ar,40Ar/39Ar_std,37Ar/39Ar,37Ar/39Ar_std,36Ar/39Ar,36Ar/39Ar_std,Parameters,39Ar/37Ar(ca),39Ar/37Ar(ca)_std,36Ar/37Ar(ca),36Ar/37Ar(ca)_std,40Ar/39Ar(k),40Ar/39Ar(k)_std,38Ar/39Ar(k),38Ar/39Ar(k)_std,39Ar/37Ar(k),39Ar/37Ar(k)_std,36Ar/38Ar(cl),36Ar/38Ar(cl)_std,40Ar/36Ar(a),40Ar/36Ar(a)_std,38Ar/36Ar(a),38Ar/36Ar(a)_std,Lambda,numCycle":
-        raise Exception("Wrong data format!")
+    # Normalize V2.0 (88-col K/Ca) → V3.7 (98-col Ca/K) in memory
+    data = normalize_csv_to_v37(data)
+    # Loose header check: 88 or 98 cols accepted
+    _hdr_cols = data[0].rstrip().split(',') if data else []
+    if len(_hdr_cols) not in (88, 98):
+        raise Exception(f"Wrong data format! Expected 88 or 98 cols, got {len(_hdr_cols)}")
     
     i = 0
     while i != (len(data)-2):
@@ -430,6 +536,8 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
     try:
         with open(file, 'r', encoding='utf-8', errors='ignore') as f:
             data = f.readlines()
+        # Normalize V2.0 (88-col K/Ca) → V3.7 (98-col Ca/K) in memory
+        data = normalize_csv_to_v37(data)
         print(f"[DEBUG] Successfully read {len(data)} lines from file")
     except Exception as e:
         print(f"[ERROR] Cannot read file: {e}")
@@ -1895,10 +2003,12 @@ def getDFStatistics_t(file, mask,power):
     fig, ax = plt.subplots()
     with open(file, 'r') as f:
         data = f.readlines()
-            
-    # check header here
-    if data[0].rstrip() != "Samp#,Min,IRR,deg C,J,J_std,J_int,36Ar(a),36Ar(a)_std,37Ar(ca),37Ar(ca)_std,38Ar(cl),38Ar(cl)_std,39Ar(k),39Ar(k)_std,40Ar(r),40Ar(r)_std,Age(Ma),Age_std(Ma),40Ar(r)(%),39Ar(k)(%),40Ar(r)(%)(step heating),39Ar(k)(%)(step heating),Ca/K,Ca/K_std,Degassing Patterns,36Ar(a),36Ar(a)_std,36Ar(c),36Ar(c)_std,36Ar(ca),36Ar(ca)_std,36Ar(cl),36Ar(cl)_std,37Ar(ca),37Ar(ca)_std,38Ar(a),38Ar(a)_std,38Ar(c),38Ar(c)_std,38Ar(k),38Ar(k)_std,38Ar(ca),38Ar(ca)_std,38Ar(cl),38Ar(cl)_std,39Ar(k),39Ar(k)_std,39Ar(ca),39Ar(ca)_std,40Ar(r),40Ar(r)_std,40Ar(a),40Ar(a)_std,40Ar(c),40Ar(c)_std,40Ar(k),40Ar(k)_std,Additional Parameters,40(r)/39(k),40(r)/39(k)_std,40(r+a),40(r+a)_std,40Ar/39Ar,40Ar/39Ar_std,37Ar/39Ar,37Ar/39Ar_std,36Ar/39Ar,36Ar/39Ar_std,Parameters,39Ar/37Ar(ca),39Ar/37Ar(ca)_std,36Ar/37Ar(ca),36Ar/37Ar(ca)_std,40Ar/39Ar(k),40Ar/39Ar(k)_std,38Ar/39Ar(k),38Ar/39Ar(k)_std,39Ar/37Ar(k),39Ar/37Ar(k)_std,36Ar/38Ar(cl),36Ar/38Ar(cl)_std,40Ar/36Ar(a),40Ar/36Ar(a)_std,38Ar/36Ar(a),38Ar/36Ar(a)_std,Lambda,numCycle":
-        raise Exception("Wrong data format!")
+    # Normalize V2.0 (88-col K/Ca) → V3.7 (98-col Ca/K) in memory
+    data = normalize_csv_to_v37(data)
+    # Loose header check: 88 or 98 cols accepted
+    _hdr_cols = data[0].rstrip().split(',') if data else []
+    if len(_hdr_cols) not in (88, 98):
+        raise Exception(f"Wrong data format! Expected 88 or 98 cols, got {len(_hdr_cols)}")
     
     j = 0
     for i in range (len(data)-2):

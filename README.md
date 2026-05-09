@@ -1,4 +1,4 @@
-# pyADR — NTNU modified fork (v3.7)
+# pyADR — NTNU modified fork (v3.7.1)
 
 40Ar/39Ar data reduction tool with GUI. Modified fork of [pyADR](https://github.com/AndrewLiu0725/pyADR) (original by **An-Jun (Andrew) Liu**), now maintained by **PANG Chi-Hsiu (NTNU)**.
 
@@ -123,6 +123,10 @@ python NTNU_DataReduction.py
 ---
 
 ## Changelog 摘要
+
+### v3.7.1 (2026-05-09)
+
+新增 `Utilities.normalize_csv_to_v37()` helper：自動偵測 V2.0 (88 欄, K/Ca) vs V3.7 (98 欄, Ca/K) 並在記憶體內轉換。讀入老師舊 V2.0 datum publication CSV 時，自動把 col 23-24 從 K/Ca 倒數成 Ca/K，並從 raw Ar component 計算出 isochron 10 欄，下游 plotting 完全不變。toDP 仍輸出 V3.7 完整 98 欄。
 
 ### v3.7 (2026-05-09)
 

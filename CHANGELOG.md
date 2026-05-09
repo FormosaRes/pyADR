@@ -1,8 +1,48 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1
 最後整理日期：2026-05-09
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.7.1（2026-05-09）
+
+### V2.0 CSV 自動轉換（雙格式支援）
+
+**動機：** 老師電腦使用 V2.0 pyADR，產出的 datum publication CSV 是 88 欄、第 23–24 欄 `K/Ca, K/Ca_std`、無 isochron section。先前 V3.7 plotting 工具讀這種 CSV 會卡 header 驗證。
+
+**做法：在記憶體內自動把 V2.0 88 欄格式轉成 V3.7 98 欄格式**，下游 plotting 完全不變動。
+
+**`Utilities.py` — 新增 `normalize_csv_to_v37()` helper（~95 行）**
+
+讀檔後呼叫此函式，自動：
+1. 偵測 header 是 V2.0（88 欄, `K/Ca`）還是 V3.7（98 欄, `Ca/K`）
+2. **V2.0 → V3.7 in-memory 轉換**：
+   - col 23-24 倒數：`Ca/K = 1 / (K/Ca)`，std 用 `σ(Ca/K) = σ(K/Ca) / (K/Ca)²`
+   - 補 10 欄 isochron section（從 raw Ar component cols 計算）：
+     - 36Ar(m) = 36Ar(a) + 36Ar(c) + 36Ar(ca) + 36Ar(cl)
+     - 39Ar(m) = 39Ar(k) + 39Ar(ca)
+     - 40Ar(m) = 40Ar(r) + 40Ar(a) + 40Ar(c) + 40Ar(k)
+     - normal isochron: 40/36, 39/36
+     - inverse isochron: 36/40, 39/40
+     - quadrature 誤差傳播
+3. V3.7 → 不動
+
+**5 個讀檔點全部呼叫 normalize：**
+- `NTNU_DataReduction.py`：`toDF_LS()` (L3205)、`toDF_SH()` (L3281)
+- `Utilities.py`：`getDFStatistics_ls()` (L312)、`getDFStatistics_sh()` (L540)、`getDFStatistics_t()` (L2007)
+- 同時把原本嚴格的 `if data[0].rstrip() != "..."` header 字串檢查改成 loose 的「88 或 98 欄都接」
+
+**結果：**
+- V3.7 內部 plotting 完全不需修改，所有圖一律以 Ca/K 顯示
+- 讀 V2.0 88 欄老 CSV：自動轉成 Ca/K + isochron 計算後丟進 plotting
+- 讀 V3.7 98 欄新 CSV：直接 plotting（normalize 無動作）
+- toDP 仍輸出完整 V3.7 98 欄格式（給以後的工具用），不影響老師工作流（老師繼續用他自己 V2.0 工具產 datum publication）
+
+**注意：**
+- V2.0 isochron 是計算出來的（從 raw Ar component），不是直接讀；如果 V2.0 CSV 內某些 Ar 分量是 0（例如 36Ar(c) 占位符），isochron 會略有偏差但合理
+- 如果有未來的 V4.x 又改格式，這個 helper 要更新
 
 ---
 
