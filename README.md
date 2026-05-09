@@ -119,7 +119,6 @@ python NTNU_DataReduction.py
 | `requirements.txt` | Python 套件清單 |
 | `CHANGELOG.md` | 完整版本變更紀錄 (V2.5 → V3.7) |
 | `README_origin.md` | 原版 pyADR 的 README (Andrew Liu) |
-| `README_v3.5.md` | V3.5 合併版說明（歷史文件） |
 
 ---
 
@@ -149,7 +148,7 @@ Bug fix：`Utilities.py` CSV NaN row removal off-by-one（舊版 CSV 沒 trailin
 
 ### v3.5 (2026-05-07)
 
-合併 V3.3 (穩定基底) + V3.5 BUG FIX + V3.4.1 性能優化（`_iter_combos` iterative 改寫、`pd.read_csv(usecols=...)` I/O ~84% 減少、Step Heating 一次選資料夾批次匯出、誤差傳播改 quadrature、ExcelChartExporter `error_bar` typo 修正）。詳見 `README_v3.5.md`。
+合併 V3.3 (穩定基底) + V3.5 BUG FIX + V3.4.1 性能優化（`_iter_combos` iterative 改寫、`pd.read_csv(usecols=...)` I/O ~84% 減少、Step Heating 一次選資料夾批次匯出、誤差傳播改 quadrature、ExcelChartExporter `error_bar` typo 修正）。詳見 `CHANGELOG.md`。
 
 ### 更早
 
