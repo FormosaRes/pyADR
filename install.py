@@ -85,7 +85,7 @@ for p in REQUIRED_PACKAGES:
 print()
 try:
     subprocess.check_call(
-        [sys.executable, '-m', 'pip', 'install', '--upgrade'] + REQUIRED_PACKAGES
+        [sys.executable, '-m', 'pip', 'install'] + REQUIRED_PACKAGES
     )
     print("  OK — all packages installed")
 except subprocess.CalledProcessError as e:
