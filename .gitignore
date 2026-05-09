@@ -41,7 +41,13 @@ Figures/
 # 暫存與壞檔
 改壞掉的/
 _avast_/
-.work/
+
+# .work/ 只排除 runtime 產出，保留 seed file (.app_info.txt / logo.png / setting.csv / rawpath.txt)
+.work/*.png
+.work/*.log
+.work/DF_last_source.txt
+.work/last_error_*.txt
+.work/debug_*.log
 
 # 舊版本（如要保留可移除）
 程式修改前Data_Reduction/
