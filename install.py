@@ -26,7 +26,7 @@ REQUIRED_PACKAGES = [
     "scikit-learn>=1.0",
     "seaborn>=0.11",
     "requests>=2.25",
-    "winotify>=1.4",      # Windows-only; pip will skip on macOS/Linux
+    "winotify>=1.0",      # Windows-only; pip will skip on macOS/Linux
 ]
 
 
