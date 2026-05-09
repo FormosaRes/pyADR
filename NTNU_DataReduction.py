@@ -2044,7 +2044,7 @@ class App():
 
     # check if current app is up to date
     def checkVersion(self):
-        app_info_url = 'https://raw.githubusercontent.com/AndrewLiu0725/pyADR/main/.work/.app_info.txt'
+        app_info_url = 'https://raw.githubusercontent.com/FormosaRes/pyADR/main/.work/.app_info.txt'
         try:
             page = requests.get(app_info_url)
             if page.ok:
@@ -2054,7 +2054,7 @@ class App():
                 if current_version == latest_version:
                     self.Popup(1, "No updates available at this time", version_msg)
                 else:
-                    git_repo_url = "https://github.com/AndrewLiu0725/pyADR.git"
+                    git_repo_url = "https://github.com/FormosaRes/pyADR.git"
                     self.Popup(1, "There are updates available at this time", version_msg+"Please go to {} to update to the latest version!\n".format(git_repo_url))
             else:
                 self.Popup(2, "HTTP request failed!", "HTTP status {}".format(page.status_code))
