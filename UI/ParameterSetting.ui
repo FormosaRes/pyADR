@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>800</width>
+    <height>697</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>MainWindow</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <widget class="QTableWidget" name="ParameetrTable">
+    <property name="geometry">
+     <rect>
+      <x>220</x>
+      <y>200</y>
+      <width>351</width>
+      <height>391</height>
+     </rect>
+    </property>
+    <row>
+     <property name="text">
+      <string>Production Ratio 39Ar/37Ar(ca)</string>
+     </property>
+    </row>
+    <row>
+     <property name="text">
+      <string>Production Ratio 36Ar/37Ar(ca)</string>
+     </property>
+    </row>
+    <row>
+     <property name="text">
+      <string>Production Ratio 40Ar/39Ar(k) </string>
+     </property>
+    </row>
+    <row>
+     <property name="text">
+      <string>Production Ratio 38Ar/39Ar(k)</string>
+     </property>
+    </row>
+    <row>
+     <property name="text">
+      <string>Production Ratio 36Ar/38Ar(cl)</string>
+     </property>
+    </row>
+    <row>
+     <property name="text">
+      <string>Atmospheric Ratio 40/36(a)</string>
+     </property>
+    </row>
+    <row>
+     <property name="text">
+      <string>Atmospheric Ratio 38/36(a)</string>
+     </property>
+    </row>
+    <row>
+     <property name="text">
+      <string>λ for age calculation</string>
+     </property>
+    </row>
+    <row>
+     <property name="text">
+      <string>J value</string>
+     </property>
+    </row>
+    <row>
+     <property name="text">
+      <string>J std</string>
+     </property>
+    </row>
+    <row>
+     <property name="text">
+      <string>numCycle</string>
+     </property>
+    </row>
+    <column>
+     <property name="text">
+      <string>Value</string>
+     </property>
+    </column>
+   </widget>
+   <widget class="QPushButton" name="change">
+    <property name="geometry">
+     <rect>
+      <x>0</x>
+      <y>250</y>
+      <width>91</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Change</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="save">
+    <property name="geometry">
+     <rect>
+      <x>0</x>
+      <y>300</y>
+      <width>91</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Save</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="return_2">
+    <property name="geometry">
+     <rect>
+      <x>0</x>
+      <y>200</y>
+      <width>91</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Return</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="cancel">
+    <property name="geometry">
+     <rect>
+      <x>0</x>
+      <y>350</y>
+      <width>91</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Cancel</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>120</y>
+      <width>791</width>
+      <height>71</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p align=&quot;center&quot;&gt;&lt;span style=&quot; font-size:48pt; font-weight:600;&quot;&gt;Parameter Setting&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
+   </widget>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>800</width>
+     <height>24</height>
+    </rect>
+   </property>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

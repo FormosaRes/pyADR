@@ -1,0 +1,58 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# --- Virtual envs ---
+venv/
+env/
+.venv/
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- iCloud ---
+.iCloud
+*.icloud
+
+# --- pyADR 專案排除 ---
+# 實驗數據（不上傳）
+1200S 數據/
+Data/
+Figures/
+
+# 暫存與壞檔
+改壞掉的/
+_avast_/
+.work/
+
+# 舊版本（如要保留可移除）
+程式修改前Data_Reduction/
+
+# 執行時產出
+pyADR output.xlsx
+*.log
+NO*_*.png
+test_grouped.png
+PlaneFit3D_demo.png
+
+# Excel 暫存
+~$*.xlsx
+~$*.xls

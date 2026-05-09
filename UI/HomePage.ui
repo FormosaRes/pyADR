@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>800</width>
+    <height>696</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>MainWindow</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <widget class="QLabel" name="label">
+    <property name="geometry">
+     <rect>
+      <x>8</x>
+      <y>132</y>
+      <width>781</width>
+      <height>91</height>
+     </rect>
+    </property>
+    <property name="minimumSize">
+     <size>
+      <width>519</width>
+      <height>43</height>
+     </size>
+    </property>
+    <property name="text">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p align=&quot;center&quot;&gt;&lt;span style=&quot; font-size:48pt; font-weight:600;&quot;&gt;pyADR&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="LRP">
+    <property name="geometry">
+     <rect>
+      <x>210</x>
+      <y>250</y>
+      <width>421</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;T0 Calculation:&lt;/p&gt;&lt;p&gt;Please select the raw data file for which you want to calculate the T&lt;span style=&quot; vertical-align:sub;&quot;&gt;0&lt;/span&gt; with valid data format (refer to the example in README)!&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
+    <property name="whatsThis">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;what is this&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">font: 20pt &quot;.AppleSystemUIFont&quot;;</string>
+    </property>
+    <property name="text">
+     <string>Calculate T0</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="T0S">
+    <property name="geometry">
+     <rect>
+      <x>210</x>
+      <y>320</y>
+      <width>421</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;T0 Statistics:&lt;/p&gt;&lt;p&gt;Please select all the files (the raw files output by the &lt;span style=&quot; font-style:italic;&quot;&gt;Calculate T0 page&lt;/span&gt;) for which you want to compute the statistics of the T&lt;span style=&quot; vertical-align:sub;&quot;&gt;0&lt;/span&gt; values.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
+    <property name="whatsThis">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;what is this&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">font: 20pt &quot;.AppleSystemUIFont&quot;;</string>
+    </property>
+    <property name="text">
+     <string>T0 Statistics</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="MR">
+    <property name="geometry">
+     <rect>
+      <x>210</x>
+      <y>390</y>
+      <width>421</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Mass Ratio Calculation:&lt;/p&gt;&lt;p&gt;Please select one mass file first and then one preline file. Both files are the raw files output by &lt;span style=&quot; font-style:italic;&quot;&gt;Calculate T0 page&lt;/span&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
+    <property name="whatsThis">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;what is this&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">font: 20pt &quot;.AppleSystemUIFont&quot;;</string>
+    </property>
+    <property name="text">
+     <string>Mass Ratio</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="ARS">
+    <property name="geometry">
+     <rect>
+      <x>210</x>
+      <y>460</y>
+      <width>421</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Air Ratio Statistics:&lt;/p&gt;&lt;p&gt;Please select all the files (the ratio files output by the &lt;span style=&quot; font-style:italic;&quot;&gt;Mass Ratio Page&lt;/span&gt;) for which you want to compute the statistics of the air ratios.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
+    <property name="whatsThis">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;what is this&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">font: 20pt &quot;.AppleSystemUIFont&quot;;</string>
+    </property>
+    <property name="text">
+     <string>Air Ratio Statistics</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="AC">
+    <property name="geometry">
+     <rect>
+      <x>210</x>
+      <y>530</y>
+      <width>421</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Age Calculation:&lt;/p&gt;&lt;p&gt;Please select one file (the measurement file output by the &lt;span style=&quot; font-style:italic;&quot;&gt;Mass Ratio Page&lt;/span&gt;) that you want to calculate the age for.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
+    <property name="whatsThis">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;what is this&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">font: 20pt &quot;.AppleSystemUIFont&quot;;</string>
+    </property>
+    <property name="text">
+     <string>Age Calculation</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="PS_button">
+    <property name="geometry">
+     <rect>
+      <x>210</x>
+      <y>600</y>
+      <width>421</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Production Ratio 39Ar/37Ar(ca)&lt;/p&gt;&lt;p&gt;Production Ratio 36Ar/37Ar(ca)&lt;/p&gt;&lt;p&gt;Production Ratio 40Ar/39Ar(k)&lt;/p&gt;&lt;p&gt;Production Ratio 38Ar/39Ar(k)&lt;/p&gt;&lt;p&gt;Production Ratio 36Ar/38Ar(cl)&lt;/p&gt;&lt;p&gt;Atmospheric Ratio 40/36(a)&lt;/p&gt;&lt;p&gt;Atmospheric Ratio 38/36(a)&lt;/p&gt;&lt;p&gt;λ&lt;/p&gt;&lt;p&gt;J value&lt;/p&gt;&lt;p&gt;J std&lt;/p&gt;&lt;p&gt;numCycle&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
+    <property name="whatsThis">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;what is this&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">font: 20pt &quot;.AppleSystemUIFont&quot;;</string>
+    </property>
+    <property name="text">
+     <string>Parameter Setting</string>
+    </property>
+   </widget>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>800</width>
+     <height>24</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="menuMenu">
+    <property name="title">
+     <string>Menu</string>
+    </property>
+    <addaction name="actionAbout_pyADR"/>
+    <addaction name="actionCheck_Update"/>
+    <addaction name="separator"/>
+    <addaction name="actionParameter_Setting"/>
+   </widget>
+   <addaction name="menuMenu"/>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+  <action name="actionParameter_Setting">
+   <property name="text">
+    <string> Parameter Setting</string>
+   </property>
+  </action>
+  <action name="actionAbout_pyADR">
+   <property name="text">
+    <string> About pyADR</string>
+   </property>
+  </action>
+  <action name="actionCheck_Update">
+   <property name="text">
+    <string> Check Update</string>
+   </property>
+  </action>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
