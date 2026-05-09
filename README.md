@@ -20,45 +20,47 @@ Original README → `README_origin.md` ｜ Full changelog → `CHANGELOG.md`
 
 ## Installation
 
-> **強烈建議**：用 Anaconda 並透過 Anaconda Prompt 安裝。原因：Anaconda 安裝時預設不會把 Python 加進系統 PATH，普通 cmd / PowerShell 找不到 `python`，但 Anaconda Prompt 已經 activate 過環境，最穩。
+### Step 1 — 裝 Anaconda（如果還沒裝）
 
-### Step 1 — 裝 Anaconda
+https://www.anaconda.com/download → 下載 Anaconda3 → 安裝（一路 Next 即可）。
 
-如果還沒裝：https://www.anaconda.com/download → 下載 Anaconda3 → 安裝（一路 Next 即可）。
+> 為什麼用 Anaconda：常用科學運算套件已預裝，版本管理乾淨。其他 Python distribution（Python.org 原版、Miniconda）也可以，要 Python 3.10+。
 
 ### Step 2 — 下載 pyADR
 
-**方式 A（推薦給只想用的同學）— Download ZIP**
-1. 點本頁右上方綠色 **Code** 鈕 → **Download ZIP**
-2. 解壓到 `C:\pyADR\`（**路徑不要含中文或空白**）
+點本頁右上方綠色 **Code** 鈕 → **Download ZIP** → 解壓到 `C:\pyADR\`（**路徑不要含中文或空白**）。
 
-**方式 B（之後想 git pull 更新）— Git clone**
-- 開 Anaconda Prompt：
-  ```
-  cd C:\
-  git clone https://github.com/FormosaRes/pyADR.git
-  ```
+或用 git（之後想 git pull 更新比較方便）：
+```
+git clone https://github.com/FormosaRes/pyADR.git
+```
 
-### Step 3 — 跑 install.py
+### Step 3 — 一鍵安裝
 
-1. 按 Windows 鍵 → 打 **Anaconda Prompt** → 開啟（**不是** cmd 或 PowerShell）
-2. 在 Anaconda Prompt 內：
+進到 `C:\pyADR\` → **雙擊 `setup.bat`**
+
+`setup.bat` 會自動：
+1. 偵測 Anaconda 安裝位置（`C:\Anaconda`、`%USERPROFILE%\anaconda3`、`C:\ProgramData\Anaconda3` 等常見路徑）
+2. 跑 `install.py`：自動 `pip install` 套件、建 `Data/` 與 `Figures/` 子資料夾、驗證 `.work/` seed file、產生 `pyADR.bat` 並複製到桌面
+
+如果跳「Python / Anaconda not found」對話框，表示 Anaconda 不在預設路徑（裝在不常見位置）。改用備用方式（見下面）。
+
+### Step 4 — 啟動
+
+雙擊桌面 **`pyADR.bat`**。GUI 主畫面跳出來表示成功。
+
+---
+
+### 備用方式（setup.bat 找不到 Python 時）
+
+按 Windows 鍵 → 打 **Anaconda Prompt** → 開啟。在視窗內執行：
 
 ```
 cd C:\pyADR
 python install.py
 ```
 
-3. 按 Enter 跟著提示。`install.py` 會：
-   - 檢查 Python 版本
-   - 自動 `pip install` 全部相依套件
-   - 建好 `Data/` 與 `Figures/` 子資料夾結構
-   - 驗證 `.work/` seed file
-   - 產生 `pyADR.bat` 並複製到桌面
-
-### Step 4 — 啟動
-
-雙擊桌面 **`pyADR.bat`**。GUI 主畫面跳出來表示成功。
+效果跟 setup.bat 一樣。
 
 ---
 
