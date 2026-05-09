@@ -1,23 +1,26 @@
 # pyADR — NTNU modified fork (v3.7)
 
-This is a modified fork of [pyADR](https://github.com/AndrewLiu0725/pyADR), originally created by **An-Jun (Andrew) Liu** to automate Prof. Mary Yeh's 40Ar/39Ar data reduction at NTNU.
+40Ar/39Ar data reduction tool with GUI. Modified fork of [pyADR](https://github.com/AndrewLiu0725/pyADR) (original by **An-Jun (Andrew) Liu**), now maintained by **PANG Chi-Hsiu (NTNU)**.
 
-This fork (maintained by **PANG Chi-Hsiu, NTNU**) adds bug fixes, performance improvements, Excel native chart export, and several new step-heating diagram types. Original README preserved as `README_origin.md`. Full per-version detail in `CHANGELOG.md`.
+This fork adds: bug fixes, performance optimization, Excel native chart export, four new step-heating diagram types (DFD/DFS/DFM + grouped 3D plane fit), auto-update notification.
+
+Original README → `README_origin.md` ｜ Full changelog → `CHANGELOG.md`
 
 ---
 
 ## Requirements
 
-- **Anaconda3** (https://www.anaconda.com/download) — 強烈建議用 Anaconda 安裝 Python
-- Python 3.10+ （Anaconda 內建符合）
-- Windows (tested on Win10/11)
+- Windows 10 / 11
+- **Anaconda3** (https://www.anaconda.com/download) — Python 3.10+ included
 - Microsoft Excel (for native chart export)
 
-Python packages: see `requirements.txt` (自動安裝)。
+第三方 Python 套件由 `install.py` 自動安裝，需求清單見 `requirements.txt`。
 
 ---
 
-## Installation（Windows + Anaconda 流程）
+## Installation
+
+> **強烈建議**：用 Anaconda 並透過 Anaconda Prompt 安裝。原因：Anaconda 安裝時預設不會把 Python 加進系統 PATH，普通 cmd / PowerShell 找不到 `python`，但 Anaconda Prompt 已經 activate 過環境，最穩。
 
 ### Step 1 — 裝 Anaconda
 
@@ -25,81 +28,110 @@ Python packages: see `requirements.txt` (自動安裝)。
 
 ### Step 2 — 下載 pyADR
 
-兩種方式選一個：
-
-**方式 A：Download ZIP（最簡單）**
-1. 點本頁綠色 **Code** 鈕 → **Download ZIP**
+**方式 A（推薦給只想用的同學）— Download ZIP**
+1. 點本頁右上方綠色 **Code** 鈕 → **Download ZIP**
 2. 解壓到 `C:\pyADR\`（**路徑不要含中文或空白**）
 
-**方式 B：Git clone**（之後想 pull 更新比較方便）
-- 開 Anaconda Prompt → `cd C:\` → `git clone https://github.com/FormosaRes/pyADR.git`
+**方式 B（之後想 git pull 更新）— Git clone**
+- 開 Anaconda Prompt：
+  ```
+  cd C:\
+  git clone https://github.com/FormosaRes/pyADR.git
+  ```
 
 ### Step 3 — 跑 install.py
 
-1. 按 Windows 鍵 → 打 **Anaconda Prompt** → 開啟（注意：是 Anaconda Prompt，**不是** cmd 或 PowerShell）
-2. 在 Anaconda Prompt 視窗輸入：
+1. 按 Windows 鍵 → 打 **Anaconda Prompt** → 開啟（**不是** cmd 或 PowerShell）
+2. 在 Anaconda Prompt 內：
 
 ```
 cd C:\pyADR
 python install.py
 ```
 
-3. 按 Enter，跟著提示按 Enter 確認。完成後桌面會出現 `pyADR.bat`。
+3. 按 Enter 跟著提示。`install.py` 會：
+   - 檢查 Python 版本
+   - 自動 `pip install` 全部相依套件
+   - 建好 `Data/` 與 `Figures/` 子資料夾結構
+   - 驗證 `.work/` seed file
+   - 產生 `pyADR.bat` 並複製到桌面
+
+### Step 4 — 啟動
+
+雙擊桌面 **`pyADR.bat`**。GUI 主畫面跳出來表示成功。
 
 ---
 
-## 為什麼一定要 Anaconda Prompt
+## Update
 
-Anaconda 安裝時**預設不會把 Python 加進系統 PATH**，所以普通 cmd / PowerShell 找不到 `python` 指令；雙擊 `setup.bat` 會直接報錯。
+更新到新版有兩種方式：
 
-Anaconda Prompt 是 Anaconda 自己包裝的 cmd，**已經先 activate Anaconda 環境**，可以直接用 `python`、`pip`、`conda` 等指令。所有 Python/Anaconda 操作都建議在 Anaconda Prompt 進行。
+### 方式 A：Git pull（推薦給用 git clone 安裝的）
+
+```
+cd C:\pyADR
+git pull
+```
+
+完成。`.py` 檔案會更新，數據（`Data/`、`Figures/`、`.work/setting.csv`）不會被動到。
+
+### 方式 B：重新下載 ZIP
+
+1. 備份 `Data/`、`Figures/`、`.work/setting.csv`
+2. 刪除舊 `C:\pyADR\` 整個資料夾
+3. 重新 Download ZIP → 解壓 → `python install.py`
+4. 把備份倒回去
+
+### 自動更新通知
+
+打開 pyADR 啟動後 2 秒，如果 GitHub 上有新版會自動跳 Windows 通知（右下角 toast），點「Open GitHub」直接到 Releases 頁。
+
+也可以手動檢查：**Menu → Check Update**。
 
 ---
 
 ## Run
 
-桌面 / 工作資料夾雙擊 **`pyADR.bat`** 即可啟動 GUI。
-
-或在 Anaconda Prompt 內：
-
 ```
-cd C:\pyADR
 python NTNU_DataReduction.py
 ```
 
-Debug 模式：雙擊 `pyADR_debug.bat`（會保留 console 視窗顯示錯誤訊息）。
+或雙擊 `pyADR.bat`。Debug 模式：`pyADR_debug.bat`（會保留 console 視窗顯示錯誤）。
 
 ---
 
 ## File overview
 
-| File | 說明 |
-|------|------|
-| `NTNU_DataReduction.py` | 主程式入口（GUI） |
+| File / Folder | 說明 |
+|---|---|
+| `NTNU_DataReduction.py` | 主程式入口 (GUI) |
 | `AutoPipeline.py` | 批次自動化 pipeline |
 | `Utilities.py` | 共用函式 / 繪圖核心 |
 | `PlaneFit3D.py` | 3D 平面擬合（含 grouped fitting） |
 | `ExcelChartExporter.py` | Excel 原生圖表匯出 |
 | `UI/` | PyQt5 對話框模組 |
+| `.work/` | 啟動必要 seed file（logo、setting、app_info） |
 | `pyADR_excel_template.xlsx` | Excel 輸出模板 |
-| `install.py` | 套件安裝 / 環境檢查 |
-| `CHANGELOG.md` | 完整版本變更紀錄（V2.5 → V3.7） |
+| `install.py` | 一鍵安裝（pip + 建資料夾 + 桌面捷徑） |
+| `setup.bat` | 雙擊版安裝（自動偵測 Anaconda） |
+| `requirements.txt` | Python 套件清單 |
+| `CHANGELOG.md` | 完整版本變更紀錄 (V2.5 → V3.7) |
+| `README_origin.md` | 原版 pyADR 的 README (Andrew Liu) |
 | `README_v3.5.md` | V3.5 合併版說明（歷史文件） |
-| `README_origin.md` | 原版 pyADR 的 README（Andrew Liu） |
 
 ---
 
 ## Changelog 摘要
 
-完整內容見 `CHANGELOG.md`。
-
 ### v3.7 (2026-05-09)
 
 新增 **DFD（Degassing Pattern Diagram）**：X = Temperature (°C)，Y = Ar amount (V, log scale)，21 個 Ar components 可自由組合（5 sums + 16 individual），含 Components 選擇對話框。
 
-Plot Controls UI 大改：scrollable、Apply 改藍色 primary、X/Y label 跟著 pname 動態顯示物理意義、新增 isochron control row（`⁴⁰Ar/³⁶Ar atm`、Temperature label）、新增 group-fit toggles（`Show groups` / `Group fits` / `Overall fit`）。
+Plot Controls UI 大改：scrollable、Apply 改藍色 primary、X/Y label 跟著 pname 動態顯示物理意義、新增 isochron control row（`⁴⁰Ar/³⁶Ar atm`、Temperature label）、新增 group-fit toggles（Show groups / Group fits / Overall fit）。
 
 `getDFStatistics_sh` 與 `getSummaryPlot` 加入 `show_group_fits` / `show_overall_fit` 參數；DFM Summary 的 inverse isochron 重寫，與 standalone DFI 視覺對齊（error ellipses、per-point group color、per-group regression + colored info box）。
+
+新增啟動時自動更新檢查（背景執行，發現新版用 Windows 通知）。
 
 ### v3.6 (2026-05-08)
 
@@ -111,19 +143,11 @@ Hover info 擴充：DFW / DFA / DFC step hover 加顯示 `%⁴⁰Ar*` 與 `Ca/K`
 
 `PlaneFit3D.plot_result_grouped()` 新增（4-panel grouped fit 圖），`DF_S3D` 改 grouped fitting（每 group n≥3 才 fit，不夠的 fallback 到全資料 single fit）。
 
-Bug fix（`Utilities.py`）：CSV NaN row removal off-by-one — 舊 code `while i != (len(data)-2)` 在 CSV 沒 trailing blank line 時會誤刪最後一筆 real data row，改用 `data.pop()` 剝 trailing blank + 從 i=1 起 loop。
+Bug fix：`Utilities.py` CSV NaN row removal off-by-one（舊版 CSV 沒 trailing blank line 時會誤刪最後一筆 real data row）。
 
 ### v3.5 (2026-05-07)
 
-合併 V3.3 (穩定基底) + V3.5 BUG FIX + V3.4.1 性能優化。詳見 `README_v3.5.md`。
-
-- `_iter_combos` 改 iterative，~50–70% 加速
-- 3D plane fit 用 `pd.read_csv(usecols=...)`，I/O ~84% 減少
-- Step Heating 圖檔一次選資料夾批次匯出
-- `_show_diagram` 統一 5 個重複 method
-- 誤差傳播改 quadrature（`sqrt(a² + b²)`）
-- ExcelChartExporter `error_bar` typo 修正
-- OGD 日期解析支援 `-` 與 `/`
+合併 V3.3 (穩定基底) + V3.5 BUG FIX + V3.4.1 性能優化（`_iter_combos` iterative 改寫、`pd.read_csv(usecols=...)` I/O ~84% 減少、Step Heating 一次選資料夾批次匯出、誤差傳播改 quadrature、ExcelChartExporter `error_bar` typo 修正）。詳見 `README_v3.5.md`。
 
 ### 更早
 
@@ -131,18 +155,38 @@ Bug fix（`Utilities.py`）：CSV NaN row removal off-by-one — 舊 code `while
 
 ---
 
-## Notes for users
+## Troubleshooting
 
-- 實驗數據（`Data/`、`Figures/`、`1200S 數據/`）不會被追蹤，已在 `.gitignore`。
-- 升級到 V3.7 後，CSV header 從 88 欄擴成 98 欄（新增 isochron ratios 與 Degassing Patterns section）。**舊版 V3.5 / V3.6 產的 88 欄 CSV 在 V3.7 開啟可能會卡 header 驗證**，建議重新跑或手動補欄。
-- iCloud 路徑跑 git 容易出現 `*.icloud`、`* 2.py` 衝突檔，建議放在非同步資料夾（如 `C:\Users\<user>\Documents\GitHub\`）。
+| 症狀 | 原因 / 解法 |
+|---|---|
+| 雙擊 `setup.bat` 視窗閃過 | Python 不在 PATH。改用 Anaconda Prompt 跑 `python install.py` |
+| `pip install --upgrade` 把 numpy 升到 2.x，pandas/sklearn 報 `_ARRAY_API not found` | `pip install "numpy<2"` 降回 1.x |
+| `winotify>=1.4 not found` | 已在 v3.7 後修為 `>=1.0`。舊版手動 `pip install "winotify>=1.0"` |
+| pyADR 啟動 logo 不見但程式正常 | `.work/logo.png` 缺檔，從 GitHub repo 重新下載該檔 |
+| 升級到 V3.7 開啟舊 V3.5/V3.6 產的 88 欄 CSV 卡 header 驗證 | V3.7 用 98 欄新格式（多 isochron ratios + Degassing Patterns section）。建議重新跑 Datum Publication |
+| iCloud / OneDrive 同步路徑跑 git 出現 `*.icloud` 或 `* 2.py` 衝突檔 | 把 repo 移到非同步資料夾（如 `C:\Users\<user>\Documents\GitHub\`） |
+
+---
+
+## For developers — release new version
+
+要發 v3.8 / v3.9... 的流程：
+
+1. 改 `.py` 程式碼
+2. **改 `.work/.app_info.txt` 第 2 行**版本號（例如 `3.7` → `3.8`）— 自動更新通知靠這個
+3. 在 `CHANGELOG.md` 最上面加新版段落
+4. 在 `README.md` 改頁首版本號 + Changelog 摘要
+5. GitHub Desktop commit + push 到 `main`
+6. 開 Release：https://github.com/FormosaRes/pyADR/releases/new → Tag `v3.8.0` → Publish
+
+V3.7 使用者打開 pyADR 自動跳通知；用 git clone 的人 `git pull` 即可。
 
 ---
 
 ## Credits
 
 - Original author: **An-Jun (Andrew) Liu** — https://github.com/AndrewLiu0725/pyADR
-- Modifications: **PANG Chi-Hsiu** (andy830205@gmail.com), NTNU
+- NTNU fork maintainer: **PANG Chi-Hsiu** — andy830205@gmail.com
 
 ## License
 
