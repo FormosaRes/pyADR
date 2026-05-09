@@ -8,47 +8,66 @@ This fork (maintained by **PANG Chi-Hsiu, NTNU**) adds bug fixes, performance im
 
 ## Requirements
 
-- Python 3.10+
+- **Anaconda3** (https://www.anaconda.com/download) — 強烈建議用 Anaconda 安裝 Python
+- Python 3.10+ （Anaconda 內建符合）
 - Windows (tested on Win10/11)
 - Microsoft Excel (for native chart export)
 
-Python packages: see `requirements.txt`.
+Python packages: see `requirements.txt` (自動安裝)。
 
 ---
 
-## Installation
+## Installation（Windows + Anaconda 流程）
 
-### Option 1 — Clone with Git
+### Step 1 — 裝 Anaconda
+
+如果還沒裝：https://www.anaconda.com/download → 下載 Anaconda3 → 安裝（一路 Next 即可）。
+
+### Step 2 — 下載 pyADR
+
+兩種方式選一個：
+
+**方式 A：Download ZIP（最簡單）**
+1. 點本頁綠色 **Code** 鈕 → **Download ZIP**
+2. 解壓到 `C:\pyADR\`（**路徑不要含中文或空白**）
+
+**方式 B：Git clone**（之後想 pull 更新比較方便）
+- 開 Anaconda Prompt → `cd C:\` → `git clone https://github.com/FormosaRes/pyADR.git`
+
+### Step 3 — 跑 install.py
+
+1. 按 Windows 鍵 → 打 **Anaconda Prompt** → 開啟（注意：是 Anaconda Prompt，**不是** cmd 或 PowerShell）
+2. 在 Anaconda Prompt 視窗輸入：
 
 ```
-git clone https://github.com/FormosaRes/pyADR.git
-cd pyADR
-pip install -r requirements.txt
+cd C:\pyADR
 python install.py
 ```
 
-### Option 2 — Download ZIP
+3. 按 Enter，跟著提示按 Enter 確認。完成後桌面會出現 `pyADR.bat`。
 
-1. Click green **Code** button → **Download ZIP**
-2. Unzip 到一個資料夾（路徑建議不要含中文或空白）
-3. 開 PowerShell / cmd 進到該資料夾：
+---
 
-```
-pip install -r requirements.txt
-python install.py
-```
+## 為什麼一定要 Anaconda Prompt
+
+Anaconda 安裝時**預設不會把 Python 加進系統 PATH**，所以普通 cmd / PowerShell 找不到 `python` 指令；雙擊 `setup.bat` 會直接報錯。
+
+Anaconda Prompt 是 Anaconda 自己包裝的 cmd，**已經先 activate Anaconda 環境**，可以直接用 `python`、`pip`、`conda` 等指令。所有 Python/Anaconda 操作都建議在 Anaconda Prompt 進行。
 
 ---
 
 ## Run
 
-雙擊 `pyADR.bat`，或：
+桌面 / 工作資料夾雙擊 **`pyADR.bat`** 即可啟動 GUI。
+
+或在 Anaconda Prompt 內：
 
 ```
+cd C:\pyADR
 python NTNU_DataReduction.py
 ```
 
-Debug 模式：`pyADR_debug.bat`
+Debug 模式：雙擊 `pyADR_debug.bat`（會保留 console 視窗顯示錯誤訊息）。
 
 ---
 
