@@ -14,6 +14,7 @@ from winotify import Notification
 from tkinter import *
 from datetime import date
 import logging  # BUG FIX: A8 - Add logging support
+import threading  # for background update check
 
 # Setup logger
 logger = logging.getLogger(__name__)
@@ -808,6 +809,8 @@ class App():
         self.screenshot_folder = 'Figures/'
         with open(self.work_dir+'.work/.app_info.txt', 'r') as f:
             self.app_info = f.readlines()
+        # Auto-check for updates on startup (silent, background)
+        threading.Thread(target=self._bg_check_update, daemon=True).start()
         self.J_list = [28201000,128100000,523100000]
         self.J_Sigma = [23000,700000,2600000]
         self.toast = Notification(app_id="pyARD", title="Save success!",duration="short")
@@ -2042,7 +2045,43 @@ class App():
     def systemInfo(self):
         self.Popup(1, "System Info", "".join(self.app_info))
 
-    # check if current app is up to date
+    # Background update check on startup (silent, no popup if up-to-date)
+    def _bg_check_update(self):
+        """Run on startup in a thread. Show Windows toast if new version exists."""
+        try:
+            import time
+            time.sleep(2)  # let UI finish loading first
+            app_info_url = 'https://raw.githubusercontent.com/FormosaRes/pyADR/main/.work/.app_info.txt'
+            page = requests.get(app_info_url, timeout=5)
+            if not page.ok:
+                return
+            latest_version = page.text.split('\n')[1].rstrip()
+            current_version = self.app_info[1].rstrip()
+            if current_version == latest_version:
+                return  # already up-to-date, silent
+            # New version available — show Windows toast notification
+            try:
+                from winotify import Notification, audio
+                logo_path = os.path.abspath(self.work_dir + '.work/logo.png')
+                n = Notification(
+                    app_id="pyADR",
+                    title=f"pyADR Update Available: v{latest_version}",
+                    msg=f"You're on v{current_version}. Click to view release on GitHub.",
+                    icon=logo_path if os.path.exists(logo_path) else None,
+                    duration="long",
+                )
+                n.set_audio(audio.Default, loop=False)
+                n.add_actions(
+                    label="Open GitHub",
+                    launch="https://github.com/FormosaRes/pyADR/releases"
+                )
+                n.show()
+            except Exception:
+                pass  # winotify failed (non-Windows or import error) — silent
+        except Exception:
+            pass  # network failure — silent (don't bother user)
+
+    # check if current app is up to date (manual: Menu -> Check Update)
     def checkVersion(self):
         app_info_url = 'https://raw.githubusercontent.com/FormosaRes/pyADR/main/.work/.app_info.txt'
         try:
