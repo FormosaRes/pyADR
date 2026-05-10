@@ -66,3 +66,7 @@ PlaneFit3D_demo.png
 # 本地 auto-commit 排程 (每台機器各自設, 不入 repo)
 pyADR_auto_backup.bat
 release_v3.7.2.bat
+cleanup_after_v3.7.2.bat
+fix_pyADR_main.bat
+release_v3.7.3.bat
+release_v3.7.4.bat

@@ -4530,7 +4530,7 @@ class App():
                 f = open(outfile, 'w', newline='', encoding="utf-8")
                 writer = csv.writer(f, lineterminator="\n")
 
-                # 1. 寫入標頭 (98 欄, V3.7 完整格式 — Ca/K + isochron section)
+                # 1. 寫入標頭 (88 欄, v3.7.3 — 對齊老師格式; isochron 改用 ISOr 工具獨立輸出)
                 writer.writerow([
                     "Samp#","Min","IRR","deg C","J","J_std","J_int",
                     "36Ar(a)","36Ar(a)_std","37Ar(ca)","37Ar(ca)_std",
@@ -4549,9 +4549,7 @@ class App():
                     "40Ar/39Ar(k)","40Ar/39Ar(k)_std","38Ar/39Ar(k)","38Ar/39Ar(k)_std",
                     "39Ar/37Ar(k)","39Ar/37Ar(k)_std","36Ar/38Ar(cl)","36Ar/38Ar(cl)_std",
                     "40Ar/36Ar(a)","40Ar/36Ar(a)_std","38Ar/36Ar(a)","38Ar/36Ar(a)_std",
-                    "Lambda","numCycle",
-                    "normal isochron","40Ar(m)/36Ar(m)","40Ar(m)/36Ar(m)_std","39Ar(m)/36Ar(m)","39Ar(m)/36Ar(m)_std",
-                    "inverse isochron","36Ar(m)/40Ar(m)","36Ar(m)/40Ar(m)_std","39Ar(m)/40Ar(m)","39Ar(m)/40Ar(m)_std"
+                    "Lambda","numCycle"
                 ])
 
                 # 2. First pass: calculate totals for step heating %
@@ -4665,8 +4663,8 @@ class App():
                     ar38cl = ar38m - ar38air - ar38k
                     ar38cl_std = (ar38m_std**2 + ar38air_std**2 + ar38k_std**2)**0.5
 
-                    # Build complete row (88 original + 2 separators + 8 isochron ratios = 98 columns)
-                    row = ["0"] * 98
+                    # Build row (88 columns, v3.7.3 — isochron section removed; use ISOr tool instead)
+                    row = ["0"] * 88
                     
                     # [0-6] Basic info
                     row[0] = lines[1].split(',')[0]  # Samp#

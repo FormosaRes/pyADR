@@ -1,8 +1,57 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2
-最後整理日期：2026-05-10
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4
+最後整理日期：2026-05-11
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.7.4（2026-05-11）
+
+### Critical Bug Fix — `calcAge` 函式從 V3.4.1 archive 完整還原
+
+**症狀：** 在 GUI 點 Age Calculation 頁面的計算按鈕, 程式崩潰 (`TypeError: 'NoneType' object is not subscriptable`)。AutoPipeline 跑 step heating 也壞。
+
+**Root cause：** `Utilities.py:calcAge` 函式從 V3.7 release (commit `afb2268`) 起就被 iCloud sync 截斷, 函式只走到 `Ar_39_Ca = Ar_37_Ca * constants[0]` 就斷尾, 沒做 38Ar/40Ar/F/age/std 計算, 沒 return。所有 v3.7.x release HEAD 都帶這個 bug。
+
+**修法：** 從 V3.4.1 archive (`程式修改的Data_Reduction/V3.4.1/Utilities.py`) 還原完整 100 行 calcAge 函式, 包含:
+- 38Ar(K)、38Ar(Air) 計算
+- 40Ar(air) = 36Ar(Air) × C1, 40Ar(K) = 39Ar(K) × C5, 40Ar(r) = 40Ar(m) − 40Ar(air) − 40Ar(K)
+- F = 40Ar(r) / 39Ar(K), F_std (1 階近似 partial derivative)
+- T = ln(1 + J·F) / λ (constants[16])
+- T_std, T_int 完整 error propagation
+- 59-element return 含 Ar components, ratios, F, J, T, info, t, Min, PK
+- caller `NTNU_DataReduction.py:2240` 用 `result[46]` 取 Age, `result[47]` 取 std, `result[55-58]` 取 metadata 全部對齊
+
+**`Utilities.py` 同時還原檔尾 88 行 (line 3523 起的 `_draw_iso_n` group fit MSWD 計算 + `_apply_panel_extras` + `getSummaryPlot` 主迴圈), 同樣是被 iCloud 截斷的部分。**
+
+**保留現狀的（待跟老師討論後再修）：**
+- 線性誤差傳播 (`Ar_39_Ca_std = (...+...) * Ar_39_Ca`) — 不改 quadrature
+- Ca/K 常數 0.52 — 不改 1.83
+- F_std 一階近似 — 沒包含 (1−C4·D) 完整分母
+- 36Ar(Cl) 大氣校正 — 沒加進去
+
+**檔案影響：**
+- `Utilities.py` 從 3707 行壞掉 → 3794 行完整
+- `NTNU_DataReduction.py`、`AutoPipeline.py` 內容沒改, 但 caller 不再 crash
+
+---
+
+## V3.7.3（2026-05-11）
+
+### Revert — Datum Publication Table 改回 88 欄格式
+
+**動機：** v3.7.2 修好 ISOr export (toDPR, 8 欄獨立 isochron-ratio 表) 後, 原本 v3.7 為了補救壞掉的 isochron 計算而塞進 Publish Table 末端的 10 欄 isochron section 變得多餘, 而且跟老師那邊 V2.0 88 欄格式不相容, 容易在交流檔案時出錯。
+
+**改動 (`NTNU_DataReduction.py` toDP)：**
+- header 從 98 欄縮回 88 欄, 砍掉:
+  ```
+  "normal isochron","40Ar(m)/36Ar(m)","40Ar(m)/36Ar(m)_std","39Ar(m)/36Ar(m)","39Ar(m)/36Ar(m)_std",
+  "inverse isochron","36Ar(m)/40Ar(m)","36Ar(m)/40Ar(m)_std","39Ar(m)/40Ar(m)","39Ar(m)/40Ar(m)_std"
+  ```
+- `row = ["0"] * 98` → `row = ["0"] * 88`
+
+**影響：** 之後跑 ISOr 要走 Datum Publication Page 的 ISOr 按鈕 (toDPR), 不再從 Publish Table 末端撈 isochron ratio。內部 V2.0 → V3.7 normalization (Utilities.normalize_csv_to_v37) 維持原樣, 讀舊 88 欄 / 98 欄 CSV 都還能正常 plot。
 
 ---
 

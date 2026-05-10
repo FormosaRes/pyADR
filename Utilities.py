@@ -2809,12 +2809,29 @@ def getJVolumeStatistics(file, t,t_std,constants):
     return [Ar_36_Air,Ar_37_Ca,Ar_39_K,Ar_40_radioactive,Ar_40_radioactive/Ar_40_m*100,Ar_39_K/Ar_39_m*100,_CaK,_CaK_std,J,J_std,J_int]
 
 def calcAge(measurement_filename, J, J_std, J_int, constants):
+    """
+    Compute Ar/Ar age + all Ar component breakdown for one step.
+
+    v3.7.4: Restored from V3.4.1 archive after the v3.7.x release HEAD shipped a
+    truncated version (function ended mid-statement at `Ar_39_Ca = ...`).
+    Linear-error-propagation style preserved (same as getJVolumeStatistics
+    sister function).  Math review (Ca/K constant, quadrature vs linear σ,
+    36Ar(Cl) atmospheric correction) deferred to later release after
+    discussion with advisor — see notes/pyADR_math_audit_v1.md.
+
+    Returns 59-element list; key indices:
+       18 Ar_39_K, 19 Ar_39_K_std
+       24 Ar_40_radioactive, 25 std
+       36 F, 37 F_std
+       46 T (Age in years), 47 T_std
+       48 J_int, 49 T_int
+    """
     # collect data
     data = np.zeros((5, 2))
 
     with open(measurement_filename, 'r') as f:
         tmp_data = f.readlines()
-    
+
     # check header here
     if tmp_data[0].rstrip() != "Samp#,t,Min,iradiation PK 90%,Mass,Raw,Measurment,Measurement's Sigma,Ratio,Value,Ratio's Sigma":
         raise Exception("Wrong data format!")
@@ -2823,7 +2840,7 @@ def calcAge(measurement_filename, J, J_std, J_int, constants):
     t = (tmp_data[1].split(',')[1])
     Min = (tmp_data[1].split(',')[2])
     PK = (tmp_data[1].split(',')[3])
-    
+
     for i in range(5):
         data[i, 0] = float(tmp_data[i+1].split(',')[6])
         data[i, 1] = float(tmp_data[i+1].split(',')[7])
@@ -2843,7 +2860,65 @@ def calcAge(measurement_filename, J, J_std, J_int, constants):
 
     Ar_39_m = data[3, 0]
     Ar_39_m_std = data[3, 1]
-    Ar_39_Ca = Ar_37_Ca * constants[0] #3
+    Ar_39_Ca = Ar_37_Ca * constants[0] #39Ar/37Ar(ca)
+    Ar_39_Ca_std = (Ar_37_Ca_std/Ar_37_Ca + constants[1]/constants[0]) * Ar_39_Ca #39Ar/37Ar(ca) std /39Ar/37Ar(ca)
+    Ar_39_K = Ar_39_m - Ar_39_Ca
+    Ar_39_K_std = minusSigma(Ar_39_m_std, Ar_39_Ca_std)
+
+    Ar_38_m = data[2, 0]
+    Ar_38_m_std = data[2, 1]
+    Ar_38_K = Ar_39_K * constants[6] #38Ar/39Ar(k)
+    Ar_38_K_std = (Ar_39_K_std/Ar_39_K + constants[7]/constants[6]) * Ar_38_K #38Ar/39Ar(k) std / 38Ar/39Ar(k)
+    Ar_38_Air = Ar_38_m - Ar_38_K
+    Ar_38_Air_std = minusSigma(Ar_38_m_std, Ar_38_K_std)
+
+    Ar_40_m = data[4, 0]
+    Ar_40_m_std = data[4, 1]
+    Ar_40_air = Ar_36_Air * constants[12] #40/36(a)
+    Ar_40_air_std = (Ar_36_Air_std/Ar_36_Air + constants[13]/constants[12]) * Ar_40_air #40/36(a) std / 40/36(a)
+    Ar_40_K = Ar_39_K * constants[4] #40Ar/39Ar(k)
+    Ar_40_K_std = (Ar_39_K_std/Ar_39_K + constants[5]/constants[4]) * Ar_40_K #40Ar/39Ar(k) std / 40Ar/39Ar(k)
+    Ar_40_radioactive = Ar_40_m - Ar_40_air - Ar_40_K
+    Ar_40_radioactive_std = np.sqrt(Ar_40_m_std**2 + Ar_40_air_std**2 + Ar_40_K_std**2)
+    Ar_40_radioactive_ratio = Ar_40_radioactive / data[4, 0]
+
+
+    # ratio calculation
+    Ar_39_K_40_r_ratio =  Ar_39_K / Ar_40_radioactive
+    Ar_39_K_40_r_ratio_std = Ar_39_K_40_r_ratio*(Ar_39_K_std/Ar_39_K + Ar_40_radioactive_std/Ar_40_radioactive)
+    Ar_36_Air_40_r_ratio = Ar_36_Air / Ar_40_radioactive
+    Ar_36_Air_40_r_ratio_std = Ar_36_Air_40_r_ratio*(Ar_36_Air_std/Ar_36_Air + Ar_40_radioactive_std/Ar_40_radioactive)
+    Ar_39_K_36_Air = Ar_39_K / Ar_36_Air
+    Ar_39_K_36_Air_std = Ar_39_K_36_Air*(Ar_39_K_std/Ar_39_K + Ar_36_Air_std/Ar_36_Air)
+
+    # Age calculation
+    C1, C2, C3, C4 = constants[12], constants[2], constants[4], constants[0] #40/36(a) 36Ar/37Ar(ca) 40Ar/39Ar(k) 39Ar/37Ar(ca)
+    G = Ar_40_m / Ar_39_m
+    G_std = G*(Ar_40_m_std/Ar_40_m + Ar_39_m_std/Ar_39_m)
+    B = Ar_36_m / Ar_39_m
+    B_std = B*(Ar_36_m_std/Ar_36_m + Ar_39_m_std/Ar_39_m)
+    D = Ar_37_m / Ar_39_m
+    D_std = D*(Ar_37_m_std/Ar_37_m + Ar_39_m_std/Ar_39_m)
+    F = Ar_40_radioactive / Ar_39_K
+    F_std = np.sqrt(G_std**2 + (C1*B_std)**2 + ((C4*G - C1*C4*B + C1*C2)*D_std)**2)
+
+    T = np.log(1 + J*F) / constants[16] #Lambda
+    T_std = np.sqrt((J**2 * F_std**2 + F**2 * J_std**2)/ ((constants[16]*(1+F*J))**2)) #Lambda
+    T_int = np.sqrt((J**2 * F_std**2 + F**2 * J_int**2)/ ((constants[16]*(1+F*J))**2)) #Lambda
+
+    return [Ar_36_m, Ar_36_m_std, Ar_36_Air, Ar_36_Air_std, Ar_36_Ca, Ar_36_Ca_std,
+            Ar_37_m, Ar_37_m_std, Ar_37_Ca, Ar_37_Ca_std,
+            Ar_38_m, Ar_38_m_std, Ar_38_Air, Ar_38_Air_std, Ar_38_K, Ar_38_K_std,
+            Ar_39_m, Ar_39_m_std, Ar_39_K, Ar_39_K_std, Ar_39_Ca, Ar_39_Ca_std,
+            Ar_40_m, Ar_40_m_std, Ar_40_radioactive, Ar_40_radioactive_std, Ar_40_air, Ar_40_air_std, Ar_40_K, Ar_40_K_std,
+            Ar_39_K_40_r_ratio, Ar_39_K_40_r_ratio_std, Ar_36_Air_40_r_ratio, Ar_36_Air_40_r_ratio_std, Ar_39_K_36_Air, Ar_39_K_36_Air_std,
+            F, F_std, G, G_std, B, B_std, D, D_std,
+            J, J_std,
+            T, T_std,
+            J_int, T_int,
+            Ar_40_radioactive_ratio, C1, C2, C3, C4, info, t, Min, PK
+            ]
+
 
 # ============================================================
 #  Stack Plot  (DFS)  &  Summary Figure  (DFM)
@@ -3629,7 +3704,6 @@ def getSummaryPlot(file, mask, constants, panels=None, legend_name=None,
                             and _Lam_summary > 0 and _J_summary > 0 and _slope > 0):
                         _T = np.log(1.0 + _J_summary * _slope) / _Lam_summary / 1e6
                         _age_str = f'\nT={_T:.1f} Ma'
-                    _mswd = float('nan')
                     if _N >= 3 and np.all(np.isfinite(_gysa)) and np.all(_gysa > 0):
                         _resid = _gya - linear(_gxa, *_gopt)
                         _mswd = float(np.sum((_resid / _gysa) ** 2) / (_N - 2))
