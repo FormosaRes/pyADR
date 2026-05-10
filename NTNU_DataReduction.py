@@ -1999,7 +1999,7 @@ class App():
         
         # click button on Datum Select Pag
         self.DatumSelectPage.TT.clicked.connect(self.toDP)
-        self.DatumSelectPage.isor.clicked.connect(self.toDP)
+        self.DatumSelectPage.isor.clicked.connect(self.toDPR)
         self.DatumSelectPage.actionParameter_Setting.triggered.connect(self.toPS)
         self.DatumSelectPage.actionAbout_pyADR.triggered.connect(self.systemInfo)
         self.DatumSelectPage.actionCheck_Update.triggered.connect(self.checkVersion)
@@ -4439,6 +4439,71 @@ class App():
             int(self.parameters[self.parameters_name.index('numCycle')])
         )
         self.widget.setCurrentIndex(20)
+
+    def toDPR(self):
+        """ISOr export — produce 8-column isochron-ratio table from MassRatio CSVs.
+
+        Output header: 39/40,err[39/40],36/40,err[36/40],39/36,err[39/36],39,Samp#
+
+        Restored in v3.7.2: was lost in earlier refactor that mis-bound the ISOr
+        button to toDP (Publish Table). Logic ported from v2.0 toDPR.
+        """
+        filelist, _ = QtWidgets.QFileDialog.getOpenFileNames(
+            self.widget,
+            "Select files (csv) to get Datum statistics",
+            self.data_folder + 'MassRatio/',
+            "(*.csv)"
+        )
+        if len(filelist) <= 0:
+            return
+
+        f = None
+        try:
+            outfile, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self.widget,
+                "Save ISOr result",
+                self.data_folder + 'Publish/',
+                "(*.csv)"
+            )
+            if len(outfile) <= 0:
+                return
+
+            f = open(outfile, 'w', encoding="utf-8")
+            f.write("39/40,err[39/40],36/40,err[36/40],39/36,err[39/36],39,Samp#\n")
+
+            expected_header = ("Samp#,t,Min,iradiation PK 90%,Mass,Raw,"
+                               "Measurment,Measurement's Sigma,Ratio,Value,Ratio's Sigma")
+            for filename in filelist:
+                with open(filename, 'r', encoding="utf-8", errors="ignore") as d:
+                    data = d.readlines()
+                if data[0].rstrip() != expected_header:
+                    raise Exception("Wrong data format in {}".format(filename))
+                ar3940    = float(data[1].split(',')[9])
+                ar3940std = float(data[1].split(',')[10])
+                ar3640    = float(data[2].split(',')[9])
+                ar3640std = float(data[2].split(',')[10])
+                ar3936    = float(data[3].split(',')[9])
+                ar3936std = float(data[3].split(',')[10])
+                ar39      = float(data[4].split(',')[6])
+                samp      = data[1].split(',')[0]
+                f.write("{},{},{},{},{},{},{},{}\n".format(
+                    ar3940, ar3940std, ar3640, ar3640std,
+                    ar3936, ar3936std, ar39, samp
+                ))
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            try:
+                self.Popup(2, "ISOr Error",
+                           "Please check the selected data format!\n{}".format(e))
+            except Exception:
+                pass
+        finally:
+            if f is not None:
+                try:
+                    f.close()
+                except Exception:
+                    pass
     def toDP(self):
             filelist, _ = QtWidgets.QFileDialog.getOpenFileNames(
                 self.widget,

@@ -1,8 +1,48 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1
-最後整理日期：2026-05-09
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2
+最後整理日期：2026-05-10
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.7.2（2026-05-10）
+
+### Bug Fix — 修復 ISOr (Datum Publication) export
+
+**症狀：** 在 Datum Publication Page 點擊 ISOr 按鈕時, 跑出來的不是預期的 8 欄 isochron-ratio 表, 而是跟 Publish Table 一模一樣的 98 欄完整 datum 表。
+
+**Root cause：** 重構過程中 `toDPR` 函式整段被刪掉, ISOr 按鈕的 signal connection 被誤改成綁 `self.toDP`：
+
+```python
+# 錯誤 (V3.7.1 之前的某次重構誤改)
+self.DatumSelectPage.isor.clicked.connect(self.toDP)
+```
+
+**修法：**
+
+1. 從 V2.0 移植 `toDPR` 邏輯回來, 加上 V3.7 慣用的 try/except/finally + utf-8 encoding。
+2. 修正 signal binding：
+
+```python
+self.DatumSelectPage.isor.clicked.connect(self.toDPR)
+```
+
+**`toDPR` 行為（與 V2.0 完全相容）：**
+
+- 讀取 `MassRatio/` 底下的 CSV
+- 驗證 header (`Samp#,t,Min,iradiation PK 90%,Mass,Raw,Measurment,...`)
+- 抽出 39/40, 36/40, 39/36 三組 ratio + std + 39Ar amount + Samp#
+- 輸出 8 欄表頭：
+
+```
+39/40,err[39/40],36/40,err[36/40],39/36,err[39/36],39,Samp#
+```
+
+**檔案影響：**
+
+- `NTNU_DataReduction.py`：+65 行（toDPR method）, 1 行 binding fix
+- 其他模組無變動
 
 ---
 

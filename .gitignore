@@ -62,3 +62,7 @@ PlaneFit3D_demo.png
 # Excel 暫存
 ~$*.xlsx
 ~$*.xls
+
+# 本地 auto-commit 排程 (每台機器各自設, 不入 repo)
+pyADR_auto_backup.bat
+release_v3.7.2.bat
