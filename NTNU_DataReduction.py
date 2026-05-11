@@ -4813,9 +4813,45 @@ class App():
                     row[65] = get_variable("D(Ar_37_m/Ar_39_m)", 5)
                     row[66] = get_variable("D(Ar_37_m/Ar_39_m)", 6)
 
-                    # 36Ar/39Ar and std
-                    row[67] = get_variable("E(Ar_36_m/Ar_39_m)", 5)
-                    row[68] = get_variable("E(Ar_36_m/Ar_39_m)", 6)
+                    # 36Ar/39Ar and std - Variable: B(Ar_36_m/Ar_39_M)
+                    # FIX v3.7.4-hotfix: AgeCalc UI writes 'B(Ar_36_m/Ar_39_M)' (B prefix,
+                    # capital M); old lookup used 'E(Ar_36_m/Ar_39_m)' → returned 0.0.
+                    row[67] = get_variable("B(Ar_36_m/Ar_39_M)", 5)
+                    row[68] = get_variable("B(Ar_36_m/Ar_39_M)", 6)
+
+                    # [69] Parameters separator
+                    row[69] = "Parameters"
+
+                    # [70-85] IRR / atmospheric production-ratio constants
+                    # FIX v3.7.4-hotfix: previously row[70..87] left as default "0".
+                    # Order must match header at line 4548-4552.
+                    pkeys = [
+                        "Production Ratio 39Ar/37Ar(ca)", "Production Ratio 39Ar/37Ar(ca) std",
+                        "Production Ratio 36Ar/37Ar(ca)", "Production Ratio 36Ar/37Ar(ca) std",
+                        "Production Ratio 40Ar/39Ar(k)", "Production Ratio 40Ar/39Ar(k) std",
+                        "Production Ratio 38Ar/39Ar(k)", "Production Ratio 38Ar/39Ar(k) std",
+                        "Production Ratio 39Ar/37Ar(k)", "Production Ratio 39Ar/37Ar(k) std",
+                        "Production Ratio 36Ar/38Ar(cl)", "Production Ratio 36Ar/38Ar(cl) std",
+                        "Atmospheric Ratio 40/36(a)", "Atmospheric Ratio 40/36(a) std",
+                        "Atmospheric Ratio 38/36(a)", "Atmospheric Ratio 38/36(a) std",
+                    ]
+                    for idx, key in enumerate(pkeys):
+                        try:
+                            row[70 + idx] = self.parameters[self.parameters_name.index(key)]
+                        except (ValueError, IndexError):
+                            row[70 + idx] = "0"
+
+                    # [86] Lambda (decay constant) — key uses λ (UTF-8)
+                    try:
+                        row[86] = self.parameters[self.parameters_name.index("λ for age calculation")]
+                    except (ValueError, IndexError):
+                        row[86] = "5.49e-10"
+
+                    # [87] numCycle
+                    try:
+                        row[87] = self.parameters[self.parameters_name.index("numCycle")]
+                    except (ValueError, IndexError):
+                        row[87] = "10"
 
                     writer.writerow(row)
 
