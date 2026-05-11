@@ -28,16 +28,17 @@ https://www.anaconda.com/download → 下載 Anaconda3 → 安裝（一路 Next 
 
 ### Step 2 — 下載 pyADR
 
-點本頁右上方綠色 **Code** 鈕 → **Download ZIP** → 解壓到 `C:\pyADR\`（**路徑不要含中文或空白**）。
+點本頁右上方綠色 **Code** 鈕 → **Download ZIP**。檔名是 `pyADR-main.zip`，**解壓到 `C:\` 根目錄**，會得到 `C:\pyADR-main\`（**路徑不要含中文或空白**）。
 
 或用 git（之後想 git pull 更新比較方便）：
 ```
-git clone https://github.com/FormosaRes/pyADR.git
+cd C:\
+git clone https://github.com/FormosaRes/pyADR.git pyADR-main
 ```
 
 ### Step 3 — 一鍵安裝
 
-進到 `C:\pyADR\` → **雙擊 `setup.bat`**
+進到 `C:\pyADR-main\` → **雙擊 `setup.bat`**
 
 `setup.bat` 會自動：
 1. 偵測 Anaconda 安裝位置（`C:\Anaconda`、`%USERPROFILE%\anaconda3`、`C:\ProgramData\Anaconda3` 等常見路徑）
@@ -56,7 +57,7 @@ git clone https://github.com/FormosaRes/pyADR.git
 按 Windows 鍵 → 打 **Anaconda Prompt** → 開啟。在視窗內執行：
 
 ```
-cd C:\pyADR
+cd C:\pyADR-main
 python install.py
 ```
 
@@ -71,7 +72,7 @@ python install.py
 ### 方式 A：Git pull（推薦給用 git clone 安裝的）
 
 ```
-cd C:\pyADR
+cd C:\pyADR-main
 git pull
 ```
 
@@ -80,8 +81,8 @@ git pull
 ### 方式 B：重新下載 ZIP
 
 1. 備份 `Data/`、`Figures/`、`.work/setting.csv`
-2. 刪除舊 `C:\pyADR\` 整個資料夾
-3. 重新 Download ZIP → 解壓 → `python install.py`
+2. 刪除舊 `C:\pyADR-main\` 整個資料夾
+3. 重新 Download ZIP → 解壓到 `C:\` → `python install.py`
 4. 把備份倒回去
 
 ### 自動更新通知
