@@ -3334,14 +3334,31 @@ class App():
                     print(f"Mask size: {len(self.mask)}")
                     
                     # Call getDFStatistics_sh with default parameters
+                    # v3.8.1 FIX: pass return_limits/return_points=True so iso_pts_DFN/DFI
+                    # are populated on initial display — required for click-to-group.
+                    # Previously these stayed empty until the user pressed Apply, so clicks
+                    # on data points in DFN/DFI silently no-op'd.
                     print("\nCalling getDFStatistics_sh...")
-                    self.DF_result = Utilities.getDFStatistics_sh(
+                    _df_call = Utilities.getDFStatistics_sh(
                         self.Dfilename, self.mask, self.parameters, 'r', 'o',
                         show_temp=False, show_atm=True, atm_ratio=298.56,
                         style=self._get_plot_style(),
+                        return_limits=True, return_points=True,
                         show_group_fits=self.DiagramPlots_SHPage.showGroupFitsCheckbox.isChecked(),
                         show_overall_fit=self.DiagramPlots_SHPage.showOverallFitCheckbox.isChecked(),
 )
+                    if isinstance(_df_call, tuple) and len(_df_call) == 2:
+                        self.DF_result, _df_limits = _df_call
+                        self.iso_pts_DFN = _df_limits.get('DFN_pts', self.iso_pts_DFN)
+                        self.iso_pts_DFI = _df_limits.get('DFI_pts', self.iso_pts_DFI)
+                        for _pn in ('DFN', 'DFI'):
+                            if _pn in _df_limits and _df_limits[_pn][0]:
+                                self._actual_xlims[_pn] = _df_limits[_pn][0]
+                                self._actual_ylims[_pn] = _df_limits[_pn][1]
+                            if f'{_pn}_bbox' in _df_limits:
+                                self._axes_bboxes[_pn] = _df_limits[f'{_pn}_bbox']
+                    else:
+                        self.DF_result = _df_call
                     print(f"getDFStatistics_sh result: {self.DF_result}")
                     
                     # Call getSHStatistics
@@ -3482,6 +3499,14 @@ class App():
                     QtGui.QPixmap(self.work_dir + ".work/DFN.png"))
                     self.pname = "DFN"
                     self.DiagramPlots_SHPage._mouse_move_callback = self.on_mouse_move_SH
+                    # v3.8.1 FIX: wire click callback on initial display so click-to-group
+                    # works in DFN/DFI without needing to press Apply first. Also push the
+                    # DFN xlim/ylim so _pixel_to_data can translate clicks correctly.
+                    self.DiagramPlots_SHPage._click_callback = self.on_click_SH
+                    if 'DFN' in self._actual_xlims:
+                        self.DiagramPlots_SHPage.current_xlim = self._actual_xlims['DFN']
+                    if 'DFN' in self._actual_ylims:
+                        self.DiagramPlots_SHPage.current_ylim = self._actual_ylims['DFN']
                     self.TableAdjust(self.DiagramPlots_SHPage.tableWidget)
 
                     self.widget.setCurrentIndex(15)

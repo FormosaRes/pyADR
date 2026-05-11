@@ -1,6 +1,8 @@
 # pyADR Formulas — ⁴⁰Ar/³⁹Ar Reduction Math Reference
 
-**Version**: v3.7.4 (2026-05) · **Scope**: T0 fitting → Mass Ratio → Air Ratio → J → Age → Datum Publication
+**Version**: v3.8.0 (2026-05) · **Scope**: T0 fitting → Mass Ratio → Air Ratio → J → Age → Datum Publication
+
+> **v3.8.0 update**: §10 (DiagramPlot) rewritten to reflect corrected inverse-isochron F = −b/a, inverse-variance-weighted WMA, and WMA-referenced MSWD per Vermeesch (2024, 2018) and Schaen et al. (2021). Previous §10 description matched the buggy v3.7.x code (§10.x note retains the bug history for traceability).
 
 This document is a one-stop reference for every numeric formula pyADR evaluates, written as math (LaTeX) plus the corresponding `.py` line. Error propagation is derived from first-order partials of each expression as **actually coded** — pyADR mixes proper quadrature (`sqrt(Σ(∂F/∂x · σ_x)²)`) with linear-sum approximations (`F·Σ|σ_x/x|`); both are documented faithfully. Where the code's choice diverges from the McDougall & Harrison (1999) / Koppers (2002) convention, a **Note** flags it.
 
@@ -531,41 +533,153 @@ $$
 
 ---
 
-## 10. Diagram-page derived quantities (Inverse / Normal Isochron, Spectrum)
+## 10. DiagramPlot — Inverse / Normal Isochron, Plateau WMA, MSWD
 
-`Utilities.py:307–460, 462–1496, 928–946, 1086+, 1395–1517, 3255–3370`
+`Utilities.py:307–490 (getDFStatistics_ls), 462–1535 (getDFStatistics_sh), 928–1050 (DFN group fit), 1340–1395 (DFI group fit), 1500–1535 (WMA & MSWD)`
 
-**Inverse isochron (DF Inverse Isochron, e.g. `:336–341`):**
+All formulas in this section use the **York convention** `Y = a + b·X`, where `a` = y-intercept and `b` = slope (per Vermeesch 2024 Eq. p.398, Vermeesch 2018 IsoplotR §11). pyADR's `curve_fit(linear, x, y)` returns `popt = [b, a]` (slope first, intercept second).
 
-$$
-x = \frac{m_{39}}{m_{40}}, \qquad y = \frac{m_{36}}{m_{40}}, \qquad
-\sigma_x = \sigma_{m_{39}}/\sigma_{m_{40}}\ldots
-$$
-
-Linear regression by York-style weighted least squares (point-by-point in `_smart_set` / DF panels). Age from x-intercept (`:1318–1326`):
+### 10.1 Normal isochron (DFN)
 
 $$
-T = \frac{1}{\lambda}\ln\!\left(1+\frac{J}{x_{\text{int}}}\right)\quad\text{or}\quad T = \frac{1}{\lambda}\ln(1+J\cdot F_{\text{x-int}})
+X = \frac{{}^{39}\mathrm{Ar}_m}{{}^{36}\mathrm{Ar}_m},\qquad
+Y = \frac{{}^{40}\mathrm{Ar}_m}{{}^{36}\mathrm{Ar}_m}
 $$
 
-where `F_x-int = -slope/intercept` for the inverse-isochron geometry.
-
-**Normal isochron (rare in this codebase; computed in step plots when invoked).**
-
-**Step age (`:1428–1443`):**
+Linear fit gives `Y = a_N + b_N·X` where:
 
 $$
-T_j = \frac{1}{\lambda}\ln(1+J\cdot F_j)
+a_N = \left(\tfrac{^{40}\mathrm{Ar}}{^{36}\mathrm{Ar}}\right)_{\!\text{trapped}}, \qquad
+b_N = F = \tfrac{^{40}\mathrm{Ar}^*}{^{39}\mathrm{Ar}_K}
 $$
 
-**Total fusion / weighted-mean plateau age (`:1543–1551, 1972`):**
+So **slope = F**, **intercept = trapped 40/36** (direct read-off).
+
+### 10.2 Inverse isochron (DFI) — F = −b/a (v3.8 corrected)
+
+$$
+X = \frac{{}^{39}\mathrm{Ar}_m}{{}^{40}\mathrm{Ar}_m},\qquad
+Y = \frac{{}^{36}\mathrm{Ar}_m}{{}^{40}\mathrm{Ar}_m}
+$$
+
+Linear fit gives `Y = a_I + b_I·X` where (Vermeesch 2024, eq. p.398):
+
+$$
+a_I = \left(\tfrac{^{36}\mathrm{Ar}}{^{40}\mathrm{Ar}}\right)_{\!\text{trapped}} = \tfrac{1}{(^{40}\mathrm{Ar}/^{36}\mathrm{Ar})_{\text{trapped}}}, \qquad
+b_I = -F \cdot a_I
+$$
+
+Therefore (`Utilities.py:1479`):
+
+$$
+\boxed{\;F = -\dfrac{b_I}{a_I} = \dfrac{1}{X_{\text{intercept}}}\;}
+$$
+
+Equivalently, the X-intercept of the inverse isochron equals `1/F` (Vermeesch 2018 Geosci Frontiers, IsoplotR p.8).
+
+**Error propagation for F = −b/a** including slope-intercept covariance from `pcov_inv`:
+
+$$
+\sigma_F^{\,2} = \left(\frac{\sigma_b}{a}\right)^{\!2} + \left(\frac{b\,\sigma_a}{a^{2}}\right)^{\!2} - \frac{2b}{a^{3}}\,\mathrm{cov}(b,a)
+$$
+
+Implemented at `Utilities.py:455-465` (LS) and `Utilities.py:1479-1502` (SH).
+
+> **v3.8.0 fix**: Previously the code used `F = 1/inv_slope` (i.e. `F = 1/b`). This is dimensionally and geometrically wrong — for typical samples `b < 0` (X = 39/40 increases as Y = 36/40 decreases), so `1/b` is a small negative number, producing `log(1 + J·F) ≈ 0` and absurdly young ages (e.g. SYL31 Sylhet Trap basalt, 115.4 ± 3.9 Ma per NTU thesis R94224113, returned T = 0.903 Ma in v3.7.4).
+
+### 10.3 Isochron age — Int age
+
+$$
+T_{\text{Int}} = \frac{1}{\lambda}\ln(1 + J\cdot F)
+$$
+
+with the standard three-source error propagation (`Utilities.py:466, 1503`):
+
+$$
+\sigma_T^{\,2} = \frac{J^2\,\sigma_F^{\,2} + F^2\,\sigma_J^{\,2}}{\bigl[\lambda(1 + J\cdot F)\bigr]^{2}}
+$$
+
+(σ_λ omitted; see §10.x note 3.)
+
+### 10.4 Step age (per heating step)
+
+$$
+T_j = \frac{1}{\lambda}\ln(1 + J\cdot F_j)
+$$
+
+where `F_j = ⁴⁰Ar*_j / ³⁹Ar_K,j` is computed per-step in `calcAge` (§7).
+
+### 10.5 Weighted Mean Age (WMA) — inverse-variance form (v3.8 corrected)
+
+For N step ages `{T_i ± σ_i}`:
+
+$$
+\boxed{\;\mathrm{WMA} = \dfrac{\displaystyle\sum_i T_i/\sigma_i^{\,2}}{\displaystyle\sum_i 1/\sigma_i^{\,2}}\;}
+\qquad
+\sigma_{\mathrm{WMA}} = \dfrac{1}{\sqrt{\displaystyle\sum_i 1/\sigma_i^{\,2}}}
+$$
+
+This is the maximum-likelihood estimator for a Normal model with two variance components (Vermeesch 2018, IsoplotR Eq. 5) and the standard form assumed by Schaen et al. (2021) GSA Bull. p.470 MSWD definition.
+
+Implemented at `Utilities.py:468-477` (LS) and `Utilities.py:1514-1523` (SH).
+
+> **v3.8.0 fix**: The previous code wrote:
+> ```python
+> wma += (1/σ²·T) / (1/σ²)
+> ```
+> The numerator and denominator cancel inside the loop, so each iteration adds `T_i` and the final `wma = Σ T_i` is the **sum**, not the weighted mean. SYL31 with 40 spots reported WMA = 4481.9 (= 40 × ~112 Ma ≈ Σ T) instead of ~115 Ma. Output is internally inconsistent with the MSWD (which assumes WMA is the reference point).
+
+### 10.6 Mean Square Weighted Deviates (MSWD) — WMA reference (v3.8 corrected)
+
+For plateau / weighted-mean MSWD (Schaen et al. 2021 p.470):
+
+$$
+\boxed{\;\mathrm{MSWD} = \dfrac{1}{N-1}\sum_{i=1}^{N}\dfrac{(T_i - \mathrm{WMA})^2}{\sigma_i^{\,2}}\;}
+$$
+
+For isochron-regression MSWD (group fits at `Utilities.py:1029-1037`, `1372-1380`):
+
+$$
+\mathrm{MSWD}_{\text{iso}} = \dfrac{1}{N-2}\sum_{i=1}^{N}\dfrac{(y_i - \hat{y}_i)^2}{\sigma_{y,i}^{\,2}}
+$$
+
+with `ŷ_i = a + b·x_i` from the linear fit. The N−2 reflects two fitted parameters (slope, intercept); the plateau form uses N−1 (one fitted parameter, the WMA itself).
+
+> **v3.8.0 fix**: Previously the plateau-MSWD reference was the **arithmetic** mean `T_sum/N` instead of WMA. With a non-uniform `σ_i`, this gives a different — and inconsistent with the reported WMA — measure of dispersion. Schaen 2021 specifies WMA as the reference, matching the maximum-likelihood form.
+
+### 10.7 Total fusion age
 
 $$
 F_{\text{total}} = \frac{\sum_j {}^{40}\mathrm{Ar}_{r,j}}{\sum_j {}^{39}\mathrm{Ar}_{K,j}},\qquad
-T_{\text{total}} = \frac{\ln(1+J\cdot F_{\text{total}})}{\lambda}/10^{6}\ \text{(Ma)}
+T_{\text{total}} = \frac{\ln(1 + J\cdot F_{\text{total}})}{\lambda}
 $$
 
-σ for plateau weighted mean: standard inverse-variance (see §5 form, applied to per-step T).
+`Utilities.py:1816-1818`. Computed before any plateau/isochron filtering.
+
+### 10.8 Regression method — current status
+
+pyADR currently uses `scipy.optimize.curve_fit(linear, x, y)`, which is **ordinary least squares (OLS)** with no weights. This:
+
+- Ignores σ_y (no inverse-variance weighting of the fit)
+- Ignores σ_x (assumes all uncertainty is in y)
+- Ignores correlations between σ_x and σ_y (which are large for inverse isochrons because ⁴⁰Ar is the denominator of both axes)
+
+The standard for ⁴⁰Ar/³⁹Ar isochron fitting is **York regression** (York et al. 2004; Vermeesch 2018, IsoplotR), which accounts for σ_x, σ_y, and ρ(x,y). Replacing OLS with York is a planned v3.9+ task (see CHANGELOG.md "仍待處理" list).
+
+The MSWD formulas in §10.6 are unaffected by the OLS vs York choice as long as σ_y dominates and ρ(x,y) is small.
+
+### 10.x v3.7.x bug-history note (preserved for traceability)
+
+For context: the v3.7.x F, WMA, and MSWD formulas in `getDFStatistics_sh` / `getDFStatistics_ls` were all buggy in distinct ways:
+
+| Item | v3.7.x code | v3.8 fix | Reference |
+|---|---|---|---|
+| F (inverse isochron) | `F = 1/inv_slope` | `F = −b/a` | Vermeesch 2024 p.398 |
+| F (LS isochron) | `T = log(1 + J·iv)` using Y-intercept | `F = −b/a` | Vermeesch 2024 p.398 |
+| WMA | `(1/σ²·T)/(1/σ²)` inside loop → Σ T | `Σ(T/σ²)/Σ(1/σ²)` | Vermeesch 2018 Eq. 5 |
+| MSWD reference | arithmetic mean | WMA | Schaen 2021 p.470 |
+
+Validation: SYL31 LS (NTU thesis R94224113, Sylhet Trap basalt 115.4 ± 3.9 Ma).
 
 ---
 
@@ -573,31 +687,42 @@ $$
 
 1. **`calcAge` truncation — RESOLVED in v3.7.4**. Function was truncated mid-statement from initial v3.7 release (commit `afb2268`) through v3.7.3. v3.7.4 restored the full ~110-line implementation from the V3.4.1 archive. §7 above documents the v3.7.4 restored code, not a reconstruction.
 
-2. **`Ar_38_Air` in calcAge is mis-named** (`Utilities.py:2879`). The variable is computed as `Ar_38_m − Ar_38_K` and labelled `Ar_38_Air` in the AgeCalc page table, but it actually contains ³⁸Ar(air) **+** ³⁸Ar(Cl). The proper three-way split (air / K / Cl) is only done in `toDP:4648–4664`. Don't quote AgeCalc's "Ar_38_Air" as pure atmospheric ³⁸Ar in publications.
+2. **DiagramPlot F / WMA / MSWD bugs — RESOLVED in v3.8.0**. `getDFStatistics_sh` / `getDFStatistics_ls` had three distinct bugs: (a) inverse-isochron F used `F = 1/slope` instead of the correct York-convention `F = −b/a` (Vermeesch 2024); for LS the equivalent error was using the Y-intercept (trapped 36/40) directly as F. (b) WMA loop had `(1/σ²·T)/(1/σ²)` which cancels to Σ T_i instead of inverse-variance-weighted mean (Vermeesch 2018 Eq. 5). (c) MSWD reference point used arithmetic mean instead of WMA (Schaen 2021 p.470). All three corrected; see §10.x bug-history table. Validated against SYL31 LS (115.4 ± 3.9 Ma).
 
-3. **`T_std` in calcAge omits σ_λ** (`:2907`). McDougall & Harrison 1999 eq. 4.7 has three partials; pyADR drops the (∂T/∂λ)²σ_λ² term. Under-estimates σ_T by ≈ 0.5% relative — small but systematic. Add the term, or document the omission in any paper using pyADR-derived σ_T.
+3. **`Ar_38_Air` in calcAge is mis-named** (`Utilities.py:2879`). The variable is computed as `Ar_38_m − Ar_38_K` and labelled `Ar_38_Air` in the AgeCalc page table, but it actually contains ³⁸Ar(air) **+** ³⁸Ar(Cl). The proper three-way split (air / K / Cl) is only done in `toDP:4648–4664`. Don't quote AgeCalc's "Ar_38_Air" as pure atmospheric ³⁸Ar in publications.
 
-4. **λ source split: `constants[14]` vs `constants[16]`** — different parts of the program read different indices. Per-step T in `getDegasPlot:444` uses [14]; calcAge `:2904` and total-spectrum age `getStackPlot:1972` use [16]. If PS values differ, results are inconsistent. Audit ParameterSetting to confirm [14]==[16] in saved settings, or unify the code to one index.
+4. **`T_std` in calcAge omits σ_λ** (`:2907`). McDougall & Harrison 1999 eq. 4.7 has three partials; pyADR drops the (∂T/∂λ)²σ_λ² term. Under-estimates σ_T by ≈ 0.5% relative — small but systematic. Add the term, or document the omission in any paper using pyADR-derived σ_T.
 
-5. **J calc uses hardcoded λ, Age calc reads `constants[16]`** (`getJVolumeStatistics:2748–2749`). λ=5.531e-10, σ_λ=0.0135e-10 are written in source. If PS changes to Min et al. 2000 (5.463e-10), J is computed under Steiger but T is computed under Min → systematic offset. Refactor to read `constants[14]/[16]` and add a σ_λ entry to the constants array.
+5. **λ source split: `constants[14]` vs `constants[16]`** — different parts of the program read different indices. Per-step T in `getDegasPlot:444` uses [14]; calcAge `:2904` and total-spectrum age `getStackPlot:1972` use [16]. If PS values differ, results are inconsistent. Audit ParameterSetting to confirm [14]==[16] in saved settings, or unify the code to one index.
 
-6. **Atmospheric ⁴⁰/³⁶ hardcoded 298.56 in salt functions** (`calculateSlatCa/K`, `:2708, 2737–2738`). Rest of program reads `constants[12]`. The value 298.56 (Lee et al. 2006) is unlikely to change in practice, but **code style**: replace literal 298.56 with `constants[12]` and propagate σ via `constants[13]`, so PS becomes the single source of truth.
+6. **J calc uses hardcoded λ, Age calc reads `constants[16]`** (`getJVolumeStatistics:2748–2749`). λ=5.531e-10, σ_λ=0.0135e-10 are written in source. If PS changes to Min et al. 2000 (5.463e-10), J is computed under Steiger but T is computed under Min → systematic offset. Refactor to read `constants[14]/[16]` and add a σ_λ entry to the constants array.
 
-7. **Linear-sum vs quadrature σ propagation** — multiple sites (`getJVolumeStatistics`, `calcAge`, `calculateSlatCa/K`) use `F·Σ|σ_x/x|` instead of `√Σ(∂F/∂x · σ_x)²`. Conservative (over-estimates σ slightly when terms are independent) but inconsistent with McDougall & Harrison / ArArCalc / Mass Spec. Decide on one convention before submitting Datum tables to a journal.
+7. **Atmospheric ⁴⁰/³⁶ hardcoded 298.56 in salt functions** (`calculateSlatCa/K`, `:2708, 2737–2738`). Rest of program reads `constants[12]`. The value 298.56 (Lee et al. 2006) is unlikely to change in practice, but **code style**: replace literal 298.56 with `constants[12]` and propagate σ via `constants[13]`, so PS becomes the single source of truth.
 
-8. **§2 T0 outlier mask threshold** uses `|T_{0,j} − μ| > σ/2 + μ` (`getT0Statistics:2550`). The `+ μ` term is dimensionally suspect — standard form is `|x − μ| > kσ`. May be a copy-paste error; verify with advisor.
+8. **Linear-sum vs quadrature σ propagation** — multiple sites (`getJVolumeStatistics`, `calcAge`, `calculateSlatCa/K`) use `F·Σ|σ_x/x|` instead of `√Σ(∂F/∂x · σ_x)²`. Conservative (over-estimates σ slightly when terms are independent) but inconsistent with McDougall & Harrison / ArArCalc / Mass Spec. Decide on one convention before submitting Datum tables to a journal.
 
-9. **§5 J outlier mask uses ±1·σ_SE** (`getJStatistics:2151–2154`), which is too tight and will mask ~32% of normally-distributed points. Standard practice: 2σ or 3σ. Confirm intentionality.
+9. **§2 T0 outlier mask threshold** uses `|T_{0,j} − μ| > σ/2 + μ` (`getT0Statistics:2550`). The `+ μ` term is dimensionally suspect — standard form is `|x − μ| > kσ`. May be a copy-paste error; verify with advisor.
 
-10. **Salt σ on numerator subtraction** (`calculateSlatCa:2709`, `calculateSlatK:2738`) uses linear sum on `Ar36 − air/298.56`, not quadrature. Should be `√(σ_36² + (σ_air/298.56)²)`. Same concern for the K-salt 40-Ar-36·298.56 numerator.
+10. **§5 J outlier mask uses ±1·σ_SE** (`getJStatistics:2151–2154`), which is too tight and will mask ~32% of normally-distributed points. Standard practice: 2σ or 3σ. Confirm intentionality.
+
+11. **Salt σ on numerator subtraction** (`calculateSlatCa:2709`, `calculateSlatK:2738`) uses linear sum on `Ar36 − air/298.56`, not quadrature. Should be `√(σ_36² + (σ_air/298.56)²)`. Same concern for the K-salt 40-Ar-36·298.56 numerator.
 
 ---
 
 ## References
 
+**Primary ⁴⁰Ar/³⁹Ar data-reduction references:**
+
 - McDougall, I., Harrison, T.M. (1999). *Geochronology and Thermochronology by the ⁴⁰Ar/³⁹Ar Method*, 2nd ed. Oxford UP.
 - Koppers, A.A.P. (2002). ArArCALC — software for ⁴⁰Ar/³⁹Ar age calculations. *Computers & Geosciences* 28, 605–619. doi:10.1016/S0098-3004(01)00095-4
-- Min, K., Mundil, R., Renne, P.R., Ludwig, K.R. (2000). A test for systematic errors in ⁴⁰Ar/³⁹Ar geochronology through comparison with U/Pb analysis of a 1.1-Ga rhyolite. *Geochim. Cosmochim. Acta* 64, 73–98.
-- Steiger, R.H., Jäger, E. (1977). Subcommission on geochronology: convention on the use of decay constants in geo- and cosmochronology. *EPSL* 36, 359–362.
-- Lee, J.-Y. et al. (2006). A redetermination of the isotopic abundances of atmospheric Ar. *GCA* 70, 4507–4512.
+- Schaen, A.J. et al. (2021). Interpreting and reporting ⁴⁰Ar/³⁹Ar geochronologic data. *GSA Bulletin* 133(3/4), 461–487. doi:10.1130/B35560.1
 
+**Isochron regression & weighted-mean statistics (§10):**
+
+- Vermeesch, P. (2024). Errorchrons and anchored isochrons in IsoplotR. *Geochronology* 6, 397–407. doi:10.5194/gchron-6-397-2024
+- Vermeesch, P. (2018). IsoplotR: A free and open toolbox for geochronology. *Geoscience Frontiers* 9, 1479–1493. doi:10.1016/j.gsf.2018.04.001
+- Vermeesch, P. (2015). Revised error propagation of ⁴⁰Ar/³⁹Ar data, including covariances. *GCA* 171, 325–337. doi:10.1016/j.gca.2015.09.008
+- Li, Y., Vermeesch, P. (2021). Inverse isochron regression for Re–Os, K–Ca, and other chronometers. *Geochronology* 3, 415–420. doi:10.5194/gchron-3-415-2021
+- Powell, R., Green, E.C.R., Marillo Sialer, E., Woodhead, J. (2020). Robust Isochron Calculation. *Geochronology*. doi:10.5194/gchron-2020-4
+- York, D., Evensen, N.M., Lopez-Martinez, M., De Basabe Delgado, J. (2004). Unified equations for the slope, intercept, and standard errors of the best straight line. *Am. J. Phys.* 72(3), 367–375.
+- Kuiper, K.F. (2002). The interpretat

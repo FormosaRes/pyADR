@@ -144,3 +144,4 @@ class Ui_MainWindow(object):
         item = self.tableWidget.verticalHeaderItem(13)
         item.setText(_translate("MainWindow", "Int age"))
         item = self.tableWidget.verticalHeaderItem(14)
+        item.setText(_translate("MainWindow", "Int age std"))

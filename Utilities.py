@@ -765,7 +765,10 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
         
         # Calculate 36Ar(m) = sum of all 36Ar components
         Ar36_m = Ar36_a + Ar36_c + Ar36_ca + Ar36_cl
-        Ar36_m_std = np.sqrt(Ar36_a_std**2 + Ar36_c_std**2 + Ar36_ca_std**2 + Ar36_cl_std**2)
+        # v3.8.1 FIX: σ_36(a) and σ_36(c/ca/cl) are CORRELATED (see DFI block at L1142
+        # for full derivation). Recover raw σ: σ²_36m = σ²_36a − σ²_36ca − σ²_36cl − σ²_36c.
+        _var36m = Ar36_a_std**2 - Ar36_c_std**2 - Ar36_ca_std**2 - Ar36_cl_std**2
+        Ar36_m_std = float(np.sqrt(_var36m)) if _var36m > 0 else float(abs(Ar36_a_std))
         
         # ========== READ ALL 39Ar COMPONENTS ==========
         # 39Ar(k) - column 46, 47
@@ -786,7 +789,10 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
         
         # Calculate 39Ar(m) = sum of all 39Ar components
         Ar39_m = Ar39_k + Ar39_ca
-        Ar39_m_std = np.sqrt(Ar39_k_std**2 + Ar39_ca_std**2)
+        # v3.8.1 FIX: σ_39k and σ_39ca are CORRELATED (Ar39_k = Ar39_m_raw − Ar39_ca,
+        # so σ²_39k = σ²_39m_raw + σ²_39ca). Recover raw σ.
+        _var39m = Ar39_k_std**2 - Ar39_ca_std**2
+        Ar39_m_std = float(np.sqrt(_var39m)) if _var39m > 0 else float(abs(Ar39_k_std))
         
         # ✅ BUG FIX: Calculate 40Ar(m) = 40Ar(r) + 40Ar(a) + 40Ar(c) + 40Ar(k)
         # Columns: 50-51 (r), 52-53 (a), 54-55 (c), 56-57 (k)
@@ -1050,11 +1056,12 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
     if show_legend:
         ax_n.legend(loc='upper left', fontsize=8, framealpha=0.85)
 
+    # v3.8.1 FIX: atmospheric value marker = red X (was red circle)
     # Show atmospheric value marker — top layer, no clipping
     if show_atm:
-        ax_n.plot(0, atm_value, marker='o', markersize=9, color='red',
-                 linestyle='None', zorder=100, markeredgewidth=1.5,
-                 markerfacecolor='red', clip_on=False)
+        ax_n.plot(0, atm_value, marker='x', markersize=11, color='red',
+                 linestyle='None', zorder=100, markeredgewidth=2.5,
+                 clip_on=False)
 
     # FIX#1: Auto axis from data points only (ignores error ellipse extents)
     if xlim is None and len(x_all_pts) > 0:
@@ -1139,17 +1146,26 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
         
         # Calculate 36Ar(m)
         Ar36_m = Ar36_a + Ar36_c + Ar36_ca + Ar36_cl
-        Ar36_m_std = np.sqrt(Ar36_a_std**2 + Ar36_c_std**2 + Ar36_ca_std**2 + Ar36_cl_std**2)
-        
+        # v3.8.1 FIX: σ_36(a) and σ_36(c/ca/cl) are CORRELATED — Ar36_a is computed as
+        # Ar36_m_raw − Ar36_ca − Ar36_cl − Ar36_c, so σ²_36a = σ²_36m_raw + σ²_36ca + σ²_36cl + σ²_36c.
+        # Quadrature-summing all four components double-counts σ_36m_raw and inflates σ by 30–200%,
+        # which inflates σ_y on the inverse isochron and drives MSWD artificially low (e.g. 0.05).
+        # Recover the raw σ:  σ²_36m_raw = σ²_36a − σ²_36ca − σ²_36cl − σ²_36c.
+        _var36m = Ar36_a_std**2 - Ar36_c_std**2 - Ar36_ca_std**2 - Ar36_cl_std**2
+        Ar36_m_std = float(np.sqrt(_var36m)) if _var36m > 0 else float(abs(Ar36_a_std))
+
         # ========== READ ALL 39Ar COMPONENTS ==========
         Ar39_k = float(parts[46])
         Ar39_k_std = float(parts[47])
         Ar39_ca = float(parts[48])
         Ar39_ca_std = float(parts[49])
-        
+
         # Calculate 39Ar(m)
         Ar39_m = Ar39_k + Ar39_ca
-        Ar39_m_std = np.sqrt(Ar39_k_std**2 + Ar39_ca_std**2)
+        # v3.8.1 FIX: same correlated-σ correction as Ar36_m. Ar39_k = Ar39_m_raw − Ar39_ca,
+        # so σ²_39k = σ²_39m_raw + σ²_39ca. Subtract to recover raw σ.
+        _var39m = Ar39_k_std**2 - Ar39_ca_std**2
+        Ar39_m_std = float(np.sqrt(_var39m)) if _var39m > 0 else float(abs(Ar39_k_std))
         
         # ✅ BUG FIX: Calculate 40Ar(m)
         Ar40_r = float(parts[50])
@@ -1378,13 +1394,14 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
                         _resid_i = _gya - linear(_gxa, *_gopt_i)
                         _mswd_i = float(_np_chk.sum((_resid_i / _wi) ** 2) / (_N_gi - 2))
                 _mswd_str_i = f", MSWD={_mswd_i:.2f}" if _mswd_i == _mswd_i else ""
-                # Mark group X-intercept (y=0) with colored circle — top layer
+                # v3.8.1 FIX: group X-intercept marker = X (was circle)
+                # Mark group X-intercept (y=0) with colored X — top layer
                 _x_int_g = -_g_ic_inv / _inv_sl if _inv_sl != 0 else float('nan')
                 if np.isfinite(_x_int_g) and _x_int_g > 0:
-                    ax_iv.plot(_x_int_g, 0.0, marker='o', markersize=9,
+                    ax_iv.plot(_x_int_g, 0.0, marker='x', markersize=11,
                                color=_gc, linestyle='None',
                                zorder=100, clip_on=False,
-                               markeredgecolor='black', markeredgewidth=0.8)
+                               markeredgewidth=2.5)
                 # Stagger each group annotation vertically to avoid overlap
                 _ann_y = 0.98 - (_gn - 1) * 0.18
                 ax_iv.annotate(
@@ -1400,12 +1417,13 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
     if show_legend:
         ax_iv.legend(loc='upper left', fontsize=8, framealpha=0.85)
 
+    # v3.8.1 FIX: atmospheric value marker = red X (was red circle)
     # Show atmospheric value marker (inverse) — top layer, no clipping
     if show_atm:
         inverse_atm = 1.0 / atm_value
-        ax_iv.plot(0, inverse_atm, marker='o', markersize=9, color='red',
-                  linestyle='None', zorder=100, markeredgewidth=1.5,
-                  markerfacecolor='red', clip_on=False)
+        ax_iv.plot(0, inverse_atm, marker='x', markersize=11, color='red',
+                  linestyle='None', zorder=100, markeredgewidth=2.5,
+                  clip_on=False)
 
     # FIX#1: Auto axis from data points only
     if xlim is None and len(x_inv_all_pts) > 0:
@@ -1705,7 +1723,10 @@ def getSHStatistics(file, mask, constants, xlim=None, ylim=None, legend_name=Non
             gc = group_colors[grp-1] if grp-1 < len(group_colors) else 'gray'
             x0 = cum_x[min(gi)]
             x1 = cum_x[max(gi)] + stepw[max(gi)]
-            ar39_pct = x1 - x0
+            # v3.8.1 FIX: ar39_pct must sum ONLY selected steps' widths.
+            # Previously `x1 - x0` measured the min→max range, which incorrectly
+            # included any unselected intervening steps' ³⁹Ar.
+            ar39_pct = float(sum(stepw[i] for i in gi))
             w.fill_between([x0, x1], [wma-wma_err]*2, [wma+wma_err]*2,
                            color=gc, alpha=0.25, zorder=3)
             w.plot([x0, x1], [wma, wma], color=gc, linewidth=1.5, zorder=4)
@@ -1758,7 +1779,9 @@ def getSHStatistics(file, mask, constants, xlim=None, ylim=None, legend_name=Non
             _wma = np.sum(_g_ages * _wts) / np.sum(_wts)
             _wma_err = 1.0 / np.sqrt(np.sum(_wts))
             _mswd = (np.sum((_g_ages - _wma)**2 / _g_errs**2) / max(len(_g_ages)-1, 1))
-            _cum_ar = _xe - _xs
+            # v3.8.1 FIX: cumulative ³⁹Ar must sum ONLY selected steps' widths.
+            # Previously `_xe - _xs` included unselected intervening steps.
+            _cum_ar = float(sum(stepw[_si] for _si in _gsteps_sorted))
             _lbl = (f"G{_gn}: {_wma:.2f}±{_wma_err:.2f} Ma\n"
                     f"MSWD={_mswd:.2f}  ³⁹Ar={_cum_ar:.1f}%")
             _dy_txt = (_ylim_now[1] - _ylim_now[0]) * 0.04

@@ -6,6 +6,33 @@
 
 ---
 
+## V3.8.1（2026-05-11）— DiagramPlot UI + σ_36/σ_39 correlated-error fix
+
+### UI 改動
+
+1. **Atmospheric marker** — DFN/DFI 大氣值標記從紅色實心圓 → 紅色 X（更不會被誤認為 data point）
+2. **Group X-intercept marker** — DFI group 回歸線與 X 軸交點從彩色圓圈 → 彩色 X
+3. **Int age std 標籤補上** — `UI/DiagramPlots_SH.py` 第 14 列原本被截斷沒有 setText，導致右下表 Int age 下方那格空白；現補上「Int age std」
+
+### Bug 修正
+
+4. **DFN/DFI 點 data 加入 group 失效** — 初次開 DiagramPlot 頁時 `getDFStatistics_sh` 沒傳 `return_points=True`，`iso_pts_DFN/DFI` 為空，click handler 立刻 return。改為初次呼叫也傳 `return_points/return_limits=True`，並同時 wire `_click_callback` 與 `current_xlim/ylim`，使用者不用先按 Apply 即可點選
+
+5. **Age spectrum group ³⁹Ar% 累積算錯** — 原寫法 `ar39_pct = x1 − x0`（min→max 範圍），若群組中間夾雜未選步驟則把中間步驟的 ³⁹Ar 也算進去（screenshot 顯示 N=4 的群組報出 94.1% ³⁹Ar）。改為 `sum(stepw[i] for i in gi)`，只加總實際被選的 step
+
+6. **MSWD 過低 (G1=0.05 / G2=0.10)** — σ_36(m) 與 σ_39(m) 用「四個 component 的 quadrature 和」計算，但 Ar36_a 與 Ar39_k 本身就是用 raw 測量值減掉 Ca/Cl/c 干擾算出來的（σ 已含 raw σ），quadrature 等於把 σ_raw 雙重計算，導致 σ_y_inv 膨脹 30–200%，使 inverse-isochron MSWD 系統性偏低。套用與 v3.7.4-hotfix σ_40m 同款修正：
+   - `σ²_36m = σ²_36a − σ²_36ca − σ²_36cl − σ²_36c`（兩處：normal isochron L767、inverse isochron L1142）
+   - `σ²_39m = σ²_39k − σ²_39ca`（兩處：normal isochron L788、inverse isochron L1158）
+
+### 檔案改動
+
+- `Utilities.py` — σ_36m / σ_39m 雙重計算修正 ×4 處；marker `'o'` → `'x'` ×3 處；group ³⁹Ar% 累積修正 ×2 處
+- `NTNU_DataReduction.py` — toDF_SH 初次呼叫加 `return_points/return_limits=True`、wire click callback、push xlim/ylim
+- `UI/DiagramPlots_SH.py` — 補 row 14 「Int age std」標籤（檔尾被 iCloud 截斷）
+- `.work/.app_info.txt` — `3.8.0` → `3.8.1`
+
+---
+
 ## V3.8.0（2026-05-11）— DiagramPlot 數學式 critical fixes
 
 ### 修正 6 個 P1 公式 bug（皆有 primary literature 支持）
