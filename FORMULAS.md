@@ -1,6 +1,6 @@
 # pyADR Formulas — ⁴⁰Ar/³⁹Ar Reduction Math Reference
 
-**Version**: v3.7.2 (2026-05) · **Scope**: T0 fitting → Mass Ratio → Air Ratio → J → Age → Datum Publication
+**Version**: v3.7.4 (2026-05) · **Scope**: T0 fitting → Mass Ratio → Air Ratio → J → Age → Datum Publication
 
 This document is a one-stop reference for every numeric formula pyADR evaluates, written as math (LaTeX) plus the corresponding `.py` line. Error propagation is derived from first-order partials of each expression as **actually coded** — pyADR mixes proper quadrature (`sqrt(Σ(∂F/∂x · σ_x)²)`) with linear-sum approximations (`F·Σ|σ_x/x|`); both are documented faithfully. Where the code's choice diverges from the McDougall & Harrison (1999) / Koppers (2002) convention, a **Note** flags it.
 
@@ -230,7 +230,7 @@ $$
 $$
 
 $$
-\boxed{\;\text{Ar}_{40,r} = \text{Ar}_{40,m} - \text{Ar}_{40,\text{air}} - \text{Ar}_{40,K}\;}
+\boxed{\text{Ar}_{40,r} = \text{Ar}_{40,m} - \text{Ar}_{40,\text{air}} - \text{Ar}_{40,K}}
 $$
 
 **Standard ratios (`:2789–2796`):**
@@ -266,9 +266,7 @@ J \;=\; \frac{e^{\lambda t}-1}{\text{Ar}_{40,r}/\text{Ar}_{39,K}}
 $$
 
 $$
-\sigma_J^{2} = \underbrace{\left(\frac{t\,e^{\lambda t}}{F_{r/k}}\right)^{2}\sigma_\lambda^{2}}_{v_1}
-+ \underbrace{\left(\frac{\lambda\,e^{\lambda t}}{F_{r/k}}\right)^{2}\sigma_t^{2}}_{v_2}
-+ \underbrace{\left(\frac{e^{\lambda t}-1}{F_{r/k}^{2}}\right)^{2}\sigma_F^{2}}_{v_3}
+\sigma_J^{2} = \underbrace{\left(\frac{t\,e^{\lambda t}}{F_{r/k}}\right)^{2}\sigma_\lambda^{2}}_{v_1} {} + \underbrace{\left(\frac{\lambda\,e^{\lambda t}}{F_{r/k}}\right)^{2}\sigma_t^{2}}_{v_2} {} + \underbrace{\left(\frac{e^{\lambda t}-1}{F_{r/k}^{2}}\right)^{2}\sigma_F^{2}}_{v_3}
 $$
 
 $$
@@ -290,64 +288,139 @@ The factor 0.52 is the lab calibration (production cross-section for ³⁷Ar fro
 
 ## 7. Age Calculation — `calcAge`
 
-`Utilities.py:2811–2846`  ⚠️ **TRUNCATED in current HEAD** (see warning at end of doc)
+`Utilities.py:2811–2920` — restored from V3.4.1 archive in v3.7.4 (was truncated mid-function in v3.7.0–v3.7.3 release HEAD).
 
-Reconstructed from the symmetric structure of `getJVolumeStatistics` and the 31 result rows defined in `UI/AgeCalculation.py:121–182`. The result vector `AgeCalculation_result` packs each row as `(value, sigma)` with `[46]/[47]` = T (yr), σ_T (yr).
+Returns 59-element list. Key indices: `[18,19]` Ar_39_K ± σ; `[24,25]` Ar_40_r ± σ; `[36,37]` F ± σ; `[46,47]` T ± σ (years); `[48,49]` J_int, T_int.
 
-**Component partition** (identical to §6 with σ propagated):
+**Constants used (extends §6 table):**
 
-$$
-\text{Ar}_{37,\text{Ca}} = \text{Ar}_{37,m}
-$$
+| idx | symbol | description |
+|-----|--------|-------------|
+| 0,1 | (39/37)_Ca, σ | Ca-derived 39 production |
+| 2,3 | (36/37)_Ca, σ | |
+| 4,5 | (40/39)_K, σ | K-derived 40 production |
+| 6,7 | (38/39)_K, σ | K-derived 38 production |
+| 12,13 | (40/36)_air, σ | atmospheric, default 298.56 |
+| 14 | λ_total (/yr) | used in degas plot per-step `T = ln(1+JF)/λ` |
+| 16 | λ_total (/yr) | used in **calcAge** AND `getStackPlot` total age |
 
-$$
-\text{Ar}_{36,\text{Ca}} = \text{Ar}_{37,\text{Ca}}\cdot c_2, \qquad
-\sigma = \text{Ar}_{36,\text{Ca}}\!\cdot\!\left(\frac{\sigma_{37,\text{Ca}}}{\text{Ar}_{37,\text{Ca}}}+\frac{c_3}{c_2}\right)
-$$
+> **⚠️ Code inconsistency**: per-step T in `getDegasPlot:444` uses `constants[14]`, but `calcAge:2904` and `getStackPlot:1972` use `constants[16]`. If PS sets [14] ≠ [16] (e.g. Steiger 5.531e-10 vs Min 5.463e-10), per-step ages and total age use **different λ** — check PS values match.
 
-$$
-\text{Ar}_{36,\text{air}} = \text{Ar}_{36,m} - \text{Ar}_{36,\text{Ca}}, \qquad
-\sigma = \sqrt{\sigma_{36,m}^{2}+\sigma_{36,\text{Ca}}^{2}}
-$$
-
-(same pattern for ³⁹_K, ⁴⁰_air, ⁴⁰_K, ⁴⁰_r as §6.)
-
-**F = ⁴⁰Ar*/³⁹Arₖ:**
+**Step 1 — Ar component partition (`:2858–2890`):**
 
 $$
-F = \frac{\text{Ar}_{40,r}}{\text{Ar}_{39,K}}, \qquad
-\sigma_F = F\sqrt{\left(\frac{\sigma_{40,r}}{\text{Ar}_{40,r}}\right)^{2}+\left(\frac{\sigma_{39,K}}{\text{Ar}_{39,K}}\right)^{2}}
+\text{Ar}_{37,\text{Ca}} = \text{Ar}_{37,m},\qquad \sigma_{37,\text{Ca}} = \sigma_{37,m}
 $$
 
-**Age equation (`age equation`, line referenced at `:444, :970, :1428, :1443, :1972` in plotting helpers):**
-
 $$
-\boxed{\;T \;=\; \frac{1}{\lambda_{\text{total}}}\,\ln\!\bigl(1 + J\cdot F\bigr)\;}
-$$
-
-**Age uncertainty (full propagation, McDougall & Harrison 1999 eq. 4.7):**
-
-$$
-\sigma_T^{2} = \left(\frac{\partial T}{\partial J}\right)^{2}\sigma_J^{2}
-+ \left(\frac{\partial T}{\partial F}\right)^{2}\sigma_F^{2}
-+ \left(\frac{\partial T}{\partial \lambda}\right)^{2}\sigma_\lambda^{2}
+\text{Ar}_{36,\text{Ca}} = \text{Ar}_{37,\text{Ca}}\cdot c_2,\qquad
+\sigma_{36,\text{Ca}} = \text{Ar}_{36,\text{Ca}}\!\cdot\!\left(\frac{\sigma_{37,\text{Ca}}}{\text{Ar}_{37,\text{Ca}}}+\frac{c_3}{c_2}\right)\quad\text{(linear sum)}
 $$
 
-with partials
-
 $$
-\frac{\partial T}{\partial J} = \frac{F}{\lambda(1+JF)}, \qquad
-\frac{\partial T}{\partial F} = \frac{J}{\lambda(1+JF)}, \qquad
-\frac{\partial T}{\partial \lambda} = -\frac{T}{\lambda}
+\text{Ar}_{36,\text{air}} = \text{Ar}_{36,m} - \text{Ar}_{36,\text{Ca}},\qquad
+\sigma_{36,\text{air}} = \sqrt{\sigma_{36,m}^{2}+\sigma_{36,\text{Ca}}^{2}}\quad\text{(quadrature)}
 $$
 
-**Internal age uncertainty** (J-internal only, used for inter-aliquot comparison):
+$$
+\text{Ar}_{39,\text{Ca}} = \text{Ar}_{37,\text{Ca}}\cdot c_0,\qquad
+\sigma_{39,\text{Ca}} = \text{Ar}_{39,\text{Ca}}\!\cdot\!\left(\frac{\sigma_{37,\text{Ca}}}{\text{Ar}_{37,\text{Ca}}}+\frac{c_1}{c_0}\right)
+$$
 
 $$
-\sigma_T^{(\text{int})} = \frac{F}{\lambda(1+JF)}\,\sigma_J^{(\text{int})}
+\text{Ar}_{39,K} = \text{Ar}_{39,m} - \text{Ar}_{39,\text{Ca}},\qquad
+\sigma_{39,K} = \sqrt{\sigma_{39,m}^{2}+\sigma_{39,\text{Ca}}^{2}}
 $$
 
-i.e. drop the σ_λ and the J-from-standard component (item v₁+v₂ in §6).
+**³⁸Ar partition (`:2876–2880`):**
+
+$$
+\text{Ar}_{38,K} = \text{Ar}_{39,K}\cdot c_6,\qquad
+\sigma_{38,K} = \text{Ar}_{38,K}\!\cdot\!\left(\frac{\sigma_{39,K}}{\text{Ar}_{39,K}}+\frac{c_7}{c_6}\right)
+$$
+
+$$
+\text{Ar}_{38,\text{Air}}^{\,(\text{calcAge})} = \text{Ar}_{38,m} - \text{Ar}_{38,K},\qquad
+\sigma = \sqrt{\sigma_{38,m}^{2}+\sigma_{38,K}^{2}}
+$$
+
+> **⚠️ Misleading variable name**: the field labelled `Ar_38_Air` in the AgeCalc table actually contains ³⁸Ar(air) **+** ³⁸Ar(Cl). The proper split (³⁸Ar_air = ³⁶Ar_air · (³⁸/³⁶)_a, ³⁸Ar_Cl = ³⁸m − ³⁸_air − ³⁸_K) is only done at the Datum Publication stage in `toDP:4648–4664`. Don't quote the AgeCalc page's "Ar_38_Air" as pure atmospheric ³⁸Ar.
+
+**⁴⁰Ar partition (`:2884–2891`):**
+
+$$
+\text{Ar}_{40,\text{air}} = \text{Ar}_{36,\text{air}}\cdot c_{12},\qquad
+\sigma_{40,\text{air}} = \text{Ar}_{40,\text{air}}\!\cdot\!\left(\frac{\sigma_{36,\text{air}}}{\text{Ar}_{36,\text{air}}}+\frac{c_{13}}{c_{12}}\right)
+$$
+
+$$
+\text{Ar}_{40,K} = \text{Ar}_{39,K}\cdot c_4,\qquad
+\sigma_{40,K} = \text{Ar}_{40,K}\!\cdot\!\left(\frac{\sigma_{39,K}}{\text{Ar}_{39,K}}+\frac{c_5}{c_4}\right)
+$$
+
+$$
+\boxed{\text{Ar}_{40,r} = \text{Ar}_{40,m} - \text{Ar}_{40,\text{air}} - \text{Ar}_{40,K}}, \qquad \sigma_{40,r} = \sqrt{\sigma_{40,m}^{2}+\sigma_{40,\text{air}}^{2}+\sigma_{40,K}^{2}}
+$$
+
+**Step 2 — F = ⁴⁰Ar*/³⁹Arₖ (`:2904`):**
+
+$$
+F = \frac{\text{Ar}_{40,r}}{\text{Ar}_{39,K}}
+$$
+
+**F uncertainty** — code uses the explicit-partial form (NOT the simple ratio quadrature on F):
+
+$$
+\sigma_F = \sqrt{\sigma_G^{2} + (C_1\,\sigma_B)^{2} + \bigl[(C_4 G - C_1 C_4 B + C_1 C_2)\,\sigma_D\bigr]^{2}}
+$$
+
+where, using the calcAge naming `(C₁,C₂,C₃,C₄) = (c₁₂, c₂, c₄, c₀)`:
+
+$$
+G = \frac{m_{40}}{m_{39}},\quad B = \frac{m_{36}}{m_{39}},\quad D = \frac{m_{37}}{m_{39}}
+$$
+
+with linear-sum σ on each (e.g. `σ_G = G·(σ_{40m}/m_{40} + σ_{39m}/m_{39})`). Same form as §6's σ_F. Note: code defines `C3=c₄` but **C3 is not used** in the σ_F expression above (only C1, C2, C4 appear).
+
+**Step 3 — Age equation (`:2906`):**
+
+$$
+\boxed{T = \frac{\ln(1+JF)}{\lambda}}, \qquad \lambda = c_{16}\ (\text{/yr})
+$$
+
+**T uncertainty as coded (`:2907`):**
+
+$$
+\sigma_T^{(\text{code})} = \frac{\sqrt{(F\,\sigma_J)^{2}+(J\,\sigma_F)^{2}}}{\lambda(1+JF)}
+$$
+
+i.e. partials ∂T/∂J = F/[λ(1+JF)], ∂T/∂F = J/[λ(1+JF)] in quadrature.
+
+**T uncertainty per McDougall & Harrison 1999 eq. 4.7 (full):**
+
+$$
+\sigma_T^{2} = \left(\frac{F}{\lambda(1+JF)}\right)^{2}\sigma_J^{2} {} + \left(\frac{J}{\lambda(1+JF)}\right)^{2}\sigma_F^{2} {} + \left(\frac{T}{\lambda}\right)^{2}\sigma_\lambda^{2}
+$$
+
+> **⚠️ Code drops the σ_λ term**: pyADR's `T_std` formula at `:2907` omits the third partial `(∂T/∂λ)²σ_λ²`. For Steiger & Jäger λ with σ_λ ≈ 0.24% relative, this under-estimates σ_T by ≈ 0.5% relative. For a 50 Ma age with σ_T ≈ 0.5 Ma, the missing contribution is ≈ 0.12 Ma — small but systematic. Flag for advisor discussion before publication.
+
+**Internal age uncertainty (`:2908`):**
+
+$$
+\sigma_T^{(\text{int})} = \frac{\sqrt{(F\,\sigma_J^{(\text{int})})^{2}+(J\,\sigma_F)^{2}}}{\lambda(1+JF)}
+$$
+
+Same form as σ_T but with σ_J replaced by σ_J^(int) (the v₃-only J uncertainty from §6). σ_λ also dropped here.
+
+**Auxiliary ratios returned (`:2895–2900`):**
+
+$$
+\frac{\text{Ar}_{39,K}}{\text{Ar}_{40,r}},\quad
+\frac{\text{Ar}_{36,\text{air}}}{\text{Ar}_{40,r}},\quad
+\frac{\text{Ar}_{39,K}}{\text{Ar}_{36,\text{air}}}
+$$
+
+each with linear-sum σ. Used by inverse-isochron / atmospheric-correction plots.
 
 ---
 
@@ -418,12 +491,14 @@ $$
 $$
 
 $$
-\boxed{\;\text{Ar}_{38,Cl} = \text{Ar}_{38,m} - \text{Ar}_{38,\text{air}} - \text{Ar}_{38,K}\;}
+\boxed{\text{Ar}_{38,Cl} = \text{Ar}_{38,m} - \text{Ar}_{38,\text{air}} - \text{Ar}_{38,K}}
 $$
 
 $$
-\sigma_{38,Cl} = \sqrt{\sigma_{38,m}^{2}+\sigma_{38,\text{air}}^{2}+\sigma_{38,K}^{2}}\quad\text{(quadrature, `:4664`)}
+\sigma_{38,Cl} = \sqrt{\sigma_{38,m}^{2}+\sigma_{38,\text{air}}^{2}+\sigma_{38,K}^{2}}
 $$
+
+(quadrature, `Utilities → toDP:4664`)
 
 **³⁶Ar(Cl) from production ratio (`:4744–4748`):**
 
@@ -494,18 +569,27 @@ $$
 
 ---
 
-## ⚠️ Code-state warnings (must address before publishing this doc)
+## ⚠️ Code-state warnings (issues identified during this audit)
 
-1. **`calcAge` in `Utilities.py:2811` is truncated.** Function ends mid-statement at line 2846 (`Ar_39_Ca = Ar_37_Ca * constants[0] #3` with no return) and has been so since commit `afb2268` (initial v3.7 release). Either:
-   - the AgeCalculation page in pyADR has never run successfully under HEAD, or
-   - calls bypass it via `getJVolumeStatistics` + per-step recomputation in `toDP`.
-   §7 above is the **intended** math reconstructed from the UI row labels and the symmetric structure of `getJVolumeStatistics`. Fix `calcAge` to actually compute and return the 31-row vector before relying on this section in production.
+1. **`calcAge` truncation — RESOLVED in v3.7.4**. Function was truncated mid-statement from initial v3.7 release (commit `afb2268`) through v3.7.3. v3.7.4 restored the full ~110-line implementation from the V3.4.1 archive. §7 above documents the v3.7.4 restored code, not a reconstruction.
 
-2. Several σ formulas use **linear sum** (`F·Σ|σ_x/x|`) instead of **quadrature**. This is not wrong — it's a conservative bound — but it differs from McDougall & Harrison 1999 / ArArCalc / Mass Spec. Lines flagged in §0 Note. Decide on one convention before submitting Datum tables to a journal.
+2. **`Ar_38_Air` in calcAge is mis-named** (`Utilities.py:2879`). The variable is computed as `Ar_38_m − Ar_38_K` and labelled `Ar_38_Air` in the AgeCalc page table, but it actually contains ³⁸Ar(air) **+** ³⁸Ar(Cl). The proper three-way split (air / K / Cl) is only done in `toDP:4648–4664`. Don't quote AgeCalc's "Ar_38_Air" as pure atmospheric ³⁸Ar in publications.
 
-3. Atmospheric ⁴⁰/³⁶ is **hardcoded 298.56** in `calculateSlatCa/K` (`:2708, 2737–2738`). The rest of the program reads `constants[12]` from Parameter Setting. If you change air ratio in PS, you must also edit those two lines or your salt-derived interference factors will not match the rest of the calculation chain.
+3. **`T_std` in calcAge omits σ_λ** (`:2907`). McDougall & Harrison 1999 eq. 4.7 has three partials; pyADR drops the (∂T/∂λ)²σ_λ² term. Under-estimates σ_T by ≈ 0.5% relative — small but systematic. Add the term, or document the omission in any paper using pyADR-derived σ_T.
 
-4. Decay constants `λ=5.531e-10`, `σ_λ=0.0135e-10` in `getJVolumeStatistics:2748–2749` are **also hardcoded** (Steiger & Jäger 1977). To switch to Min et al. 2000 (`λ=5.463e-10`, `σ_λ=0.0107e-10`) edit those lines AND the corresponding entries in `constants[14]/[16]`.
+4. **λ source split: `constants[14]` vs `constants[16]`** — different parts of the program read different indices. Per-step T in `getDegasPlot:444` uses [14]; calcAge `:2904` and total-spectrum age `getStackPlot:1972` use [16]. If PS values differ, results are inconsistent. Audit ParameterSetting to confirm [14]==[16] in saved settings, or unify the code to one index.
+
+5. **J calc uses hardcoded λ, Age calc reads `constants[16]`** (`getJVolumeStatistics:2748–2749`). λ=5.531e-10, σ_λ=0.0135e-10 are written in source. If PS changes to Min et al. 2000 (5.463e-10), J is computed under Steiger but T is computed under Min → systematic offset. Refactor to read `constants[14]/[16]` and add a σ_λ entry to the constants array.
+
+6. **Atmospheric ⁴⁰/³⁶ hardcoded 298.56 in salt functions** (`calculateSlatCa/K`, `:2708, 2737–2738`). Rest of program reads `constants[12]`. The value 298.56 (Lee et al. 2006) is unlikely to change in practice, but **code style**: replace literal 298.56 with `constants[12]` and propagate σ via `constants[13]`, so PS becomes the single source of truth.
+
+7. **Linear-sum vs quadrature σ propagation** — multiple sites (`getJVolumeStatistics`, `calcAge`, `calculateSlatCa/K`) use `F·Σ|σ_x/x|` instead of `√Σ(∂F/∂x · σ_x)²`. Conservative (over-estimates σ slightly when terms are independent) but inconsistent with McDougall & Harrison / ArArCalc / Mass Spec. Decide on one convention before submitting Datum tables to a journal.
+
+8. **§2 T0 outlier mask threshold** uses `|T_{0,j} − μ| > σ/2 + μ` (`getT0Statistics:2550`). The `+ μ` term is dimensionally suspect — standard form is `|x − μ| > kσ`. May be a copy-paste error; verify with advisor.
+
+9. **§5 J outlier mask uses ±1·σ_SE** (`getJStatistics:2151–2154`), which is too tight and will mask ~32% of normally-distributed points. Standard practice: 2σ or 3σ. Confirm intentionality.
+
+10. **Salt σ on numerator subtraction** (`calculateSlatCa:2709`, `calculateSlatK:2738`) uses linear sum on `Ar36 − air/298.56`, not quadrature. Should be `√(σ_36² + (σ_air/298.56)²)`. Same concern for the K-salt 40-Ar-36·298.56 numerator.
 
 ---
 
