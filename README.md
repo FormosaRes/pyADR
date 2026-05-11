@@ -1,4 +1,4 @@
-# pyADR — NTNU modified fork (v3.7.4)
+# pyADR — NTNU modified fork (v3.8.1)
 
 40Ar/39Ar data reduction tool with GUI. Modified fork of [pyADR](https://github.com/AndrewLiu0725/pyADR) (original by **An-Jun (Andrew) Liu**), now maintained by **PANG Chi-Hsiu (NTNU)**.
 
@@ -124,6 +124,26 @@ python NTNU_DataReduction.py
 ---
 
 ## Changelog 摘要
+
+### v3.8.1 (2026-05-11)
+
+**DiagramPlot UI 修正 + σ_36/σ_39 雙重計算 hotfix**。
+
+UI：DFN/DFI 大氣值與 group X-intercept marker 從圓圈改為 X；補上 `UI/DiagramPlots_SH.py` 被截斷的「Int age std」row label。
+
+Bug：(a) DFN/DFI 不能點 data 加入 group — 初次顯示時 `getDFStatistics_sh` 沒傳 `return_points=True`，`iso_pts` 為空。(b) Age spectrum group ³⁹Ar% 累積算錯（`x1−x0` 是 min→max span，含未選步驟），改為 `sum(stepw[i] for i in gi)`。
+
+σ：`σ_36(m)` 與 `σ_39(m)` 原本用四個 component quadrature 加總，但 `Ar36_a` / `Ar39_k` 本身包含 raw σ + corrections σ，等於把 corrections 算兩遍。套用與 v3.7.4-hotfix σ_40m 同款的反向減法 `σ²_36m = σ²_36a − σ²_36ca − σ²_36cl − σ²_36c`、`σ²_39m = σ²_39k − σ²_39ca`，並讓 `getDFStatistics_sh` **永遠從 raw component 重算 σ**（避免讀到 toDP / normalize_csv_to_v37 寫進舊 CSV 的 buggy pre-calc σ）。對雲母/長石樣品影響 < 5%，對玄武岩 groundmass / 輝石較大。IsoplotR 跨驗證確認 MSWD < 1 對 mature 樣品是正常統計現象，不是 bug。
+
+### v3.8.0 (2026-05-11)
+
+**DiagramPlot 數學式 critical fixes** — 修正 6 個 P1 公式 bug，全部有 primary literature 支持。
+
+`getDFStatistics_sh` (SH step heating)：(1) Inverse isochron F 公式 `F = 1/inv_slope` → `F = −b/a`，符合 York convention（Vermeesch 2024 Geochronology 6:398），並加入 slope-intercept covariance；(2) WMA loop 內 `1/σ²` 互消的 bug → `Σ(T/σ²)/Σ(1/σ²)`（Vermeesch 2018 IsoplotR Eq. 5）；(3) MSWD 參考點從算術平均 → WMA（Schaen et al. 2021 GSA Bull. p.470）。
+
+`getDFStatistics_ls` (LS / total fusion)：原用 Y-intercept (= trapped 36/40) 當 F → 物理錯誤，改用 `F = −slope/intercept`；WMA、MSWD 同 SH 同樣修正。
+
+影響：所有 v3.7.x 跑出來的 Int age（SH 系統性偏低；LS 完全錯）、WMA（等同 Σ T_i）、MSWD（參考點錯）。建議所有過去樣品重算。SYL31 LS 驗證資料集（Sylhet Trap 玄武岩 115.4 ± 3.9 Ma，NTU 碩論 R94224113）。
 
 ### v3.7.4 (2026-05-11)
 
