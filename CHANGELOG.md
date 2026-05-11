@@ -1,8 +1,76 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0
 最後整理日期：2026-05-11
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.0（2026-05-11）— DiagramPlot 數學式 critical fixes
+
+### 修正 6 個 P1 公式 bug（皆有 primary literature 支持）
+
+**`getDFStatistics_sh`（SH 樣品 step heating，Utilities.py L1479-L1530）：**
+
+1. **Inverse isochron F 公式** — `F = 1/inv_slope` → `F = -inv_slope/iv`
+   - Refs: Vermeesch (2024) Geochronology 6:398；Vermeesch (2018) Geosci Frontiers p.8
+   - 原公式違反 York convention（Y = a + bX → F = −b/a）
+   - 加入 slope-intercept covariance 進入 F_std 誤差傳播
+2. **WMA 公式** — `wma += (1/σ²·T)/(1/σ²)` → `wma = Σ(T/σ²)/Σ(1/σ²)`
+   - Refs: Vermeesch (2018) IsoplotR Eq.5；Schaen et al. (2021) GSA Bull. p.470
+   - 原公式 loop 內 1/σ² 互消 → 退化為 Σ T_i（純加總）
+3. **MSWD 參考點** — 從 arithmetic mean 改為 WMA
+   - Ref: Schaen et al. (2021) GSA Bull. p.470
+
+**`getDFStatistics_ls`（LS 樣品 / total fusion，Utilities.py L433-L490）：**
+
+4. **Inverse isochron F 公式** — 原使用 `iv = linear(0, *popt)`（Y-intercept = trapped 36/40）當 F 用 → 物理錯誤
+   - 改用 `F = -slope/intercept`（Vermeesch 2024 公式）
+   - `iv`/`iv_std` 變數保留為 Y-intercept 數值（return 介面不變）
+5. **WMA 公式** — 同 #2，同樣修正
+6. **MSWD 參考點** — 同 #3，同樣修正
+
+### 影響範圍
+
+⚠️ 此 release **影響每一份過去用 pyADR 跑出來的 Int age 與 WMA**：
+- SH 樣品的 Int age（過去 F 用 1/slope，age 系統性偏低）
+- LS 樣品的 Int age（過去 F 用 trapped 36/40，age 完全錯）
+- SH/LS 所有 WMA（過去等同 Σ T_i 而非加權平均）
+- SH/LS 所有 MSWD（過去用算術平均當參考點）
+
+**建議**：
+1. 用 SYL31 LS 資料集（`notes/LS_test_2026-05-11/SYL31_LS_88col.csv`）驗證新版
+   - 論文值：115.4 ± 3.9 Ma（Sylhet Trap 玄武岩，NTU 碩論 R94224113, 2007）
+   - 預期 v3.8 Date ≈ 115 Ma、WMA ≈ 115 Ma
+2. 過去樣品需重算 isochron age + plateau WMA
+3. 已投稿/已發表結果如使用 Int age 或 WMA → 評估是否需要 erratum
+
+### 文獻引用
+
+完整推導、quote 與 Convention 一致性表見 `pyADR_全module數學式審查_v3.docx` 附錄 A（在 iCloud 開發資料夾）。
+
+主要 refs：
+- Vermeesch, P. (2024). Errorchrons and anchored isochrons in IsoplotR. *Geochronology* 6: 397–407.
+- Vermeesch, P. (2018). IsoplotR: A free and open toolbox for geochronology. *Geoscience Frontiers* 9: 1479–1493.
+- Schaen, A.J. et al. (2021). Interpreting and reporting 40Ar/39Ar geochronologic data. *GSA Bulletin* 133: 461–487.
+- Powell, R. et al. (2020). Robust Isochron Calculation. *Geochronology*.
+- Kuiper, K.F. (2002). The interpretation of inverse isochron diagrams in 40Ar/39Ar geochronology. *EPSL* 203: 499–506.
+
+### 檔案改動
+
+- `Utilities.py` — `getDFStatistics_ls` (L433-L490) 與 `getDFStatistics_sh` (L1479-L1530)，~110 行修正
+- `NTNU_DataReduction.py` — 無改動
+- `AutoPipeline.py` — 無改動（內部 WMA / F 已正確）
+- `.work/.app_info.txt` — `3.7.4` → `3.8.0`
+
+### 仍待處理（後續版本）
+
+- York regression（取代 OLS curve_fit；Vermeesch 2024 / Powell 2020）
+- Errorchron Model 3a（玉里帶 retrograde excess Ar 樣品用）
+- Anchored isochron（step 數少的備援）
+- Spectrum vs inverse isochron 一致性檢查（防 false isochron — Kuiper 2002）
+- T0 σ 計算改用 pcov[-1,-1]（舊版 Utilities.py L76）
+- J Calc / Salt Calc auto-outlier 從 ±SEM 改 Chauvenet
 
 ---
 

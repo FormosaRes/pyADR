@@ -430,30 +430,62 @@ def getDFStatistics_ls(file, mask,constants, Ncolor, Nmaker):
       
     iv.plot(x, linear(x, *popt), linestyle = '--', label = "fitted line(exclude outliers)",color = Ncolor)
     
-    popt, _ = curve_fit(linear, x, y,)
-    a = -popt[1]/popt[0]
-    iv.plot(a,0,  marker = Nmaker,linestyle = 'None', label = "fitted line(exclude outliers)", color = 'r')
-    iv = linear(0,*popt)
-    popt, _ = curve_fit(linear, x_std, y_std)
-    iv_std = linear(0,*popt)    
-    
-    plt.savefig(".work/DFI.png", dpi = 200)
-    
+    # v3.8 FIX: capture full pcov for proper error propagation
+    popt_inv, pcov_inv = curve_fit(linear, x, y)
+    slope_inv = float(popt_inv[0])
+    intercept_inv = float(popt_inv[1])
+    slope_inv_std = float(np.sqrt(pcov_inv[0, 0])) if pcov_inv[0, 0] >= 0 else float('nan')
+    intercept_inv_std = float(np.sqrt(pcov_inv[1, 1])) if pcov_inv[1, 1] >= 0 else float('nan')
+    cov_si = float(pcov_inv[0, 1]) if np.isfinite(pcov_inv[0, 1]) else 0.0
+
+    a = -intercept_inv / slope_inv if slope_inv != 0 else 0.0
+    iv.plot(a, 0, marker=Nmaker, linestyle='None', label="fitted line(exclude outliers)", color='r')
+    iv = intercept_inv          # Y-intercept = (36/40)_trapped, returned downstream
+    iv_std = intercept_inv_std
+
+    plt.savefig(".work/DFI.png", dpi=200)
+
+    # v3.8 FIX: F = -slope/intercept of inverse isochron (Vermeesch 2024 p.398).
+    # Previously: T = log(1 + J*iv) used Y-intercept (trapped 36/40) — physically wrong.
+    # Refs: Vermeesch (2024) Geochronology 6:398; Vermeesch (2018) Geosci Frontiers p.8;
+    #       Schaen et al. (2021) GSA Bull. 133:461; Kuiper (2002) EPSL 203:501.
     J = float(data[1].split(',')[4])
     J_std = float(data[1].split(',')[5])
-    T = np.log(1 + J*iv) / float(constants[14]) #Lambda
-    T_std = np.sqrt((J**2 * iv_std**2 + iv**2 * J_std**2)/ ((float(constants[14])*(1+iv*J))**2)) #Lambda
-    
-    for i in range(len(y)):
-        T_sum = T_sum + T_all[i]
-    T_sum = T_sum/len(y)
+    Lambda = float(constants[14])
+    if abs(intercept_inv) > 1e-300 and Lambda != 0:
+        F = -slope_inv / intercept_inv
+        # F = -b/a: dF/db = -1/a, dF/da = b/a^2
+        varF = (slope_inv_std / intercept_inv) ** 2 \
+             + (slope_inv * intercept_inv_std / intercept_inv ** 2) ** 2 \
+             - 2.0 * (slope_inv / intercept_inv ** 3) * cov_si
+        F_std = float(np.sqrt(abs(varF)))
+        T = np.log(1.0 + J * F) / Lambda
+        T_std = np.sqrt((J**2 * F_std**2 + F**2 * J_std**2) / ((Lambda * (1.0 + F * J))**2))
+    else:
+        F = float('nan'); F_std = float('nan')
+        T = float('nan'); T_std = float('nan')
 
+    # v3.8 FIX: WMA = Σ(T/σ²) / Σ(1/σ²)  (Vermeesch 2018 Eq.5; Schaen 2021 GSA Bull. p.470).
+    # Previously: loop divided 1/σ² by 1/σ² inside the sum → wma = Σ T_i (pure sum, not weighted mean).
+    _num = 0.0
+    _den = 0.0
     for i in range(len(y)):
-        mswd = (((T_sum-T_all[i])**2)/(T_std_all[i]**2))+mswd
-    mswd = 1/(len(y)-1)*mswd
+        if T_std_all[i] != 0:
+            _w = 1.0 / (T_std_all[i] ** 2)
+            _num += _w * T_all[i]
+            _den += _w
+    wma = (_num / _den) if _den > 0 else 0.0
 
-    for i in range(len(y)):
-        wma = wma+((1/(T_std_all[i]**2)*T_all[i])/(1/(T_std_all[i]**2)))
+    # v3.8 FIX: MSWD reference point = WMA (not arithmetic mean) — Schaen 2021 p.470.
+    if len(y) > 1 and _den > 0:
+        _m = 0.0
+        for i in range(len(y)):
+            if T_std_all[i] != 0:
+                _m += ((wma - T_all[i]) ** 2) / (T_std_all[i] ** 2)
+        mswd = _m / (len(y) - 1)
+    else:
+        mswd = 0.0
+
     plt.clf()
     plt.close("all")
 
@@ -1444,12 +1476,26 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
         J_std = float(data[1].split(',')[5])
         Lambda = float(constants[14])
 
-        if np.isfinite(inv_slope) and inv_slope != 0 and Lambda != 0:
-            F = 1.0 / inv_slope
-            # propagate slope uncertainty to F
-            F_std = np.nan
-            if np.isfinite(inv_slope_std):
-                F_std = abs(inv_slope_std / (inv_slope**2))
+        # v3.8 FIX: F = -slope/intercept of inverse isochron (Vermeesch 2024 p.398).
+        # Previously F = 1/slope (= 1/b) was inconsistent with York convention Y=a+bX.
+        # Refs: Vermeesch (2024) Geochronology 6:398; Vermeesch (2018) Geosci Frontiers p.8;
+        #       Schaen et al. (2021) GSA Bull. 133:461.
+        if (np.isfinite(inv_slope) and np.isfinite(iv) and abs(iv) > 1e-300
+                and Lambda != 0):
+            F = -inv_slope / iv
+            # F = -b/a: dF/db = -1/a, dF/da = b/a^2
+            _cov_si = 0.0
+            try:
+                if pcov_inv is not None and pcov_inv.shape == (2, 2) and np.isfinite(pcov_inv[0, 1]):
+                    _cov_si = float(pcov_inv[0, 1])
+            except Exception:
+                _cov_si = 0.0
+            varF = np.nan
+            if np.isfinite(inv_slope_std) and np.isfinite(iv_std):
+                varF = (inv_slope_std / iv) ** 2 \
+                     + (inv_slope * iv_std / iv ** 2) ** 2 \
+                     - 2.0 * (inv_slope / iv ** 3) * _cov_si
+            F_std = float(np.sqrt(abs(varF))) if np.isfinite(varF) else np.nan
 
             if np.isfinite(F):
                 T = np.log(1.0 + J * F) / Lambda
@@ -1460,30 +1506,28 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
         pass
     
     # =========================================================
-    # CALCULATE MSWD & WMA (ORIGINAL VERSION - PRESERVED)
+    # CALCULATE MSWD & WMA (v3.8 — fixed per Vermeesch 2018, Schaen 2021)
     # =========================================================
-    T_sum = 0 
-    mswd = 0
-    wma = 0
-    
-    # Calculate arithmetic mean (original method)
+    mswd = 0.0
+    wma = 0.0
+
+    # v3.8 FIX: WMA = Σ(T/σ²) / Σ(1/σ²) (Vermeesch 2018 Eq.5; Schaen 2021 GSA Bull. p.470).
+    # Previously: loop divided 1/σ² by 1/σ² inside the sum → wma = Σ T_i (pure sum, not weighted mean).
+    _num = 0.0
+    _den = 0.0
     for i in range(len(T_all)):
-        T_sum = T_sum + T_all[i]
-    if len(T_all) > 0:
-        T_sum = T_sum / len(T_all)
-    
-    # Calculate MSWD (original formula)
-    if len(T_all) > 1:
-        for i in range(len(T_all)):
-            mswd = (((T_sum - T_all[i])**2) / (T_std_all[i]**2)) + mswd
-        mswd = 1 / (len(T_all) - 1) * mswd
-    
-    # Calculate WMA (original formula - simple weighted average)
-    if len(T_all) > 0:
+        if T_std_all[i] != 0:
+            _w = 1.0 / (T_std_all[i] ** 2)
+            _num += _w * T_all[i]
+            _den += _w
+    wma = (_num / _den) if _den > 0 else 0.0
+
+    # v3.8 FIX: MSWD reference point = WMA (not arithmetic mean) — Schaen 2021 p.470.
+    if len(T_all) > 1 and _den > 0:
         for i in range(len(T_all)):
             if T_std_all[i] != 0:
-                wma = wma + ((1 / (T_std_all[i]**2) * T_all[i]) / 
-                            (1 / (T_std_all[i]**2)))
+                mswd = (((wma - T_all[i])**2) / (T_std_all[i]**2)) + mswd
+        mswd = 1.0 / (len(T_all) - 1) * mswd
     
     plt.clf()
     plt.close("all")
