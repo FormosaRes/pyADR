@@ -775,13 +775,13 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
             raise Exception(f"Row {i+1}: Invalid 40Ar component values")
         
         Ar40_m = Ar40_r + Ar40_a + Ar40_c + Ar40_k
-        # FIX v3.7.4-hotfix: σ_40r and σ_40a are CORRELATED (both inherit σ_40m_raw
-        # via partition: 40Ar(r) = 40Ar(m) - 40Ar(air) - 40Ar(K)). Quadrature-summing
-        # them double-counts σ_40m_raw and inflates by ~200×. Recover raw measurement σ:
-        #     σ_40r² = σ_40m_raw² + σ_40air² + σ_40K²  →  σ_40m_raw² = σ_40r² - σ_40air² - σ_40K²
+        # FIX v3.7.4-hotfix: σ_40r and σ_40a are CORRELATED (both inherit σ_40m_raw via
+        # partition: 40Ar(r) = 40Ar(m) − 40Ar(air) − 40Ar(K)). Quadrature-summing them
+        # double-counts σ_40m_raw and inflates σ_40m by ~200×. Recover raw measurement σ:
+        #   σ_40r² = σ_40m_raw² + σ_40air² + σ_40K²  →  σ_40m_raw² = σ_40r² − σ_40air² − σ_40K²
         _var40m = Ar40_r_std**2 - Ar40_a_std**2 - Ar40_c_std**2 - Ar40_k_std**2
         Ar40_m_std = float(np.sqrt(_var40m)) if _var40m > 0 else 0.0
-        
+
         if i == 0:  # Print first row for debugging
             print(f"[DEBUG] First row values:")
             print(f"        36Ar(a) = {Ar36_a}")
@@ -913,8 +913,12 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
     
     # Draw error ellipses
     # FIX v3.7.4-hotfix: vertical (Y) error bars only — match reference plot.
-    ax_n.errorbar(x, y, yerr=y_std, fmt='none',
-                  ecolor='lightgray', elinewidth=1, capsize=0, zorder=1)
+    # 1σ error ellipse for each datum
+    for i in range(len(y)):
+        t = np.linspace(0, 2*pi, 100)
+        ax_n.plot(x[i] + x_std[i]*np.cos(t),
+                  y[i] + y_std[i]*np.sin(t),
+                  color='lightgray', linestyle='-', linewidth=1, zorder=1)
     
     # Second fit: exclude outliers (skip main line when group mode active)
     _has_groups = bool(iso_groups)
@@ -1126,13 +1130,10 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
         Ar40_k_std = float(parts[57])
         
         Ar40_m = Ar40_r + Ar40_a + Ar40_c + Ar40_k
-        # FIX v3.7.4-hotfix: σ_40r and σ_40a are CORRELATED (both inherit σ_40m_raw
-        # via partition: 40Ar(r) = 40Ar(m) - 40Ar(air) - 40Ar(K)). Quadrature-summing
-        # them double-counts σ_40m_raw and inflates by ~200×. Recover raw measurement σ:
-        #     σ_40r² = σ_40m_raw² + σ_40air² + σ_40K²  →  σ_40m_raw² = σ_40r² - σ_40air² - σ_40K²
+        # FIX v3.7.4-hotfix: σ_40r and σ_40a are CORRELATED (see note above on normal isochron).
         _var40m = Ar40_r_std**2 - Ar40_a_std**2 - Ar40_c_std**2 - Ar40_k_std**2
         Ar40_m_std = float(np.sqrt(_var40m)) if _var40m > 0 else 0.0
-        
+
         # Calculate inverse ratios using measured totals
         # X = 39Ar(m) / 40Ar(m)
         # Y = 36Ar(m) / 40Ar(m)
@@ -1240,8 +1241,12 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
     
     # Draw error ellipses
     # FIX v3.7.4-hotfix: vertical (Y) error bars only — match reference plot.
-    ax_iv.errorbar(x_inv, y_inv, yerr=y_inv_std, fmt='none',
-                   ecolor='lightgray', elinewidth=1, capsize=0, zorder=1)
+    # 1σ error ellipse for each datum
+    for i in range(len(y_inv)):
+        t = np.linspace(0, 2*pi, 100)
+        ax_iv.plot(x_inv[i] + x_inv_std[i]*np.cos(t),
+                   y_inv[i] + y_inv_std[i]*np.sin(t),
+                   color='lightgray', linestyle='-', linewidth=1, zorder=1)
     
     # Second fit (skip main line when group mode active)
     inv_slope = np.nan
