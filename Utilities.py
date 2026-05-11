@@ -91,11 +91,18 @@ def normalize_csv_to_v37(data):
         ar40_k, ar40_k_s = _f(parts, 56), _f(parts, 57)
 
         ar36_m = ar36_a + ar36_c + ar36_ca + ar36_cl
-        ar36_m_s = (ar36_a_s**2 + ar36_c_s**2 + ar36_ca_s**2 + ar36_cl_s**2) ** 0.5
+        # v3.8.1 FIX: correlated-σ — components are derived FROM Ar36_m_raw, so
+        # σ²_36a = σ²_36m_raw + σ²_36ca + σ²_36cl + σ²_36c. Recover raw σ:
+        _v36 = ar36_a_s**2 - ar36_c_s**2 - ar36_ca_s**2 - ar36_cl_s**2
+        ar36_m_s = (_v36 ** 0.5) if _v36 > 0 else abs(ar36_a_s)
         ar39_m = ar39_k + ar39_ca
-        ar39_m_s = (ar39_k_s**2 + ar39_ca_s**2) ** 0.5
+        # v3.8.1 FIX: same correction. Ar39_k = Ar39_m_raw − Ar39_ca.
+        _v39 = ar39_k_s**2 - ar39_ca_s**2
+        ar39_m_s = (_v39 ** 0.5) if _v39 > 0 else abs(ar39_k_s)
         ar40_m = ar40_r + ar40_a + ar40_c + ar40_k
-        ar40_m_s = (ar40_r_s**2 + ar40_a_s**2 + ar40_c_s**2 + ar40_k_s**2) ** 0.5
+        # v3.8.1 FIX: same correction (analogous to v3.7.4-hotfix on this σ in DFN block).
+        _v40 = ar40_r_s**2 - ar40_a_s**2 - ar40_c_s**2 - ar40_k_s**2
+        ar40_m_s = (_v40 ** 0.5) if _v40 > 0 else abs(ar40_r_s)
 
         def _ratio(num, num_s, den, den_s):
             if den == 0 or num == 0:
@@ -832,46 +839,32 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
             print(f"        36Ar(m) = {Ar36_m}")
             print(f"        39Ar(m) = {Ar39_m}")
         
-        # Calculate ratios using measured totals
-        # X = 39Ar(m) / 36Ar(m)
-        # Y = 40Ar(m) / 36Ar(m)
-        
-        # Try to read from pre-calculated columns first (columns 89-92)
+        # v3.8.1 FIX: ALWAYS recompute σ from raw components (same reason as DFI block
+        # at L1192). Pre-calculated σ in CSV cols 90/92 from V3.7 toDP / normalize_csv_to_v37
+        # used the buggy quadrature-sum that double-counts σ_36m_raw → MSWD artificially low.
+        # Ratio values read from CSV when available, σ always recomputed.
         # Column 88 is "normal isochron" separator
+        _ratios_from_csv_n = False
         if len(parts) > 92:
             try:
-                y[i] = float(parts[89])      # 40Ar(m)/36Ar(m)
-                y_std[i] = float(parts[90])  # std
-                x[i] = float(parts[91])      # 39Ar(m)/36Ar(m)
-                x_std[i] = float(parts[92])  # std
-                
+                y[i] = float(parts[89])      # 40Ar(m)/36Ar(m) value (OK to read)
+                x[i] = float(parts[91])      # 39Ar(m)/36Ar(m) value (OK to read)
+                _ratios_from_csv_n = True
                 if i == 0:
-                    print(f"[DEBUG] Using pre-calculated Normal isochron ratios from CSV")
-                    print(f"        Y (40Ar(m)/36Ar(m)) = {y[i]} ± {y_std[i]}")
-                    print(f"        X (39Ar(m)/36Ar(m)) = {x[i]} ± {x_std[i]}")
+                    print(f"[DEBUG] Normal isochron: ratios from CSV cols 89/91, σ recomputed")
             except (ValueError, IndexError):
-                # Fall back to calculation
-                x[i] = Ar39_m / Ar36_m if Ar36_m != 0 else np.nan
-                y[i] = Ar40_m / Ar36_m if Ar36_m != 0 else np.nan
-                
-                if Ar36_m != 0 and Ar36_m_std != 0:
-                    x_std[i] = x[i] * np.sqrt((Ar39_m_std/Ar39_m)**2 + (Ar36_m_std/Ar36_m)**2)
-                    y_std[i] = y[i] * np.sqrt((Ar40_m_std/Ar40_m)**2 + (Ar36_m_std/Ar36_m)**2)
-                else:
-                    x_std[i] = np.nan
-                    y_std[i] = np.nan
-        else:
-            # Old format CSV - calculate
+                _ratios_from_csv_n = False
+        if not _ratios_from_csv_n:
             x[i] = Ar39_m / Ar36_m if Ar36_m != 0 else np.nan
             y[i] = Ar40_m / Ar36_m if Ar36_m != 0 else np.nan
-            
-            if Ar36_m != 0 and Ar36_m_std != 0:
-                x_std[i] = x[i] * np.sqrt((Ar39_m_std/Ar39_m)**2 + (Ar36_m_std/Ar36_m)**2)
-                y_std[i] = y[i] * np.sqrt((Ar40_m_std/Ar40_m)**2 + (Ar36_m_std/Ar36_m)**2)
-            else:
-                x_std[i] = np.nan
-                y_std[i] = np.nan
-        
+
+        if Ar36_m != 0 and Ar36_m_std != 0 and Ar39_m != 0 and Ar40_m != 0:
+            x_std[i] = abs(x[i]) * np.sqrt((Ar39_m_std/Ar39_m)**2 + (Ar36_m_std/Ar36_m)**2)
+            y_std[i] = abs(y[i]) * np.sqrt((Ar40_m_std/Ar40_m)**2 + (Ar36_m_std/Ar36_m)**2)
+        else:
+            x_std[i] = np.nan
+            y_std[i] = np.nan
+
         # Age data
         try:
             T_all[i] = float(parts[17])
@@ -1182,46 +1175,36 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
         _var40m = Ar40_r_std**2 - Ar40_a_std**2 - Ar40_c_std**2 - Ar40_k_std**2
         Ar40_m_std = float(np.sqrt(_var40m)) if _var40m > 0 else 0.0
 
-        # Calculate inverse ratios using measured totals
-        # X = 39Ar(m) / 40Ar(m)
-        # Y = 36Ar(m) / 40Ar(m)
-        
-        # Try to read from pre-calculated columns first (columns 94-97)
+        # v3.8.1 FIX: ALWAYS recompute σ from raw components.
+        # The pre-calculated σ in CSV cols 95/97 (from V3.7 toDP / normalize_csv_to_v37
+        # before this version) used the BUGGY quadrature-sum that double-counts σ_36m_raw
+        # → drives MSWD artificially low. The raw-component recomputation above (with
+        # corrected σ_36m / σ_39m / σ_40m) is the source of truth. Ratio values are
+        # read from CSV if available (faster + matches publication CSV), σ is always
+        # recomputed.
         # Column 93 is "inverse isochron" separator
+        _ratios_from_csv = False
         if len(parts) > 97:
             try:
-                y_inv[i] = float(parts[94])      # 36Ar(m)/40Ar(m)
-                y_inv_std[i] = float(parts[95])  # std
-                x_inv[i] = float(parts[96])      # 39Ar(m)/40Ar(m)
-                x_inv_std[i] = float(parts[97])  # std
-                
+                y_inv[i] = float(parts[94])      # 36Ar(m)/40Ar(m) value (OK to read)
+                x_inv[i] = float(parts[96])      # 39Ar(m)/40Ar(m) value (OK to read)
+                _ratios_from_csv = True
                 if i == 0:
-                    print(f"[DEBUG] Using pre-calculated Inverse isochron ratios from CSV")
-                    print(f"        Y (36Ar(m)/40Ar(m)) = {y_inv[i]} ± {y_inv_std[i]}")
-                    print(f"        X (39Ar(m)/40Ar(m)) = {x_inv[i]} ± {x_inv_std[i]}")
+                    print(f"[DEBUG] Inverse isochron: ratios from CSV cols 94/96, σ recomputed")
             except (ValueError, IndexError):
-                # Fall back to calculation
-                x_inv[i] = Ar39_m / Ar40_m if Ar40_m != 0 else np.nan
-                y_inv[i] = Ar36_m / Ar40_m if Ar40_m != 0 else np.nan
-                
-                if Ar40_m != 0 and Ar40_m_std != 0:
-                    x_inv_std[i] = x_inv[i] * np.sqrt((Ar39_m_std/Ar39_m)**2 + (Ar40_m_std/Ar40_m)**2)
-                    y_inv_std[i] = y_inv[i] * np.sqrt((Ar36_m_std/Ar36_m)**2 + (Ar40_m_std/Ar40_m)**2)
-                else:
-                    x_inv_std[i] = np.nan
-                    y_inv_std[i] = np.nan
-        else:
-            # Old format CSV - calculate
+                _ratios_from_csv = False
+        if not _ratios_from_csv:
             x_inv[i] = Ar39_m / Ar40_m if Ar40_m != 0 else np.nan
             y_inv[i] = Ar36_m / Ar40_m if Ar40_m != 0 else np.nan
-            
-            if Ar40_m != 0 and Ar40_m_std != 0:
-                x_inv_std[i] = x_inv[i] * np.sqrt((Ar39_m_std/Ar39_m)**2 + (Ar40_m_std/Ar40_m)**2)
-                y_inv_std[i] = y_inv[i] * np.sqrt((Ar36_m_std/Ar36_m)**2 + (Ar40_m_std/Ar40_m)**2)
-            else:
-                x_inv_std[i] = np.nan
-                y_inv_std[i] = np.nan
-    
+
+        # σ propagation — always recomputed from corrected raw σ
+        if Ar40_m != 0 and Ar40_m_std != 0 and Ar39_m != 0 and Ar36_m != 0:
+            x_inv_std[i] = abs(x_inv[i]) * np.sqrt((Ar39_m_std/Ar39_m)**2 + (Ar40_m_std/Ar40_m)**2)
+            y_inv_std[i] = abs(y_inv[i]) * np.sqrt((Ar36_m_std/Ar36_m)**2 + (Ar40_m_std/Ar40_m)**2)
+        else:
+            x_inv_std[i] = np.nan
+            y_inv_std[i] = np.nan
+
     # ✅ BUG FIX: Use boolean indexing and store original indices
     valid_inv = np.isfinite(x_inv) & np.isfinite(y_inv) & (x_inv >= 0) & (y_inv >= 0)
     original_indices_inv = np.arange(nstep)[valid_inv]  # Store original indices before filtering

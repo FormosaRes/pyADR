@@ -8,6 +8,8 @@
 
 ## V3.8.1（2026-05-11）— DiagramPlot UI + σ_36/σ_39 correlated-error fix
 
+> **追加修正（同 commit）**：v3.7 `toDP` / `normalize_csv_to_v37` 寫進 CSV 的 σ（cols 90/92/95/97）是雙重計算的 buggy 值。原本 `getDFStatistics_sh` 優先讀這些 pre-calc σ，導致對「之前已轉成 98-col CSV」的樣品 σ fix 完全沒效果。改為**永遠從 raw component 重算 σ**（ratio 值仍可從 CSV 讀，σ 不讀）。同時修正 `normalize_csv_to_v37` 自己的 σ_36m / σ_39m / σ_40m 三處 quadrature bug。
+
 ### UI 改動
 
 1. **Atmospheric marker** — DFN/DFI 大氣值標記從紅色實心圓 → 紅色 X（更不會被誤認為 data point）
@@ -20,9 +22,11 @@
 
 5. **Age spectrum group ³⁹Ar% 累積算錯** — 原寫法 `ar39_pct = x1 − x0`（min→max 範圍），若群組中間夾雜未選步驟則把中間步驟的 ³⁹Ar 也算進去（screenshot 顯示 N=4 的群組報出 94.1% ³⁹Ar）。改為 `sum(stepw[i] for i in gi)`，只加總實際被選的 step
 
-6. **MSWD 過低 (G1=0.05 / G2=0.10)** — σ_36(m) 與 σ_39(m) 用「四個 component 的 quadrature 和」計算，但 Ar36_a 與 Ar39_k 本身就是用 raw 測量值減掉 Ca/Cl/c 干擾算出來的（σ 已含 raw σ），quadrature 等於把 σ_raw 雙重計算，導致 σ_y_inv 膨脹 30–200%，使 inverse-isochron MSWD 系統性偏低。套用與 v3.7.4-hotfix σ_40m 同款修正：
+6. **σ_36(m) 與 σ_39(m) 雙重計算修正**（不直接改變典型雲母/長石樣品的 MSWD）— σ_36(m) 與 σ_39(m) 原本用「四個 component 的 quadrature 和」計算，但 Ar36_a 與 Ar39_k 本身就是用 raw 測量值減掉 Ca/Cl/c 干擾算出來的（σ 已含 raw σ），quadrature 等於把 corrections σ 雙重計算。套用與 v3.7.4-hotfix σ_40m 同款修正：
    - `σ²_36m = σ²_36a − σ²_36ca − σ²_36cl − σ²_36c`（兩處：normal isochron L767、inverse isochron L1142）
    - `σ²_39m = σ²_39k − σ²_39ca`（兩處：normal isochron L788、inverse isochron L1158）
+   - 影響量級取決於 corrections 相對 raw 36Ar 的大小：對雲母/長石（Ca/K、Cl/K 低）的樣品影響 < 1-5%；對玄武岩 groundmass、輝石（Ca/K 高）的樣品影響較大
+   - **不是** "MSWD 過低" 的成因（IsoplotR 跑 0621-01C 同樣得到 MSWD = 0.034，N=4，p(χ²)=0.97 — 對 mature 高 ⁴⁰Ar* 樣品，36Ar 接近 noise floor 時 σ_y_inv 本來就大，使 MSWD < 1 是正常分散統計，不是 bug）
 
 ### 檔案改動
 
