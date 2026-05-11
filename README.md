@@ -1,4 +1,4 @@
-# pyADR — NTNU modified fork (v3.7.1)
+# pyADR — NTNU modified fork (v3.7.4)
 
 40Ar/39Ar data reduction tool with GUI. Modified fork of [pyADR](https://github.com/AndrewLiu0725/pyADR) (original by **An-Jun (Andrew) Liu**), now maintained by **PANG Chi-Hsiu (NTNU)**.
 
@@ -123,6 +123,22 @@ python NTNU_DataReduction.py
 ---
 
 ## Changelog 摘要
+
+### v3.7.4 (2026-05-11)
+
+**Critical bug fix** — `Utilities.calcAge` 函式從 V3.7 release (commit `afb2268`) 起就被 iCloud sync 截斷在 `Ar_39_Ca = Ar_37_Ca * constants[0]`，沒做 38Ar/40Ar/F/age 計算也沒 return，導致 GUI 點 Age Calculation 或 AutoPipeline 跑 step heating 都 `TypeError: 'NoneType' object is not subscriptable`。所有 v3.7.x release HEAD 都帶這個 bug。
+
+修法：從 V3.4.1 archive 還原完整 100 行 `calcAge`（38Ar/40Ar(air/K/r)、F = 40Ar(r)/39Ar(K)、T = ln(1 + J·F)/λ、59-element return），同時還原 `Utilities.py` 檔尾 88 行（`_draw_iso_n` group fit MSWD、`_apply_panel_extras`、`getSummaryPlot` 主迴圈）也被同一 iCloud 截斷。
+
+保留現狀待跟老師討論：線性誤差傳播（不改 quadrature）、Ca/K 常數 0.52、F_std 一階近似、36Ar(Cl) 大氣校正未加。`Utilities.py` 從壞掉的 3707 行 → 完整 3794 行。
+
+### v3.7.3 (2026-05-11)
+
+Datum Publication Table 改回 88 欄格式（從 v3.7 的 98 欄 revert）。砍掉末端 10 欄 isochron section（normal/inverse isochron 與對應 std）— 那是 v3.7 為了補救壞掉的 isochron 計算才塞進去的，現在 ISOr export 已經獨立成 toDPR（8 欄），Publish Table 不需要再混 isochron。也跟老師那邊 V2.0 88 欄格式重新相容。內部 V2.0 → V3.7 normalization (`normalize_csv_to_v37`) 維持原樣。
+
+### v3.7.2 (2026-05-10)
+
+修復 ISOr (Datum Publication) export。`toDPR` 函式在重構過程中被整段刪掉，ISOr 按鈕的 signal 也被誤改成綁 `self.toDP`，所以點 ISOr 跑出來是 98 欄完整 datum table 而不是 8 欄 isochron-ratio 表。從 V2.0 移植 `toDPR` 邏輯回來（+ V3.7 慣用 try/except/finally + utf-8 encoding）+ 修正 signal binding 到 `self.toDPR`。輸出格式：`39/40, err[39/40], 36/40, err[36/40], 39/36, err[39/36], 39, Samp#`，與 V2.0 完全相容。
 
 ### v3.7.1 (2026-05-09)
 
