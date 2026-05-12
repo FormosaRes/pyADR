@@ -1,8 +1,10 @@
 # pyADR Formulas — ⁴⁰Ar/³⁹Ar Reduction Math Reference
 
-**Version**: v3.8.0 (2026-05) · **Scope**: T0 fitting → Mass Ratio → Air Ratio → J → Age → Datum Publication
+**Version**: v3.8.1 (2026-05) · **Scope**: T0 fitting → Mass Ratio → Air Ratio → J → Age → Datum Publication
 
 > **v3.8.0 update**: §10 (DiagramPlot) rewritten to reflect corrected inverse-isochron F = −b/a, inverse-variance-weighted WMA, and WMA-referenced MSWD per Vermeesch (2024, 2018) and Schaen et al. (2021). Previous §10 description matched the buggy v3.7.x code (§10.x note retains the bug history for traceability).
+>
+> **v3.8.1 update (2026-05)**: Documentation-only changes — no math code modified. (1) §1 T0 sigma now properly flagged as **math bug** (was previously described as "NTNU lab convention" — too soft); cross-references the correct intercept-SE formula and AutoPipeline `_fit_one` v3.8.2 patch. (2) §6 J-Volume now flags the **σ_J bracket bug** at `Utilities.py:2864` (operator precedence drops a critical pair). (3) §10.7 flags that the plateau "avg_age" still uses arithmetic `np.mean`, not the v3.8-corrected WMA in §10.5. (4) §10.8 adds a warning about isochron-intercept SE computed by running OLS on the error bars (`curve_fit(linear, x_std, y_std)`) at `Utilities.py:389-390, 965-966` — mathematically meaningless. See §⚠ for the consolidated outstanding-bug list synced with the v5 math-audit report.
 
 This document is a one-stop reference for every numeric formula pyADR evaluates, written as math (LaTeX) plus the corresponding `.py` line. Error propagation is derived from first-order partials of each expression as **actually coded** — pyADR mixes proper quadrature (`sqrt(Σ(∂F/∂x · σ_x)²)`) with linear-sum approximations (`F·Σ|σ_x/x|`); both are documented faithfully. Where the code's choice diverges from the McDougall & Harrison (1999) / Koppers (2002) convention, a **Note** flags it.
 
@@ -56,10 +58,10 @@ $$
 V(t) = a \quad\Longrightarrow\quad T_0 = a
 $$
 
-**T0 sigma (residual SE of the mean, `Utilities.py:180,209,268,287`):**
+**T0 sigma (as coded — `Utilities.py:187, 216, 275, 294`):**
 
 $$
-\sigma_{T_0,i} \;=\; \frac{\mathrm{std}\!\left(\,\bigl|\,V_j - \hat{V}(t_j)\bigr|\,\right)}{\sqrt{N-n_{\text{out}}}}
+\sigma_{T_0,i}^{(\text{coded})} \;=\; \frac{\mathrm{std}\!\left(\,\bigl|\,V_j - \hat{V}(t_j)\bigr|\,\right)}{\sqrt{N-n_{\text{out}}}}
 $$
 
 where `n_out` is the number of cycles masked out by the outlier rule
@@ -72,7 +74,30 @@ $$
 
 **Goodness:** R² from `sklearn.metrics.r2_score`.
 
-> The "STD-of-residuals over √N" form is what the NTNU lab uses for ToD reproducibility; it is **not** the formal regression-coefficient SE that `curve_fit` returns.
+> ⚠ **Math bug — σ_T0 is not the intercept SE.** The coded formula above is the standard error of the *mean* (`std(residuals)/√N`), not the SE of the y-intercept of a linear fit. For typical step-heating cycle times `t ∈ [320, 600] s` with `t̄ ≈ 460 s` ≫ 0, the intercept extrapolated to `t=0` carries a large lever-arm term that is completely missing here.
+>
+> **Correct intercept SE (Li et al. 2019 Eq. 1):**
+>
+> $$
+> \sigma_{T_0,i}^{(\text{correct})} \;=\; \sigma_r \sqrt{\frac{1}{N} + \frac{\bar t^{\,2}}{\sum_j (t_j - \bar t)^2}}
+> \;=\; \sqrt{\mathrm{pcov}[-1,-1]}\quad\text{from}\quad\mathrm{curve\_fit}(f, t, V)
+> $$
+>
+> where `σ_r = std(residuals, ddof=N−p)` is the unbiased residual SD and `pcov` is the regression covariance matrix.
+>
+> **Empirical impact (NTNU 0621-01C 1100 °C step, 10 cycles, t ∈ [320, 601] s):**
+>
+> | Isotope | T0           | σ_coded (`std/√N`) | σ_correct (`pcov`) | ratio |
+> |---------|--------------|--------------------|--------------------|-------|
+> | ³⁶Ar    | 3.58 × 10⁻⁴  | 4.6 × 10⁻⁶         | 4.6 × 10⁻⁵         | **10.1×** |
+> | ³⁷Ar    | 1.62 × 10⁻⁴  | 5.6 × 10⁻⁶         | 5.5 × 10⁻⁵         | 9.8×  |
+> | ³⁸Ar    | 6.44 × 10⁻⁴  | 6.9 × 10⁻⁶         | 6.9 × 10⁻⁵         | 10.0× |
+> | ³⁹Ar    | 1.91 × 10⁻²  | 9.6 × 10⁻⁶         | 9.8 × 10⁻⁵         | 10.2× |
+> | ⁴⁰Ar    | 2.04 × 10⁻²  | 4.8 × 10⁻⁶         | 5.8 × 10⁻⁵         | 11.9× |
+>
+> The coded form underestimates σ_T0 by **~10×** for every isotope. This propagates through `getJVolumeStatistics`, `calcAge`, plane-fit weighting, and downstream WMA / MSWD computations — every reported σ in pyADR currently inherits this underestimate.
+>
+> **Status**: Fixed in AutoPipeline `_fit_one` (v3.8.2 patch — uses `sqrt(pcov[-1,-1])` with Li 2019 closed-form fallback). Legacy `Utilities.calculateT0` / `REcalculateT0` (this section) still uses the buggy form pending advisor review; the upstream `AndrewLiu0725/pyADR` GitHub repo uses a different but also-incorrect formula `std(|residuals|)` (no `/√N` divisor). Reference: Li, X., Naeher, U. and Pross, J. (2019). *Mass spectrometric data processing in stable isotope analysis: regression-based standard errors of the y-intercept.* J. Mass Spectrom. **54**, 145–152, Eq. 1.
 
 ---
 
@@ -276,6 +301,34 @@ $$
 $$
 
 Hard-coded constants in this function: `λ = 5.531e-10 /yr`, `σ_λ = 0.0135e-10 /yr` (Steiger & Jäger 1977 ⁴⁰K → ⁴⁰Ar branch). For Min et al. (2000) values, change `l, l_std` at `Utilities.py:2748–2749`.
+
+> ⚠ **Bug — σ_J v₃ term missing a pair of parentheses (`Utilities.py:2864`).**
+>
+> The code reads:
+>
+> ```python
+> v3 = F_std**2 * ((np.exp(l*t)) - 1 / Ar_39_K_40_r_ratio**2) ** 2
+> ```
+>
+> Python operator precedence binds `1 / F²` before `(e^λt) − …`, so this evaluates to
+>
+> $$
+> v_3^{(\text{coded})} = F_{\text{std}}^{2} \cdot \bigl(e^{\lambda t} - \tfrac{1}{F_{r/k}^{2}}\bigr)^{2}
+> $$
+>
+> instead of the intended
+>
+> $$
+> v_3^{(\text{correct})} = F_{\text{std}}^{2} \cdot \left(\frac{e^{\lambda t}-1}{F_{r/k}^{2}}\right)^{2}.
+> $$
+>
+> **Fix**: one extra pair of parentheses
+>
+> ```python
+> v3 = F_std**2 * ((np.exp(l*t) - 1) / Ar_39_K_40_r_ratio**2) ** 2
+> ```
+>
+> **Impact**: When `λt ≪ 1` (typical young samples), `e^{λt} ≈ 1` so the correct form gives `v₃ ≈ (λt/F²)² · σ_F²` (small), while the coded form gives `v₃ ≈ (1 − 1/F²)² · σ_F²` (dominated by the spurious `1`). σ_J is **massively over-estimated** for young samples — sign and rough magnitude reversed from the correct error budget. 5-minute fix; deferred only because Utilities.py is on the advisor-owned upstream.
 
 **Ca/K (`:2807–2808`):**
 
@@ -647,14 +700,22 @@ with `ŷ_i = a + b·x_i` from the linear fit. The N−2 reflects two fitted para
 
 > **v3.8.0 fix**: Previously the plateau-MSWD reference was the **arithmetic** mean `T_sum/N` instead of WMA. With a non-uniform `σ_i`, this gives a different — and inconsistent with the reported WMA — measure of dispersion. Schaen 2021 specifies WMA as the reference, matching the maximum-likelihood form.
 
-### 10.7 Total fusion age
+### 10.7 Total fusion age and plateau average
 
 $$
 F_{\text{total}} = \frac{\sum_j {}^{40}\mathrm{Ar}_{r,j}}{\sum_j {}^{39}\mathrm{Ar}_{K,j}},\qquad
 T_{\text{total}} = \frac{\ln(1 + J\cdot F_{\text{total}})}{\lambda}
 $$
 
-`Utilities.py:1816-1818`. Computed before any plateau/isochron filtering.
+`Utilities.py:2033-2034`. Computed before any plateau/isochron filtering.
+
+> ⚠ **Plateau "avg_age" still uses arithmetic mean (`Utilities.py:2031`).** Despite the §10.5 WMA being fixed in v3.8, the plateau display computes
+>
+> ```python
+> avg_age = np.mean([y_age[i] for i in range(n) if mask[i] == 1])
+> ```
+>
+> i.e. unweighted arithmetic mean of unmasked step ages. The "weighted plateau age" shown in the plateau-step plot is therefore **not** consistent with the WMA reported in the regression summary (§10.5). For an external `±σ` table, use the WMA from §10.5; treat the plot's avg-age annotation as visual only. Same pattern as the v3.7.x WMA bug — should be unified.
 
 ### 10.8 Regression method — current status
 
@@ -667,6 +728,15 @@ pyADR currently uses `scipy.optimize.curve_fit(linear, x, y)`, which is **ordina
 The standard for ⁴⁰Ar/³⁹Ar isochron fitting is **York regression** (York et al. 2004; Vermeesch 2018, IsoplotR), which accounts for σ_x, σ_y, and ρ(x,y). Replacing OLS with York is a planned v3.9+ task (see CHANGELOG.md "仍待處理" list).
 
 The MSWD formulas in §10.6 are unaffected by the OLS vs York choice as long as σ_y dominates and ρ(x,y) is small.
+
+> ⚠ **Intercept SE bug — running OLS on the error bars (`Utilities.py:389-390, 965-966`).** Two normal-isochron paths compute the intercept uncertainty by re-fitting:
+>
+> ```python
+> popt_std, _ = curve_fit(linear, x_std, y_std)   # ← fit to the σ values themselves
+> n_std       = linear(0, *popt_std)              # ← "intercept" of that fit, called n_std
+> ```
+>
+> This treats the σ_x, σ_y arrays as if they were a new (x, y) dataset and reads its intercept. **Mathematically meaningless** — the resulting `n_std` is not the SE of the original-fit intercept; it is a slope-of-error-bars number with no statistical interpretation. The inverse-isochron paths (`:441, :1286`) correctly read `pcov[1,1]` from the main fit's covariance matrix — that's the form that should be used everywhere. Fix is one-line: replace each `curve_fit(linear, x_std, y_std) → linear(0, *popt_std)` pair with `np.sqrt(pcov[1, 1])` from the main fit at the same call site.
 
 ### 10.x v3.7.x bug-history note (preserved for traceability)
 
@@ -683,46 +753,76 @@ Validation: SYL31 LS (NTU thesis R94224113, Sylhet Trap basalt 115.4 ± 3.9 Ma).
 
 ---
 
-## ⚠️ Code-state warnings (issues identified during this audit)
+## ⚠️ Code-state warnings (v3.8.1 — synced with v5 math-audit report)
 
-1. **`calcAge` truncation — RESOLVED in v3.7.4**. Function was truncated mid-statement from initial v3.7 release (commit `afb2268`) through v3.7.3. v3.7.4 restored the full ~110-line implementation from the V3.4.1 archive. §7 above documents the v3.7.4 restored code, not a reconstruction.
+### Resolved in v3.7.4 / v3.8.0 (kept for traceability)
 
-2. **DiagramPlot F / WMA / MSWD bugs — RESOLVED in v3.8.0**. `getDFStatistics_sh` / `getDFStatistics_ls` had three distinct bugs: (a) inverse-isochron F used `F = 1/slope` instead of the correct York-convention `F = −b/a` (Vermeesch 2024); for LS the equivalent error was using the Y-intercept (trapped 36/40) directly as F. (b) WMA loop had `(1/σ²·T)/(1/σ²)` which cancels to Σ T_i instead of inverse-variance-weighted mean (Vermeesch 2018 Eq. 5). (c) MSWD reference point used arithmetic mean instead of WMA (Schaen 2021 p.470). All three corrected; see §10.x bug-history table. Validated against SYL31 LS (115.4 ± 3.9 Ma).
+1. **`calcAge` truncation — RESOLVED in v3.7.4**. Function was truncated mid-statement in v3.7.0–v3.7.3; v3.7.4 restored the full implementation from the V3.4.1 archive.
 
-3. **`Ar_38_Air` in calcAge is mis-named** (`Utilities.py:2879`). The variable is computed as `Ar_38_m − Ar_38_K` and labelled `Ar_38_Air` in the AgeCalc page table, but it actually contains ³⁸Ar(air) **+** ³⁸Ar(Cl). The proper three-way split (air / K / Cl) is only done in `toDP:4648–4664`. Don't quote AgeCalc's "Ar_38_Air" as pure atmospheric ³⁸Ar in publications.
+2. **DiagramPlot F / WMA / MSWD bugs — RESOLVED in v3.8.0**. Three distinct bugs in `getDFStatistics_sh`/`_ls`: (a) inverse-isochron `F = 1/slope` (should be `−b/a`); (b) WMA loop with `(1/σ²·T)/(1/σ²)` cancels to Σ T; (c) MSWD reference was arithmetic mean instead of WMA. All three corrected. Validated against SYL31 LS (115.4 ± 3.9 Ma).
 
-4. **`T_std` in calcAge omits σ_λ** (`:2907`). McDougall & Harrison 1999 eq. 4.7 has three partials; pyADR drops the (∂T/∂λ)²σ_λ² term. Under-estimates σ_T by ≈ 0.5% relative — small but systematic. Add the term, or document the omission in any paper using pyADR-derived σ_T.
+### Outstanding (P1 — Critical)
 
-5. **λ source split: `constants[14]` vs `constants[16]`** — different parts of the program read different indices. Per-step T in `getDegasPlot:444` uses [14]; calcAge `:2904` and total-spectrum age `getStackPlot:1972` use [16]. If PS values differ, results are inconsistent. Audit ParameterSetting to confirm [14]==[16] in saved settings, or unify the code to one index.
+3. **σ_T0 underestimated ~10× (§1)** — `Utilities.calculateT0`/`REcalculateT0` lines 187, 216, 275, 294. Uses `std(|residuals|)/√N` instead of intercept SE `sqrt(pcov[-1,-1])`. AutoPipeline `_fit_one` was patched in v3.8.2; legacy functions still pending.
 
-6. **J calc uses hardcoded λ, Age calc reads `constants[16]`** (`getJVolumeStatistics:2748–2749`). λ=5.531e-10, σ_λ=0.0135e-10 are written in source. If PS changes to Min et al. 2000 (5.463e-10), J is computed under Steiger but T is computed under Min → systematic offset. Refactor to read `constants[14]/[16]` and add a σ_λ entry to the constants array.
+4. **σ_J v₃ bracket bug (§6)** — `Utilities.py:2864`. Operator precedence parses `((np.exp(l*t)) - 1 / F²)²` as `(e^λt − 1/F²)²` instead of `((e^λt − 1)/F²)²`. σ_J massively over-estimated for young samples. 5-min fix: add one pair of parentheses.
 
-7. **Atmospheric ⁴⁰/³⁶ hardcoded 298.56 in salt functions** (`calculateSlatCa/K`, `:2708, 2737–2738`). Rest of program reads `constants[12]`. The value 298.56 (Lee et al. 2006) is unlikely to change in practice, but **code style**: replace literal 298.56 with `constants[12]` and propagate σ via `constants[13]`, so PS becomes the single source of truth.
+5. **Isochron intercept SE — OLS on the error bars (§10.8)** — `Utilities.py:389-390` (LS), `965-966` (SH normal). `curve_fit(linear, x_std, y_std) → linear(0, *popt_std)` is mathematically meaningless. Inverse-isochron paths (`441`, `1286`) correctly use `pcov[1,1]`; propagate that pattern.
 
-8. **Linear-sum vs quadrature σ propagation** — multiple sites (`getJVolumeStatistics`, `calcAge`, `calculateSlatCa/K`) use `F·Σ|σ_x/x|` instead of `√Σ(∂F/∂x · σ_x)²`. Conservative (over-estimates σ slightly when terms are independent) but inconsistent with McDougall & Harrison / ArArCalc / Mass Spec. Decide on one convention before submitting Datum tables to a journal.
+### Outstanding (P2 — Major)
 
-9. **§2 T0 outlier mask threshold** uses `|T_{0,j} − μ| > σ/2 + μ` (`getT0Statistics:2550`). The `+ μ` term is dimensionally suspect — standard form is `|x − μ| > kσ`. May be a copy-paste error; verify with advisor.
+6. **Plateau "avg_age" uses arithmetic mean (§10.7)** — `Utilities.py:2031`. `np.mean(y_age[mask==1])` instead of the v3.8-corrected WMA from §10.5. Plot annotation inconsistent with the WMA in the regression summary.
 
-10. **§5 J outlier mask uses ±1·σ_SE** (`getJStatistics:2151–2154`), which is too tight and will mask ~32% of normally-distributed points. Standard practice: 2σ or 3σ. Confirm intentionality.
+7. **Linear-sum σ propagation in `getJVolumeStatistics`/`calcAge`** — `Utilities.py:2839, 2926, 2942` etc. Uses `F·Σ|σ_x/x|` instead of `√Σ(∂F/∂x · σ_x)²`. Inconsistent with AutoPipeline `_propagate` quadrature.
 
-11. **Salt σ on numerator subtraction** (`calculateSlatCa:2709`, `calculateSlatK:2738`) uses linear sum on `Ar36 − air/298.56`, not quadrature. Should be `√(σ_36² + (σ_air/298.56)²)`. Same concern for the K-salt 40-Ar-36·298.56 numerator.
+8. **J/Salt outlier mask uses ±1·σ_SE** — `getJStatistics:2209-2210`, `getSaltStatistics:2250`. Too tight; masks ~32% of normal points. Use 2σ or Chauvenet.
+
+9. **Isochron regression — OLS not York (§10.8)** — `Utilities.py:360, 905, 1234`. Ignores σ_x and ρ(x,y). York regression planned for v3.9+.
+
+### Outstanding (P3 — Minor)
+
+10. **`Ar_38_Air` mis-named in calcAge** (`Utilities.py:2879`). Variable contains ³⁸Ar(air) + ³⁸Ar(Cl), but is labelled "Ar_38_Air". Proper split only in `toDP:4648–4664`.
+
+11. **`T_std` in calcAge omits σ_λ** (`:2907`). McDougall & Harrison 1999 eq. 4.7 has three partials; pyADR drops `(∂T/∂λ)²σ_λ²`. ~0.5% relative under-estimate.
+
+12. **λ source split: `constants[14]` vs `constants[16]`** — `getDegasPlot:444` uses [14]; calcAge `:2904`, `getStackPlot:1972` use [16]. Audit PS to confirm [14]==[16] or unify.
+
+13. **J calc uses hardcoded λ, Age calc reads `constants[16]`** (`getJVolumeStatistics:2748-2749`). λ=5.531e-10 written in source. PS change creates systematic offset.
+
+14. **Atmospheric ⁴⁰/³⁶ hardcoded 298.56 in salt functions** (`:2708, 2737-2738`). Rest of program reads `constants[12]`. Code style: replace literal with `constants[12]`.
+
+15. **§2 T0 outlier mask threshold** uses `|T_{0,j} − μ| > σ/2 + μ` (`getT0Statistics:2550`). The `+ μ` term is dimensionally suspect. Verify with advisor.
+
+16. **Salt σ on numerator subtraction** (`calculateSlatCa:2709`, `calculateSlatK:2738`) uses linear sum on `Ar36 − air/298.56`. Should be quadrature.
+
+17. **Datum CSV does not write cov[X,Y]** (`NTNU_DR.py:3493`). Without ρ(x,y), downstream York / IsoplotR refitting from the CSV is impossible. Add 4 columns per Vermeesch (2018) Eq. 2.
 
 ---
 
 ## References
 
-**Primary ⁴⁰Ar/³⁹Ar data-reduction references:**
+**Primary ⁴⁰Ar/³⁹Ar data-reduction:**
 
 - McDougall, I., Harrison, T.M. (1999). *Geochronology and Thermochronology by the ⁴⁰Ar/³⁹Ar Method*, 2nd ed. Oxford UP.
-- Koppers, A.A.P. (2002). ArArCALC — software for ⁴⁰Ar/³⁹Ar age calculations. *Computers & Geosciences* 28, 605–619. doi:10.1016/S0098-3004(01)00095-4
-- Schaen, A.J. et al. (2021). Interpreting and reporting ⁴⁰Ar/³⁹Ar geochronologic data. *GSA Bulletin* 133(3/4), 461–487. doi:10.1130/B35560.1
+- Koppers, A.A.P. (2002). ArArCALC — software for ⁴⁰Ar/³⁹Ar age calculations. *Computers & Geosciences* 28, 605–619.
+- Schaen, A.J. et al. (2021). Interpreting and reporting ⁴⁰Ar/³⁹Ar geochronologic data. *GSA Bulletin* 133(3/4), 461–487.
 
-**Isochron regression & weighted-mean statistics (§10):**
+**Isochron regression & WMA statistics (§10):**
 
-- Vermeesch, P. (2024). Errorchrons and anchored isochrons in IsoplotR. *Geochronology* 6, 397–407. doi:10.5194/gchron-6-397-2024
-- Vermeesch, P. (2018). IsoplotR: A free and open toolbox for geochronology. *Geoscience Frontiers* 9, 1479–1493. doi:10.1016/j.gsf.2018.04.001
-- Vermeesch, P. (2015). Revised error propagation of ⁴⁰Ar/³⁹Ar data, including covariances. *GCA* 171, 325–337. doi:10.1016/j.gca.2015.09.008
-- Li, Y., Vermeesch, P. (2021). Inverse isochron regression for Re–Os, K–Ca, and other chronometers. *Geochronology* 3, 415–420. doi:10.5194/gchron-3-415-2021
-- Powell, R., Green, E.C.R., Marillo Sialer, E., Woodhead, J. (2020). Robust Isochron Calculation. *Geochronology*. doi:10.5194/gchron-2020-4
+- Vermeesch, P. (2024). Errorchrons and anchored isochrons in IsoplotR. *Geochronology* 6, 397–407.
+- Vermeesch, P. (2018). IsoplotR: free open toolbox for geochronology. *Geoscience Frontiers* 9, 1479–1493.
+- Vermeesch, P. (2015). Revised error propagation of ⁴⁰Ar/³⁹Ar data, including covariances. *GCA* 171, 325–337.
+- Li, Y., Vermeesch, P. (2021). Inverse isochron regression for Re–Os, K–Ca, and other chronometers. *Geochronology* 3, 415–420.
+- Powell, R., Green, E.C.R., Marillo Sialer, E., Woodhead, J. (2020). Robust Isochron Calculation. *Geochronology*.
 - York, D., Evensen, N.M., Lopez-Martinez, M., De Basabe Delgado, J. (2004). Unified equations for the slope, intercept, and standard errors of the best straight line. *Am. J. Phys.* 72(3), 367–375.
-- Kuiper, K.F. (2002). The interpretat
+- Kuiper, K.F. (2002). The interpretation of inverse isochron diagrams in ⁴⁰Ar/³⁹Ar geochronology. *EPSL* 203, 499–506.
+
+**Intercept SE for linear regression (§1):**
+
+- Li, X., Naeher, U., Pross, J. (2019). Mass spectrometric data processing in stable isotope analysis: regression-based standard errors of the y-intercept. *J. Mass Spectrom.* 54, 145–152.
+
+**Modified weighting & 3D plane fit (PlaneFit3D):**
+
+- Mahon, K.I. (1996). The New "York" Regression. *Int. Geol. Rev.* 38(4), 293–303.
+- Kent, J.T., Watson, G.S., Onstott, T.C. (1990). Fitting straight lines and planes with an application to radiometric dating. *EPSL* 97, 1–17.
+- Wu, M.-W. (2007). 3-D Plane-fitting Program in 40Ar/39Ar Dating. NTU MSc thesis R94224113.

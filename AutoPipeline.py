@@ -221,6 +221,7 @@ def best_mask(vt_i, numCycle, blank_t0=None, fit_type=0):
     return bm
 
 def calc_t0(vt, mask, numCycle, fit_type=0):
+    """Batch T0 fit for all 5 isotopes. σ uses pcov[-1,-1] (see _fit_one)."""
     f=Utilities.fit_func_list[fit_type]
     T0=np.zeros(5); SIG=np.zeros(5); R=np.zeros(5)
     for i in range(5):
@@ -228,9 +229,13 @@ def calc_t0(vt, mask, numCycle, fit_type=0):
         if n<2: continue
         t,v=vt[i,sel,1],vt[i,sel,0]
         try:
-            popt,_=curve_fit(f,t,v)
+            popt,pcov=curve_fit(f,t,v)
             T0[i]=f(0,*popt)
-            SIG[i]=np.std(np.abs(v-f(t,*popt)))/np.sqrt(n)
+            # σ_T0 = SE of intercept from covariance (not std/√n; see _fit_one)
+            if pcov is not None and pcov.shape[0] > 0 and np.isfinite(pcov[-1,-1]):
+                SIG[i] = float(np.sqrt(np.abs(pcov[-1,-1])))
+            else:
+                SIG[i] = float(np.std(np.abs(v-f(t,*popt)))/np.sqrt(n))
             R[i]=r2_score(v,f(t,*popt))
         except: pass
     return T0,SIG,R
@@ -260,16 +265,39 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as _FigCanvas
 import matplotlib.figure as _mfig
 
 def _fit_one(f, vt_i, mask):
-    """Returns (t0, sig, r2, popt) or (0,1e-9,0,None)."""
+    """Returns (t0, sig, r2, popt) or (0,1e-9,0,None).
+
+    σ_T0 BUG FIX (2026-05):
+        Earlier this returned `sig = std(residuals)/√n`, which is the standard
+        error of the MEAN, not of the y-INTERCEPT. For step-heating data with
+        cycle times t ∈ [320..600] s, the intercept extrapolated to t=0 has a
+        much larger uncertainty (typically ~10× of std/√n) because of the
+        lever-arm from t̄ to 0.
+
+        Fixed: σ_T0 is now `sqrt(pcov[-1,-1])` — the SE of the y-intercept from
+        the regression covariance matrix (matches `_fit_with_errors`'s
+        `sig_model`, Li et al. 2019 Eq. 1). For linear y=a·t+b and constant
+        y=b fit funcs in `fit_func_list`, the intercept is the LAST parameter
+        of popt; hence pcov[-1,-1] is its variance.
+    """
     sel = np.where(mask == 1)[0]
     if len(sel) < 2:
         return 0.0, 1e-9, 0.0, None
     t, v = vt_i[sel, 1], vt_i[sel, 0]
     try:
-        popt, _ = curve_fit(f, t, v)
+        popt, pcov = curve_fit(f, t, v)
         t0  = f(0, *popt)
-        sig = np.std(np.abs(v - f(t, *popt))) / np.sqrt(len(sel))
-        r2  = r2_score(v, f(t, *popt))
+        # SE of intercept from pcov; fallback to Li 2019 closed-form
+        if pcov is not None and pcov.shape[0] > 0 and np.isfinite(pcov[-1, -1]):
+            sig = float(np.sqrt(np.abs(pcov[-1, -1])))
+        else:
+            res = v - f(t, *popt)
+            tm = float(np.mean(t))
+            Stt = float(np.sum((t - tm)**2))
+            ddof = max(1, len(sel) - len(popt))
+            s = float(np.std(res, ddof=ddof))
+            sig = s * np.sqrt(1.0/len(sel) + tm**2 / Stt) if Stt > 0 else s
+        r2 = r2_score(v, f(t, *popt))
         return t0, sig, r2, popt
     except Exception:
         return 0.0, 1e-9, 0.0, None
