@@ -8,59 +8,80 @@
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
+
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
-        MainWindow.resize(800, 720)
+        MainWindow.resize(800, 750)
         self.centralwidget = QtWidgets.QWidget(MainWindow)
         self.centralwidget.setObjectName("centralwidget")
-        # FIX: pyADR title moved below the logo so they no longer overlap
-        self.label = QtWidgets.QLabel(self.centralwidget)
-        self.label.setGeometry(QtCore.QRect(0, 88, 800, 30))
-        self.label.setMinimumSize(QtCore.QSize(519, 30))
+
+        # FIX: outer layout keeps `self.content` horizontally centered when
+        # the user resizes the window.
+        outer = QtWidgets.QHBoxLayout(self.centralwidget)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addStretch(1)
+
+        # Fixed-width content column. NTNU_DataReduction.py adds the NTNU logo
+        # into `page.content` (not centralwidget), so the logo also stays centered.
+        self.content = QtWidgets.QWidget(self.centralwidget)
+        self.content.setObjectName("content")
+        self.content.setFixedWidth(520)
+        outer.addWidget(self.content, 0, QtCore.Qt.AlignTop)
+        outer.addStretch(1)
+
+        col = QtWidgets.QVBoxLayout(self.content)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(0)
+
+        # Logo placeholder — NTNU_DataReduction.py will reparent the NTNU logo
+        # QLabel into `self.logo_slot` for the HomePage. Reserve vertical space
+        # so the layout doesn't jump when the logo is added.
+        self.logo_slot = QtWidgets.QWidget(self.content)
+        self.logo_slot.setFixedHeight(85)
+        col.addWidget(self.logo_slot)
+
+        # pyADR title
+        self.label = QtWidgets.QLabel(self.content)
+        self.label.setMinimumHeight(34)
         self.label.setAlignment(QtCore.Qt.AlignCenter)
         self.label.setObjectName("label")
-        # FIX: 10 buttons, height 44, gap 12 (pitch 56), start y=120, centered (x=190, w=420)
-        self.LRP = QtWidgets.QPushButton(self.centralwidget)
-        self.LRP.setGeometry(QtCore.QRect(190, 120, 420, 44))
-        self.LRP.setStyleSheet("font: 18pt \".AppleSystemUIFont\";")
-        self.LRP.setObjectName("LRP")
-        self.MR = QtWidgets.QPushButton(self.centralwidget)
-        self.MR.setGeometry(QtCore.QRect(190, 176, 420, 44))
-        self.MR.setStyleSheet("font: 18pt \".AppleSystemUIFont\";")
-        self.MR.setObjectName("MR")
-        self.JV = QtWidgets.QPushButton(self.centralwidget)
-        self.JV.setGeometry(QtCore.QRect(190, 232, 420, 44))
-        self.JV.setStyleSheet("font: 18pt \".AppleSystemUIFont\";")
-        self.JV.setObjectName("JV")
-        self.SC = QtWidgets.QPushButton(self.centralwidget)
-        self.SC.setGeometry(QtCore.QRect(190, 288, 420, 44))
-        self.SC.setStyleSheet("font: 18pt \".AppleSystemUIFont\";")
-        self.SC.setObjectName("SC")
-        self.PS_button = QtWidgets.QPushButton(self.centralwidget)
-        self.PS_button.setGeometry(QtCore.QRect(190, 344, 420, 44))
-        self.PS_button.setStyleSheet("font: 18pt \".AppleSystemUIFont\";")
-        self.PS_button.setObjectName("PS_button")
-        self.AC = QtWidgets.QPushButton(self.centralwidget)
-        self.AC.setGeometry(QtCore.QRect(190, 400, 420, 44))
-        self.AC.setStyleSheet("font: 18pt \".AppleSystemUIFont\";")
-        self.AC.setObjectName("AC")
-        self.T0S = QtWidgets.QPushButton(self.centralwidget)
-        self.T0S.setGeometry(QtCore.QRect(190, 456, 420, 44))
-        self.T0S.setStyleSheet("font: 18pt \".AppleSystemUIFont\";")
-        self.T0S.setObjectName("T0S")
-        self.DF = QtWidgets.QPushButton(self.centralwidget)
-        self.DF.setGeometry(QtCore.QRect(190, 512, 420, 44))
-        self.DF.setStyleSheet("font: 18pt \".AppleSystemUIFont\";")
-        self.DF.setObjectName("DF")
-        self.DP = QtWidgets.QPushButton(self.centralwidget)
-        self.DP.setGeometry(QtCore.QRect(190, 568, 420, 44))
-        self.DP.setStyleSheet("font: 18pt \".AppleSystemUIFont\";")
-        self.DP.setObjectName("DP")
-        self.AP = QtWidgets.QPushButton(self.centralwidget)
-        self.AP.setGeometry(QtCore.QRect(190, 624, 420, 44))
-        self.AP.setStyleSheet("font: 18pt \".AppleSystemUIFont\";")
-        self.AP.setObjectName("AP")
+        col.addWidget(self.label)
+
+        # Small gap before buttons
+        col.addSpacing(8)
+
+        # 10 buttons in a sub-layout. Negative spacing makes the native
+        # PushButton borders overlap so the column reads as one stack
+        # while keeping the original rounded/gradient look.
+        btn_box = QtWidgets.QVBoxLayout()
+        btn_box.setContentsMargins(0, 0, 0, 0)
+        btn_box.setSpacing(6)
+        col.addLayout(btn_box)
+
+        button_specs = [
+            ("LRP", "Calculate T0"),
+            ("MR", "Mass Ratio"),
+            ("JV", "J Calculation"),
+            ("SC", "Salt Calculation"),
+            ("PS_button", "Parameter Setting"),
+            ("AC", "Age Calculation"),
+            ("T0S", "Statistics"),
+            ("DF", "Diagram Plots"),
+            ("DP", "Datum Publication"),
+            ("AP", "Auto Pipeline"),
+        ]
+        for name, _text in button_specs:
+            btn = QtWidgets.QPushButton(self.content)
+            btn.setObjectName(name)
+            btn.setMinimumHeight(52)
+            # FIX: keep native PushButton look (rounded gradient); only override font size.
+            btn.setStyleSheet("font: 22pt \".AppleSystemUIFont\";")
+            btn_box.addWidget(btn)
+            setattr(self, name, btn)
+
+        col.addStretch(1)
+
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QtWidgets.QMenuBar(MainWindow)
         self.menubar.setGeometry(QtCore.QRect(0, 0, 800, 24))
@@ -124,4 +145,3 @@ if __name__ == "__main__":
     ui.setupUi(MainWindow)
     MainWindow.show()
     sys.exit(app.exec_())
-

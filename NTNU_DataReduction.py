@@ -845,19 +845,25 @@ class App():
             cw = page.centralWidget()
         if cw is None:
             return
-        page.logo = QtWidgets.QLabel(cw)
-        # FIX: HomePage uses a smaller, centered logo so it doesn't collide with the pyADR title;
-        # other pages keep the original wide banner layout.
-        if page is self.HomePage:
-            page.logo.setGeometry(QtCore.QRect(150, 5, 500, 80))
+        # FIX: HomePage uses a layout-driven logo placed inside `page.logo_slot`
+        # so it stays centered when the user resizes the window. Other pages
+        # keep the original absolute-positioned banner across the top.
+        if page is self.HomePage and hasattr(page, 'logo_slot'):
+            page.logo = QtWidgets.QLabel(page.logo_slot)
+            slot_layout = QtWidgets.QHBoxLayout(page.logo_slot)
+            slot_layout.setContentsMargins(0, 0, 0, 0)
+            slot_layout.addStretch(1)
+            slot_layout.addWidget(page.logo)
+            slot_layout.addStretch(1)
+            page.logo.setFixedSize(500, 80)
+            page.logo.setScaledContents(True)
         else:
+            page.logo = QtWidgets.QLabel(cw)
             page.logo.setGeometry(QtCore.QRect(50, 25, 700, 75))
+            page.logo.setScaledContents(True)
         page.logo.setText("")
         page.logo.setPixmap(QtGui.QPixmap(self.work_dir+".work/logo.png"))
-        page.logo.setScaledContents(True)
         page.logo.setObjectName("logo")
-        if page is self.HomePage and hasattr(page, 'label'):
-            page.label.raise_()
 
     def _read_SH_controls(self):
         """FIX: use xAuto/yAuto checkboxes; no (0,0) sentinel."""
