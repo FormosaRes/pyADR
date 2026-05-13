@@ -846,11 +846,18 @@ class App():
         if cw is None:
             return
         page.logo = QtWidgets.QLabel(cw)
-        page.logo.setGeometry(QtCore.QRect(50, 25, 700, 75))
+        # FIX: HomePage uses a smaller, centered logo so it doesn't collide with the pyADR title;
+        # other pages keep the original wide banner layout.
+        if page is self.HomePage:
+            page.logo.setGeometry(QtCore.QRect(225, 15, 350, 65))
+        else:
+            page.logo.setGeometry(QtCore.QRect(50, 25, 700, 75))
         page.logo.setText("")
         page.logo.setPixmap(QtGui.QPixmap(self.work_dir+".work/logo.png"))
         page.logo.setScaledContents(True)
         page.logo.setObjectName("logo")
+        if page is self.HomePage and hasattr(page, 'label'):
+            page.label.raise_()
 
     def _read_SH_controls(self):
         """FIX: use xAuto/yAuto checkboxes; no (0,0) sentinel."""
@@ -1898,7 +1905,15 @@ class App():
         self.AgeCalculationPage.new_2.clicked.connect(self.toAC)
 
         self.widget.show()
-        
+        # FIX: center window on screen — use frameGeometry to include title bar
+        QtWidgets.QApplication.processEvents()
+        _sg  = QtWidgets.QApplication.primaryScreen().availableGeometry()
+        _fg  = self.widget.frameGeometry()
+        self.widget.move(
+            _sg.x() + (_sg.width()  - _fg.width())  // 2,
+            _sg.y() + (_sg.height() - _fg.height()) // 2,
+        )
+
          # click button on Salt Calculation page
         self.SaltCalculationPage.return_2.clicked.connect(self.toMain)
         self.SaltCalculationPage.save.clicked.connect(self.SC_save)
@@ -2012,6 +2027,15 @@ class App():
     # ===============================================================================
     # back to Homepage
     def toMain(self):
+        # FIX: restore normal window size when leaving AutoPipeline
+        self.widget.resize(800, 700)
+        QtWidgets.QApplication.processEvents()
+        _sg = QtWidgets.QApplication.primaryScreen().availableGeometry()
+        _fg = self.widget.frameGeometry()
+        self.widget.move(
+            _sg.x() + (_sg.width()  - _fg.width())  // 2,
+            _sg.y() + (_sg.height() - _fg.height()) // 2,
+        )
         self.widget.setCurrentIndex(0)
 
     # popup message box
@@ -4462,6 +4486,15 @@ class App():
         self.AutoPipelinePage.set_context(
             self.parameters, self.parameters_name,
             int(self.parameters[self.parameters_name.index('numCycle')])
+        )
+        # FIX: resize to fit AutoPipeline minimum size (1280×720), then re-center
+        self.widget.resize(1280, 720)
+        QtWidgets.QApplication.processEvents()
+        _sg = QtWidgets.QApplication.primaryScreen().availableGeometry()
+        _fg = self.widget.frameGeometry()
+        self.widget.move(
+            _sg.x() + (_sg.width()  - _fg.width())  // 2,
+            _sg.y() + (_sg.height() - _fg.height()) // 2,
         )
         self.widget.setCurrentIndex(20)
 
