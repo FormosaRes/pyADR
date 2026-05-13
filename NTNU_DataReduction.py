@@ -849,7 +849,7 @@ class App():
         # FIX: HomePage uses a smaller, centered logo so it doesn't collide with the pyADR title;
         # other pages keep the original wide banner layout.
         if page is self.HomePage:
-            page.logo.setGeometry(QtCore.QRect(225, 15, 350, 65))
+            page.logo.setGeometry(QtCore.QRect(150, 5, 500, 80))
         else:
             page.logo.setGeometry(QtCore.QRect(50, 25, 700, 75))
         page.logo.setText("")
