@@ -767,8 +767,9 @@ class App():
         except Exception:
             pass  # icon is cosmetic; never block startup
 
-        # v3.8.4: splash screen during startup. Reads version from .work/.app_info.txt
-        # so version label updates automatically with each release.
+        # v3.8.4: splash screen during startup. Version + date + URL are
+        # baked into splash.png at build time; showMessage only writes the
+        # runtime "Loading…" status in the bottom-right corner.
         self._splash = None
         try:
             _splash_path = os.path.join(self.work_dir, '.work', 'splash.png')
@@ -777,19 +778,10 @@ class App():
                 self._splash = QtWidgets.QSplashScreen(
                     _pix, QtCore.Qt.WindowStaysOnTopHint)
                 self._splash.setMask(_pix.mask())
-                # read version
-                _ver = '?'
-                try:
-                    with open(os.path.join(self.work_dir, '.work', '.app_info.txt'),
-                              encoding='utf-8') as _f:
-                        _lines = [ln.strip() for ln in _f.readlines()]
-                    if len(_lines) > 1: _ver = _lines[1]
-                except Exception:
-                    pass
                 self._splash.showMessage(
-                    f'v{_ver}    Loading…',
+                    'Loading…',
                     QtCore.Qt.AlignRight | QtCore.Qt.AlignBottom,
-                    QtGui.QColor(40, 40, 40))
+                    QtGui.QColor(60, 60, 60))
                 self._splash.show()
                 self.app.processEvents()
         except Exception:
