@@ -323,6 +323,24 @@ class DiagramPlots_SH(QtWidgets.QMainWindow, UI.DiagramPlots_SH.Ui_MainWindow):
         row0b.addWidget(self.showOverallFitCheckbox)
         row0b.addStretch(1)
         vbox.addLayout(row0b)
+        # v3.8.6 (A2): Isochron regression method dropdown.
+        # Only meaningful for DFN / DFI panels.  Visibility toggled with diagram type.
+        rowIM = QtWidgets.QHBoxLayout()
+        self.isochronMethodLabel = QtWidgets.QLabel("Isochron method:")
+        self.isochronMethodCombo = QtWidgets.QComboBox()
+        self.isochronMethodCombo.addItem("OLS",      "ols")
+        self.isochronMethodCombo.addItem("York 2004", "york")
+        self.isochronMethodCombo.setCurrentIndex(0)
+        self.isochronMethodCombo.setToolTip(
+            "OLS: scipy.curve_fit, assumes σ_x = 0 (older Ar/Ar convention).\n"
+            "York 2004: bivariate weighted regression with both σ_x and σ_y\n"
+            "(Schaen 2021 GSA Bull standard, IsoplotR default).\n\n"
+            "Switch triggers Apply automatically.  The DFI/DFN figure shows\n"
+            "the chosen method + its regression MSWD in the upper-right corner.")
+        rowIM.addWidget(self.isochronMethodLabel)
+        rowIM.addWidget(self.isochronMethodCombo, 1)
+        vbox.addLayout(rowIM)
+
         # Log Y + Show Group Span row
         rowOpt = QtWidgets.QHBoxLayout()
         self.logYCheckbox = QtWidgets.QCheckBox("Log Y")
@@ -1271,6 +1289,8 @@ class App():
                 # Get actual axis limits from getDFStatistics_sh
                 # FIX: pass pname so only target diagram gets xlim/ylim
                 _show_leg = self.DiagramPlots_SHPage.showLegendCheckbox.isChecked()
+                # v3.8.6 (A2): pass isochron_method from Plot Controls dropdown
+                _iso_method = self.DiagramPlots_SHPage.isochronMethodCombo.currentData() or 'ols'
                 result, limits = Utilities.getDFStatistics_sh(
                     self.Dfilename, self.mask, self.parameters, 'r', 'o',
                     xlim=xlim, ylim=ylim, legend_name=legend,
@@ -1280,6 +1300,7 @@ class App():
                     return_points=True, show_legend=_show_leg,
                     show_group_fits=self.DiagramPlots_SHPage.showGroupFitsCheckbox.isChecked(),
                     show_overall_fit=self.DiagramPlots_SHPage.showOverallFitCheckbox.isChecked(),
+                    isochron_method=_iso_method,
 )
                 # FIX#8: store point data for isochron click detection
                 self.iso_pts_DFN = limits.get('DFN_pts', self.iso_pts_DFN)
@@ -2062,6 +2083,9 @@ class App():
         QtCore.QTimer.singleShot(60, lambda: setattr(
             self.DiagramPlots_SHPage, "_click_callback", self.on_click_SH))
         self.DiagramPlots_SHPage.btnApply.clicked.connect(self.SH_apply_axes)
+        # v3.8.6 (A2): dropdown change auto-triggers Apply
+        self.DiagramPlots_SHPage.isochronMethodCombo.currentIndexChanged.connect(
+            self.SH_apply_axes)
         self.DiagramPlots_SHPage.dfmPanelCombo.currentIndexChanged.connect(self._dfm_on_panel_changed)
         self.DiagramPlots_SHPage.btnAuto.clicked.connect(self.SH_auto_axes)
         self.DiagramPlots_SHPage.btnReset.clicked.connect(self.SH_reset_axes)
