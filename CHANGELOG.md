@@ -1,8 +1,58 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
 版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4
-最後整理日期：2026-05-25
+最後整理日期：2026-05-26
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.4 (cont.)（2026-05-26）— branding + launcher + splash screen
+
+同版本後續，集中在 UX 跟桌面整合，沒動到任何數學或計算 path。
+
+### 桌面捷徑 + ICO
+
+- `.work/pyADR.ico`（81 KB）多解析度 ICO（16/24/32/48/64/128/256）。Source: `.work/logo_square.png`，由 1024×1024 內部 render 降採樣，邊緣銳利
+- 桌面捷徑 `pyADR.lnk` 用 PowerShell 建立，Target → `pyADR.bat`、IconLocation → `pyADR.ico`、WindowStyle = 7（cmd 啟動時直接最小化到工作列，不彈窗擋 splash；要看 log 點工作列那顆 cmd）
+- 捷徑屬性寫進 `PKEY_AppUserModel_ID = NTNU.pyADR.ArAr.v3.8`（用 pywin32 propsys 設定），讓 Windows pin / group 行為跟 process AUMID 對齊
+
+### Square logo 重新設計
+
+- 原 logo 是 1.88:1 寬扁形狀，硬塞正方形 ICO 後 content 只佔 53% 高度
+- 新 `.work/logo_square.png`（512×512）保留原始 layout（"Ar" 中央左、"40/39" 上方貼著 r 自然小尺寸、印章右側），fit-by-width 進方形，比例正確
+- 元素萃取流程：navy 色 + 連通元件分析切出「Ar 主體」「40/39 碎片」「印章紅環 + 內部 navy 符號」三組 mask
+- Mask edge 用 dilation + Gaussian blur 軟化，alpha_composite 取代 paste，消除前一版的鋸齒缺陷
+
+### Splash screen
+
+- `.work/splash.png`（640×480）啟動畫面：navy 頂條 → logo 180×180 → "pyADR" 標題 → "⁴⁰Ar/³⁹Ar Data Reduction" 副標 → divider → NTNU Ar/Ar Lab → Prof. Meng Wan (Mary) Yeh → [version slot] → [date slot] → github.com/FormosaRes/pyADR → 薄 footer
+- splash 設計成靜態 template，**版本跟日期** runtime 才用 QPainter 畫上去，讀 `.work/.app_info.txt`。改版本只要編輯 .app_info.txt，下次啟動自動套用，不用重生 splash.png
+- `NTNU_DataReduction.py` `App.__init__` 內接 `QSplashScreen`，記錄 `_splash_t0` 時間戳
+- `run()` 內 `widget.show()` 之前用 `QEventLoop + QTimer.singleShot` 強制 splash 至少顯示 3 秒（plain `time.sleep` 會凍結 splash 渲染，QEventLoop 不會）
+- splash 右下 runtime 寫 "Loading…" via `QSplashScreen.showMessage`
+
+### Taskbar icon 修正
+
+- `NTNU_DataReduction.py` `App.__init__` 加 `app.setWindowIcon(QtGui.QIcon('.work/pyADR.ico'))` + `ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('NTNU.pyADR.ArAr.v3.8')`
+- 沒這兩行 Windows 會把 pyADR process 認成 "Python.exe"，taskbar 顯示 Python 預設藍蛇圖示，pin 後關閉程式也會卡 Python 圖示
+- 三層 AUMID 對齊：捷徑 .lnk 屬性 + Python `SetCurrentProcessExplicitAppUserModelID` + Qt `setWindowIcon`
+
+### 可選 silent launcher
+
+- `pyADR_launch.vbs`（path-relative）用 VBS 包一層讓 `pyADR.bat` 完全隱形跑（連 taskbar 都不出現 cmd）
+- 預設不啟用（cmd 留著看 log）。如果想完全乾淨啟動，把桌面捷徑 Target 改成 `pyADR_launch.vbs` 即可
+
+### 檔案改動
+
+- `NTNU_DataReduction.py` — `App.__init__` 加 icon + AUMID + splash setup + QPainter overlay + `_splash_t0`；`run()` 加 3 秒 QEventLoop 等待 + `splash.finish()`
+- `.work/pyADR.ico` 新增
+- `.work/logo_square.png` 新增（forced-add，原 .gitignore 排除 `.work/*.png`）
+- `.work/splash.png` 新增（同上 forced-add）
+- `.work/logo.png` 更新（pyADR + NTNU banner 高品質版）
+- `.work/.app_info.txt` Developer 欄修正 "An-J" → "An-Jun (Andrew) Liu"
+- `pyADR_launch.vbs` 新增（optional silent launcher）
+- `CLAUDE.md` 新增（AI agent 開發指引，§2 三資料夾分工、§3 不要動的東西、§5 v3.8.x 修正脈絡、§9 溝通風格）
+- `README.md` Changelog 摘要區更新 v3.8.2 / v3.8.3 / v3.8.4 entry，頁首版本號 3.8.1 → 3.8.4
 
 ---
 
