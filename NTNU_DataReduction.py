@@ -49,6 +49,228 @@ import PlaneFit3D
 import ExcelChartExporter  # V3.4.1: Excel native chart export
 
 
+# v3.8.6: shared help dialog used by DiagramPlot SH page + AutoPipeline window.
+# Content focuses on what each displayed number means and which formula / paper
+# it comes from — so users can defend the numbers in a paper / meeting.
+def _show_diagram_plot_help(parent):
+    """Open a tabbed Help dialog covering plateau / isochron / MSWD / age math."""
+    dlg = QtWidgets.QDialog(parent)
+    dlg.setWindowTitle("pyADR — Formulas & References")
+    dlg.resize(820, 640)
+    lay = QtWidgets.QVBoxLayout(dlg)
+
+    tabs = QtWidgets.QTabWidget()
+    lay.addWidget(tabs)
+
+    def _add_tab(title, html):
+        w = QtWidgets.QTextBrowser()
+        w.setOpenExternalLinks(True)
+        w.setHtml(html)
+        tabs.addTab(w, title)
+
+    _add_tab("Plateau / WMA", _HELP_PLATEAU_HTML)
+    _add_tab("Isochron",      _HELP_ISOCHRON_HTML)
+    _add_tab("MSWD",          _HELP_MSWD_HTML)
+    _add_tab("Age formula",   _HELP_AGE_HTML)
+    _add_tab("Ar components", _HELP_AR_COMP_HTML)
+    _add_tab("References",    _HELP_REFS_HTML)
+
+    btn_close = QtWidgets.QPushButton("Close")
+    btn_close.clicked.connect(dlg.accept)
+    lay.addWidget(btn_close, 0, QtCore.Qt.AlignRight)
+    dlg.exec_()
+
+
+_HELP_PLATEAU_HTML = """
+<h2>Weighted Mean Age (WMA) &amp; Plateau</h2>
+<p>The plateau age summarises a contiguous block of step ages that are
+mutually consistent within their analytical uncertainties.</p>
+<h3>Weighted Mean Formula</h3>
+<p style="margin-left:20px"><b>WMA = &Sigma;(T<sub>i</sub> / &sigma;<sub>i</sub><sup>2</sup>) /
+&Sigma;(1 / &sigma;<sub>i</sub><sup>2</sup>)</b></p>
+<p style="margin-left:20px"><b>&sigma;<sub>WMA, internal</sub> = 1 / &radic;&Sigma;(1/&sigma;<sub>i</sub><sup>2</sup>)</b></p>
+<p>Equivalent to maximum-likelihood estimator under Gaussian errors.
+Vermeesch (2018) IsoplotR Eq. 5; Schaen et al. (2021) GSA Bull. p.470.</p>
+<h3>External &sigma; (Wendt &amp; Carl 1991)</h3>
+<p>When MSWD &gt; 1, expand the internal &sigma; to capture excess scatter:</p>
+<p style="margin-left:20px"><b>&sigma;<sub>WMA, external</sub> = &sigma;<sub>WMA, internal</sub> &middot; &radic;MSWD</b>
+&nbsp;&nbsp;(only when MSWD &gt; 1)</p>
+<p>If MSWD &le; 1, just use the internal &sigma;.</p>
+<h3>Total Fusion Age</h3>
+<p>Treat the whole sample as if degassed in one step.  Sum all radiogenic
+<sup>40</sup>Ar and all K-derived <sup>39</sup>Ar:</p>
+<p style="margin-left:20px"><b>F<sub>total</sub> = &Sigma;<sup>40</sup>Ar*<sub>i</sub> / &Sigma;<sup>39</sup>Ar<sub>K,i</sub></b></p>
+<p style="margin-left:20px"><b>T<sub>total</sub> = ln(1 + J &middot; F<sub>total</sub>) / &lambda;</b></p>
+<p>Equivalent to a K/Ar age — ignores step structure.  Useful as a
+cross-check against plateau age.</p>
+"""
+
+_HELP_ISOCHRON_HTML = """
+<h2>Isochron Regression</h2>
+<p>An isochron is a mixing line between two end-members on a ratio plot.
+Two parametrisations are common in Ar/Ar:</p>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th></th><th>Normal isochron (DFN)</th><th>Inverse isochron (DFI)</th></tr>
+<tr><td>X axis</td><td><sup>39</sup>Ar / <sup>36</sup>Ar</td><td><sup>39</sup>Ar / <sup>40</sup>Ar</td></tr>
+<tr><td>Y axis</td><td><sup>40</sup>Ar / <sup>36</sup>Ar</td><td><sup>36</sup>Ar / <sup>40</sup>Ar</td></tr>
+<tr><td>Y-intercept</td><td>(<sup>40</sup>/<sup>36</sup>)<sub>trapped</sub></td><td>(<sup>36</sup>/<sup>40</sup>)<sub>trapped</sub> = 1/(<sup>40</sup>/<sup>36</sup>)<sub>trapped</sub></td></tr>
+<tr><td>Slope</td><td>F = <sup>40</sup>Ar* / <sup>39</sup>Ar<sub>K</sub></td><td>&minus;F &middot; (<sup>36</sup>/<sup>40</sup>)<sub>trapped</sub></td></tr>
+<tr><td>F formula</td><td>F = slope</td><td><b>F = &minus;slope / intercept</b></td></tr>
+</table>
+<p>For Y = a + bX (York convention, a = intercept, b = slope):</p>
+<p style="margin-left:20px">Normal:&nbsp;&nbsp; F = b</p>
+<p style="margin-left:20px">Inverse: F = &minus;b / a&nbsp;&nbsp;(Vermeesch 2024 Eq. 2; Li &amp; Vermeesch 2021 Eq. 5)</p>
+<h3>Regression methods (toggle in Plot Controls)</h3>
+<p><b>OLS (Ordinary Least Squares)</b> &mdash; <code>scipy.curve_fit(linear, x, y)</code>.
+Assumes &sigma;<sub>x</sub> = 0 (all error in Y).  Older Ar/Ar convention.</p>
+<p><b>York 2004</b> &mdash; Bivariate weighted regression: accounts for
+&sigma;<sub>x</sub>, &sigma;<sub>y</sub>, and their correlation per point.
+Iteratively solves slope until convergence.  Schaen et al. (2021) Ar/Ar standard;
+IsoplotR default.</p>
+<p>York generally gives smaller-magnitude slope (when &sigma;<sub>x</sub> is
+non-trivial) than OLS, so F and the resulting age can differ.  Toggle to compare.</p>
+<h3>&sigma;<sub>F</sub> for inverse isochron</h3>
+<p>F = &minus;b/a, so by Gaussian error propagation including
+slope-intercept covariance:</p>
+<p style="margin-left:20px"><b>&sigma;<sub>F</sub><sup>2</sup> = (&sigma;<sub>b</sub>/a)<sup>2</sup>
++ (b &middot; &sigma;<sub>a</sub> / a<sup>2</sup>)<sup>2</sup>
+&minus; 2 (b/a<sup>3</sup>) &middot; cov(a, b)</b></p>
+<p>cov(a, b) is typically negative for inverse isochrons (when slope steepens,
+intercept drops), so the cross-term reduces &sigma;<sub>F</sub>.  pyADR computes
+this from <code>pcov</code> (OLS) or York's analytical formula (Mahon 1996, Schaen 2021 Eq. 14b).</p>
+"""
+
+_HELP_MSWD_HTML = """
+<h2>MSWD &mdash; two flavours, not interchangeable</h2>
+<p>pyADR reports two MSWD numbers that look similar but measure different
+things.  They can diverge for hetero / disturbed samples.</p>
+<h3>Plateau MSWD &nbsp;<i>(right-panel stats)</i></h3>
+<p style="margin-left:20px"><b>MSWD<sub>plateau</sub> = &Sigma;((T<sub>i</sub> &minus; WMA) /
+&sigma;<sub>T,i</sub>)<sup>2</sup> / (N &minus; 1)</b></p>
+<p>Measures the spread of step <i>ages</i> around the weighted-mean age.
+Reflects age homogeneity (sample coherence in time).
+df = N&minus;1 (one free parameter: the mean).</p>
+<h3>Regression MSWD &nbsp;<i>(persistent label above DFN/DFI diagram)</i></h3>
+<p style="margin-left:20px"><b>MSWD<sub>regression</sub> = &Sigma;((y<sub>i</sub> &minus; a &minus; b&middot;x<sub>i</sub>) /
+&sigma;<sub>y,i</sub>)<sup>2</sup> / (N &minus; 2)</b></p>
+<p>Measures the scatter of <i>data points</i> around the isochron line.
+Reflects how well the linear mixing model fits the data.
+df = N&minus;2 (slope + intercept).</p>
+<h3>What different combinations imply</h3>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th></th><th>MSWD<sub>plateau</sub> &asymp; 1</th><th>MSWD<sub>plateau</sub> &gt; 1</th></tr>
+<tr><th>MSWD<sub>reg</sub> &asymp; 1</th><td>Ideal &mdash; well-behaved sample</td><td>Ages disagree but points fall on isochron line &mdash; trapped composition consistent, but ages dispersed (partial reset?)</td></tr>
+<tr><th>MSWD<sub>reg</sub> &gt; 1</th><td>Step ages agree but points scatter on isochron &mdash; trapped composition varies between steps</td><td>Both spread &mdash; significant geological complexity (excess Ar, hetero, partial loss)</td></tr>
+</table>
+<h3>Critical MSWD</h3>
+<p>Schaen et al. (2021) Eq. 2: <b>MSWD<sub>crit</sub> &asymp; 1 + 2&radic;(2/df)</b>.
+For df = 8, MSWD<sub>crit</sub> &asymp; 2.0.  MSWD beyond this rejects the
+assumption that scatter is purely analytical.</p>
+<p>When MSWD &gt; 1, pyADR (per Wendt &amp; Carl 1991) expands the
+internal &sigma; by &radic;MSWD to give an &ldquo;external&rdquo; &sigma; that
+captures the excess dispersion.</p>
+"""
+
+_HELP_AGE_HTML = """
+<h2>Ar/Ar Age Formula</h2>
+<p>From the radioactive decay of <sup>40</sup>K to <sup>40</sup>Ar:</p>
+<p style="margin-left:20px"><b>T = (1/&lambda;) &middot; ln(1 + J &middot; F)</b></p>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th>Symbol</th><th>Meaning</th><th>Where it comes from</th></tr>
+<tr><td>T</td><td>Age (yr)</td><td>What we want</td></tr>
+<tr><td>&lambda;</td><td>Total <sup>40</sup>K decay constant (1/yr)</td><td>Read from <code>parameters.csv</code> &lsquo;&lambda; for age calculation&rsquo;.  pyADR default 5.49e-10 (between Steiger-J&auml;ger 1977 = 5.543e-10 and Renne 2010 = 5.5305e-10).</td></tr>
+<tr><td>J</td><td>Irradiation parameter</td><td>From co-irradiated standards (J Calculation page).</td></tr>
+<tr><td>F</td><td><sup>40</sup>Ar* / <sup>39</sup>Ar<sub>K</sub></td><td>From step (plateau path) or isochron slope (DFN/DFI).</td></tr>
+</table>
+<h3>&sigma;<sub>T</sub> propagation (Renne 2010 partial derivatives)</h3>
+<p style="margin-left:20px"><b>&sigma;<sub>T</sub><sup>2</sup> = ((J &middot; &sigma;<sub>F</sub>)<sup>2</sup>
++ (F &middot; &sigma;<sub>J</sub>)<sup>2</sup>) / (&lambda;(1+JF))<sup>2</sup></b></p>
+<p>pyADR does <i>not</i> include &sigma;<sub>&lambda;</sub> by default (typically &lt; 0.5% for
+geologically young samples).</p>
+<h3>Decay constants used elsewhere</h3>
+<ul>
+<li><b><sup>37</sup>Ar half-life</b> = 35.011 d (LAMBDA_37 in AutoPipeline).
+  Used to back-correct interfering <sup>37</sup>Ar between irradiation and analysis.</li>
+<li><b><sup>39</sup>Ar half-life</b> = 269 yr (LAMBDA_39).  Same purpose, much
+  slower decay so usually negligible over months but corrected anyway.</li>
+</ul>
+"""
+
+_HELP_AR_COMP_HTML = """
+<h2>Ar isotope component breakdown</h2>
+<p>From measured <sup>36, 37, 38, 39, 40</sup>Ar, pyADR deconvolves trapped,
+production-related, and radiogenic components using <code>parameters.csv</code>
+production ratios.</p>
+<h3>Order of corrections (calcAge in Utilities.py)</h3>
+<ol>
+<li><b><sup>37</sup>Ar(Ca)</b> = measured <sup>37</sup>Ar &mdash; from Ca interference, decay-corrected to irradiation midpoint.</li>
+<li><b><sup>36</sup>Ar(Ca)</b> = <sup>37</sup>Ar(Ca) &times; PR(<sup>36</sup>/<sup>37</sup>Ca)</li>
+<li><b><sup>36</sup>Ar(air)</b> = measured <sup>36</sup>Ar &minus; <sup>36</sup>Ar(Ca).  (NTNU lab: <sup>36</sup>Ar(Cl) treated as negligible.)</li>
+<li><b><sup>39</sup>Ar(Ca)</b> = <sup>37</sup>Ar(Ca) &times; PR(<sup>39</sup>/<sup>37</sup>Ca)</li>
+<li><b><sup>39</sup>Ar(K)</b> = measured <sup>39</sup>Ar &minus; <sup>39</sup>Ar(Ca)</li>
+<li><b><sup>40</sup>Ar(air)</b> = <sup>36</sup>Ar(air) &times; R(<sup>40</sup>/<sup>36</sup>)<sub>atm</sub>  &nbsp;(R = 298.56 by default)</li>
+<li><b><sup>40</sup>Ar(K)</b> = <sup>39</sup>Ar(K) &times; PR(<sup>40</sup>/<sup>39</sup>K)</li>
+<li><b><sup>40</sup>Ar*</b> = measured <sup>40</sup>Ar &minus; <sup>40</sup>Ar(air) &minus; <sup>40</sup>Ar(K)</li>
+</ol>
+<p>F = <sup>40</sup>Ar* / <sup>39</sup>Ar(K).  Age T = ln(1 + JF)/&lambda;.</p>
+<h3>Ca/K ratio</h3>
+<p style="margin-left:20px"><b>Ca/K = (<sup>37</sup>Ar(Ca) / <sup>39</sup>Ar(K)) &middot; R<sub>Ca/K</sub></b></p>
+<p>R<sub>Ca/K</sub> = 0.52 in pyADR (NTNU reactor calibration, hardcoded).
+Literature standard is 1.83 (McDougall &amp; Harrison 1999 Eq. 4.30) but
+that's for a different reactor.</p>
+"""
+
+_HELP_REFS_HTML = """
+<h2>References</h2>
+<h3>Isochron regression</h3>
+<ul>
+<li>York D., Evensen N.M., Mart&iacute;nez M.L., De Basabe Delgado J. (2004)
+<i>Unified equations for the slope, intercept, and standard errors of the best straight line.</i>
+Am. J. Phys. 72: 367&ndash;375.</li>
+<li>Vermeesch P. (2018) <i>IsoplotR: A free and open toolbox for geochronology.</i>
+Geoscience Frontiers 9: 1479&ndash;1493.  doi:10.1016/j.gsf.2018.04.001</li>
+<li>Vermeesch P. (2024) <i>Errorchrons and anchored isochrons in IsoplotR.</i>
+Geochronology 6: 397&ndash;407.  doi:10.5194/gchron-6-397-2024</li>
+<li>Li Y., Vermeesch P. (2021) <i>Short communication: Inverse isochron regression
+for Re&ndash;Os, K&ndash;Ca and other chronometers.</i> Geochronology 3: 415&ndash;420.
+doi:10.5194/gchron-3-415-2021</li>
+<li>Mahon K.I. (1996) <i>The new "York" regression: application of an improved
+statistical method to geochemistry.</i> Int. Geol. Rev. 38: 293&ndash;303.
+(slope-intercept covariance formula)</li>
+</ul>
+<h3>MSWD / weighted-mean statistics</h3>
+<ul>
+<li>Wendt I., Carl C. (1991) <i>The statistical distribution of the mean squared
+weighted deviation.</i> Chem. Geol. 86: 275&ndash;285.
+(&radic;MSWD external-&sigma; expansion)</li>
+<li>Schaen A.J. et al. (2021) <i>Interpreting and reporting <sup>40</sup>Ar/<sup>39</sup>Ar
+geochronologic data.</i> GSA Bulletin 133: 461&ndash;487.
+doi:10.1130/B35560.1  (Ar/Ar community standard)</li>
+</ul>
+<h3>Ar/Ar method &amp; decay constants</h3>
+<ul>
+<li>McDougall I., Harrison T.M. (1999) <i>Geochronology and Thermochronology
+by the <sup>40</sup>Ar/<sup>39</sup>Ar Method</i>, 2nd ed., Oxford University Press.
+(Ar component math standard)</li>
+<li>Renne P.R. et al. (2010) <i>Joint determination of <sup>40</sup>K decay constants and
+<sup>40</sup>Ar*/<sup>40</sup>K for the Fish Canyon sanidine standard.</i> GCA 74: 5349&ndash;5367.
+(modern &lambda; values)</li>
+<li>Renne P.R. et al. (2011) <i>Response to the comment by W.H. Schwarz et al.
+on "Joint determination of...".</i> GCA 75: 5097&ndash;5100.</li>
+<li>Steiger R.H., J&auml;ger E. (1977) <i>Subcommission on geochronology: Convention
+on the use of decay constants in geo- and cosmochronology.</i> EPSL 36: 359&ndash;362.
+(historical &lambda; = 5.543e-10/yr)</li>
+<li>Kuiper K.F. (2002) <i>The interpretation of inverse isochron diagrams in
+<sup>40</sup>Ar/<sup>39</sup>Ar geochronology.</i> EPSL 203: 499&ndash;506.</li>
+</ul>
+<h3>Atmospheric composition</h3>
+<ul>
+<li>Lee J.-Y. et al. (2006) <i>A redetermination of the isotopic abundances of
+atmospheric Ar.</i> GCA 70: 4507&ndash;4512.  (<sup>40</sup>Ar/<sup>36</sup>Ar = 298.56)</li>
+</ul>
+"""
+
+
 # load UI
 # ===============================================================================
 class HomePage(QtWidgets.QMainWindow, UI.HomePage.Ui_MainWindow):
@@ -210,6 +432,18 @@ class DiagramPlots_SH(QtWidgets.QMainWindow, UI.DiagramPlots_SH.Ui_MainWindow):
         self.setupUi(self)
         self.photo.setScaledContents(True)  # ensure image fills widget for correct coord mapping
         self.A.setText("Ca/K")  # rename from K-Ca plateau
+
+        # v3.8.6: Main + Help menu bar.  Empty menubar pre-existed (UI.DiagramPlots_SH
+        # has setMenuBar but no items).  Populate it here so we don't touch the
+        # auto-generated UI file.
+        self.menuMain = self.menubar.addMenu("Main")
+        self.actionGoHome = QtWidgets.QAction("Return to pyADR Home", self)
+        self.menuMain.addAction(self.actionGoHome)
+        self.menuHelp = self.menubar.addMenu("Help")
+        self.actionHelpFormulas = QtWidgets.QAction("Formulas && References", self)
+        self.menuHelp.addAction(self.actionHelpFormulas)
+        self.actionHelpFormulas.triggered.connect(
+            lambda: _show_diagram_plot_help(self))
 
         # Info label at top (for mouse hover info)
         self.infoLabel = QtWidgets.QLabel("  ← hover over a step to see info", self.centralwidget)
@@ -2083,6 +2317,8 @@ class App():
         
         # click button on Diagram Plots SH Page
         self.DiagramPlots_SHPage.return_2.clicked.connect(self.toMain)
+        # v3.8.6: Main menu item → home
+        self.DiagramPlots_SHPage.actionGoHome.triggered.connect(self.toMain)
         self.DiagramPlots_SHPage.save.clicked.connect(self.DFSH_save)
         # V3.5 merged: Excel export button connection
         self.DiagramPlots_SHPage.btnExcel.clicked.connect(self.DFSH_export_excel)

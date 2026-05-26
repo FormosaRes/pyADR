@@ -4734,9 +4734,38 @@ class AutoPipelineWindow(QtWidgets.QMainWindow):
         except (ValueError, IndexError, TypeError):
             pass  # keep module default 5.49e-10
 
+    def _show_help(self):
+        """v3.8.6: open the shared Formulas & References help dialog.
+        Delegates to NTNU_DataReduction._show_diagram_plot_help so both
+        windows share the same content (single source of truth)."""
+        try:
+            import NTNU_DataReduction as _N
+            _N._show_diagram_plot_help(self)
+        except Exception as e:
+            QtWidgets.QMessageBox.information(
+                self, 'Help',
+                f'Help dialog unavailable: {e}\n\n'
+                'Documentation lives in NTNU_DataReduction.py '
+                '(_show_diagram_plot_help function).')
+
     def _build(self):
         cw=QtWidgets.QWidget(); self.setCentralWidget(cw)
         vb=QtWidgets.QVBoxLayout(cw); vb.setContentsMargins(0,0,0,0); vb.setSpacing(0)
+
+        # v3.8.6: top menu bar with Main (return) + Help (formulas / refs).
+        _mb = self.menuBar()
+        _menu_main = _mb.addMenu('Main')
+        self._actGoHome = QtWidgets.QAction('Return to pyADR Home', self)
+        _menu_main.addAction(self._actGoHome)
+        # Hook: NTNU_DataReduction.py wires actGoHome to toMain via returnBtn
+        # signal (existing pattern); to avoid breaking that, the menu action
+        # just emits the same signal as the existing returnBtn click.
+        self._actGoHome.triggered.connect(lambda: self.returnBtn.click()
+                                          if hasattr(self, 'returnBtn') else None)
+        _menu_help = _mb.addMenu('Help')
+        _act_help = QtWidgets.QAction('Formulas && References', self)
+        _menu_help.addAction(_act_help)
+        _act_help.triggered.connect(self._show_help)
 
         # Top bar: Mode/Fit/Blank/Signal chips + Pipeline progress + Output
         top_bar = QtWidgets.QWidget()
