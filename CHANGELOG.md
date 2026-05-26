@@ -1,8 +1,103 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4
 最後整理日期：2026-05-25
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.4（2026-05-25）— AutoPipeline AgeCalcPage isochron 公式修正 + λ 統一來源
+
+### 問題
+
+v3.8.3 (cont.) 在 `AutoPipeline.py:AgeCalcPage._update_isochron_stats` 加了 York 2004 isochron 計算，但有三個 bug。其中議題 1 是 v3.8.3 (cont.) 寫進去就錯的，CLAUDE.md §6 只記到後兩個小議題，沒注意到主公式也反了。
+
+#### 議題 1：Inverse isochron F 公式分子分母對調（HIGH，會改變 age 中心值）
+
+`_update_isochron_stats` 中對 inverse isochron 寫：
+
+```python
+F_i = -b_i/m_i if abs(b_i) > 1e-30 else (1/(-m_i) if m_i != 0 else 0)
+```
+
+其中 `m_i = slope`、`b_i = intercept`（由 york_regression return 順序 `(slope, intercept, ...)` 對應而來，跟同函式內 normal isochron `F_n = m_n` 用法一致）。
+
+但 inverse isochron 的 F 應該是 `−slope/intercept`，依據：
+
+- Vermeesch (2024) Geochronology 6:398 page 2:「[D/P]\* = −b/a for inverse isochrons (Li and Vermeesch, 2021)」（其中 a = intercept、b = slope、[D/P]\* = F）
+- Li & Vermeesch (2021) Geochronology 3:415 Eq. 5: `b' = -a' × (e^(λt) − 1)`，解出 `e^(λt) − 1 = -b'/a' = -slope/intercept`
+- Utilities.py:getDFStatistics_sh v3.8.0 fix 已採此公式（同 CHANGELOG V3.8.0）
+
+舊 code 寫成 `-b_i/m_i = -intercept/slope`，**正好是正解的倒數**，所以實際算出來是 1/F 而非 F。對 10 Ma 樣品估計 age 偏高約 18%（NO.65 9.77 Ma 會跑到約 11.5 Ma）。
+
+正解：
+
+```python
+F_i = -m_i / b_i
+```
+
+#### 議題 2：σ_F propagation 偏導跟舊 F 公式綁定
+
+原 σ_F 是給 `F = -b/m` 用的偏導：`∂F/∂b = -1/m`、`∂F/∂m = b/m²`。改成 `F = -m/b` 後對應的偏導：
+
+- `∂F/∂m = -1/b`
+- `∂F/∂b = m/b²`
+- `σ_F² = (σ_m/b)² + (m·σ_b/b²)²`
+
+#### 議題 3：λ hardcoded 5.543e-10，跟 calcAge 走的 5.49e-10 不一致
+
+`_update_isochron_stats` 內 4 個位置寫死 `5.543e-10`（Steiger-Jäger 1977），另有兩處透過 `hasattr(Utilities, 'LAMBDA_K')` fallback，但 `Utilities.py` 從未定義 `LAMBDA_K`，永遠走 fallback。
+
+calcAge 主路徑用的是 `parameters.csv` 內 `λ for age calculation = 5.49e-10`（透過 `constants[16]` 讀進來），跟 isochron path 不一致，會造成同樣資料的 plateau age 跟 isochron age 差約 1.0% 系統性偏移。
+
+修法：加 module-level `LAMBDA_K = 5.49e-10` 預設，並在 `AutoPipelineWindow.set_context()` 時從 `params['λ for age calculation']` 注入更新。所有 isochron age / σ_age 計算改用 `LAMBDA_K`，把 `Utilities.LAMBDA_K` hasattr 路徑刪掉。
+
+#### 議題 4：Inverse isochron b≈0 fallback 是 v3.7 buggy 公式
+
+原 code 在 b ≈ 0 時走 `1/(-m_i)`，這正是 v3.8.0 在 `getDFStatistics_sh` 修掉的 v3.7 buggy 公式（`F = 1/inv_slope`）。雖然門檻寬鬆到實務上不會觸發，但 dead code 裡躺著已知錯誤公式不利後續 review。
+
+修法：guard 改成 `abs(m_i) > 1e-30 and abs(b_i) > 1e-30 and Jv > 0`，degenerate fit 顯示 `— (degenerate fit)`，不再進 buggy fallback。
+
+### 影響
+
+| 路徑 | 影響 |
+|---|---|
+| AgeCalcPage Plateau weighted mean | 不變（不走 isochron path） |
+| AgeCalcPage Normal isochron age | λ 從 5.543e-10 改 5.49e-10 (parameters) → age 偏小 ~0.78% |
+| AgeCalcPage Inverse isochron age | F 公式修正後**從 ~18% 過高變正確**（age 中心值大幅變動）+ λ 換源 ~0.78% |
+| AgeCalcPage Inverse isochron σ_age | σ_F 偏導跟著 F 改 |
+| 其他 module（Utilities, DiagramPlot SH, calcAge）| 不影響 |
+
+### 文獻支持
+
+- Vermeesch P. (2024) "Errorchrons and anchored isochrons in IsoplotR." Geochronology 6: 397–407. （inverse isochron 公式在 page 398）
+- Li Y. & Vermeesch P. (2021) "Short communication: Inverse isochron regression for Re–Os, K–Ca and other chronometers." Geochronology 3: 415–420. （Eq. 5 提供完整推導）
+- York D., Evensen N.M., Martínez M.L., De Basabe Delgado J. (2004) Am. J. Phys. 72: 367–375.（York regression）
+
+### 驗證 checklist
+
+- [ ] NO.65 muscovite 跑 AutoPipeline 全流程，AgeCalcPage 右下 stats 區
+  - [ ] **Plateau**：應仍 ≈ 9.77 ± 0.28 Ma（不變）
+  - [ ] **Normal Iso**：應 ≈ 9.77 ± something Ma（λ 變動造成微小偏移）
+  - [ ] **Inv. Iso**：應從 v3.8.3 (cont.) 的 ~11.5 Ma 改為 ≈ 9.77 Ma（這就是這次主要 fix 的證據）
+  - [ ] (40/36)_t 仍 ≈ 290–300（air 範圍內）
+- [ ] SYL31 LS（Sylhet Trap 玄武岩，論文 115.4 ± 3.9 Ma）跑 AutoPipeline → AgeCalcPage Inv. Iso 應 ≈ 115 Ma
+- [ ] CalcT0Page Δt 自動偵測仍正常（這次沒改 decay correction infra）
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - 新增 module-level `LAMBDA_K = 5.49e-10`（line ~46，緊鄰 LAMBDA_37/LAMBDA_39）
+  - `AutoPipelineWindow.set_context()` 加 `LAMBDA_K` 注入（line ~4637）
+  - `_update_isochron_stats` inverse 公式 `−b_i/m_i` → `−m_i/b_i`、σ_F 偏導對應更新、`1/(-m_i)` fallback 刪除、4 處 hardcoded `5.543e-10` → `LAMBDA_K`、Utilities.LAMBDA_K hasattr 檢查移除（line ~4080-4131）
+- `.work/.app_info.txt`：`3.8.3` → `3.8.4`
+
+### 跟 Jian-Cheng Lee 老師討論時要講的點
+
+- v3.8.4 修了三件事：inverse isochron F 公式（主 bug，age 偏 18%）、σ_F 偏導、λ 統一來源
+- 主 bug 跟 v3.8.0 在 `getDFStatistics_sh` 修的是「同一個公式錯誤的雙胞胎」，v3.8.0 之後新加的 AutoPipeline isochron path 又寫錯一次
+- 不影響 plateau age，只影響 isochron age（中心值會變動）
+- 過去用 AutoPipeline AgeCalcPage Inv. Iso 報的 age 都偏高約 18%，建議重跑
 
 ---
 

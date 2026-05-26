@@ -42,6 +42,13 @@ ARGON_39_HALFLIFE_YEARS = 269.0
 LAMBDA_37 = math.log(2) / ARGON_37_HALFLIFE_DAYS                # 1/day
 LAMBDA_39 = math.log(2) / (ARGON_39_HALFLIFE_YEARS * 365.25)    # 1/day
 
+# ⁴⁰K total decay constant for age calculation (1/yr).
+# pyADR default 5.49e-10 matches parameters.csv default and what calcAge uses.
+# Updated at runtime by AutoPipelineWindow.set_context() from
+# parameters['λ for age calculation'], so isochron age in AgeCalcPage stays
+# consistent with the main calcAge path.
+LAMBDA_K = 5.49e-10
+
 def decay_correct(t0_net, sig, delta_t_days, isotope='37'):
     """Correct an isotope's net T0 for radioactive decay between irradiation
     midpoint and analysis time. 37Ar: t½ = 35.011 d; 39Ar: t½ = 269 yr.
@@ -4073,14 +4080,15 @@ class AgeCalcPage(QtWidgets.QWidget):
                 sxs_n = np.array([_ratio_sigma(d['39'],d['s39'],d['36'],d['s36']) for d in iso_data])
                 sys_n = np.array([_ratio_sigma(d['40'],d['s40'],d['36'],d['s36']) for d in iso_data])
                 m_n, b_n, sm_n, sb_n, mswd_n = york_regression(xs_n, sxs_n, ys_n, sys_n)
-                # Normal: slope = 40Ar*/39ArK,  intercept = (40/36)_trapped
+                # Normal isochron (Vermeesch 2024 Eq. 1, Y=a+bX convention):
+                #   slope b_York     = F = ⁴⁰Ar*/³⁹Ar_K   →  pyADR m_n
+                #   intercept a_York = (⁴⁰/³⁶)_trapped     →  pyADR b_n
                 F_n = m_n; sF_n = sm_n
                 Jv = iso_data[0]['J'] if iso_data[0]['J'] > 0 else 0.0
                 if F_n > 0 and Jv > 0:
-                    age_n = (1/Utilities.LAMBDA_K)*math.log(1+Jv*F_n)/1e6 \
-                            if hasattr(Utilities,'LAMBDA_K') \
-                            else (1/5.543e-10)*math.log(1+Jv*F_n)/1e6
-                    sage_n = abs((1/5.543e-10)*Jv/(1+Jv*F_n)/1e6)*sF_n
+                    # v3.8.4: λ from parameters via module LAMBDA_K (was hardcoded 5.543e-10)
+                    age_n = (1/LAMBDA_K)*math.log(1+Jv*F_n)/1e6
+                    sage_n = abs((1/LAMBDA_K)*Jv/(1+Jv*F_n)/1e6)*sF_n
                     self._stat_normiso.setText(
                         f'{age_n:.3f} ± {sage_n:.3f} Ma  '
                         f'(MSWD={mswd_n:.2f}, n={len(iso_data)}, '
@@ -4094,19 +4102,25 @@ class AgeCalcPage(QtWidgets.QWidget):
                 sxs_i = np.array([_ratio_sigma(d['39'],d['s39'],d['40'],d['s40']) for d in iso_data])
                 sys_i = np.array([_ratio_sigma(d['36'],d['s36'],d['40'],d['s40']) for d in iso_data])
                 m_i, b_i, sm_i, sb_i, mswd_i = york_regression(xs_i, sxs_i, ys_i, sys_i)
-                # Inverse: y-intercept = (36/40)_trapped = 1/(40/36)_trapped
-                # x-intercept = (39/40)_radiogenic, F = 1/x_intercept_when_y=0
-                # Equivalently F = -1/m_i if intercept goes through (1/F, 0)
-                # Standard: F = -b_i/m_i (from y = m x + b = 0 → x = -b/m)
-                # But also F = (1 - 0)/x_int = ... use closed form:
-                if abs(m_i) > 1e-30 and Jv > 0:
-                    F_i = -b_i/m_i if abs(b_i) > 1e-30 else (1/(-m_i) if m_i != 0 else 0)
-                    # σ_F propagation: F = -b/m → dF/db = -1/m, dF/dm = b/m²
-                    sF_i = math.sqrt((sb_i/m_i)**2 + (b_i*sm_i/(m_i*m_i))**2) if F_i != 0 else 0
+                # Inverse isochron (Vermeesch 2024 Eq. 2, Li & Vermeesch 2021 Eq. 5):
+                #   intercept a_York = (³⁶/⁴⁰)_trapped     →  pyADR b_i (≈ 1/298.56 for atm)
+                #   slope b_York     = -a_York · (e^(λt)-1) →  pyADR m_i (negative)
+                #   F = -slope / intercept = -m_i / b_i
+                # v3.8.4 fix: previous code had F_i = -b_i/m_i (intercept/slope, REVERSED)
+                # which computed 1/F rather than F.  This is the Vermeesch 2024 page 2
+                # formulation "[D/P]* = -b/a for inverse isochrons (Li and Vermeesch, 2021)".
+                if abs(m_i) > 1e-30 and abs(b_i) > 1e-30 and Jv > 0:
+                    F_i = -m_i / b_i
+                    # σ_F propagation: F = -m/b
+                    #   ∂F/∂m = -1/b
+                    #   ∂F/∂b =  m/b²
+                    # σ_F² = (σ_m/b)² + (m·σ_b/b²)²   (no covariance term — York returns indep σ)
+                    sF_i = math.sqrt((sm_i/b_i)**2 + (m_i*sb_i/(b_i*b_i))**2)
                     if F_i > 0:
-                        age_i = (1/5.543e-10)*math.log(1+Jv*F_i)/1e6
-                        sage_i = abs((1/5.543e-10)*Jv/(1+Jv*F_i)/1e6)*sF_i
-                        atm_ratio = 1/b_i if abs(b_i) > 1e-30 else float('inf')
+                        # v3.8.4: λ from parameters via module LAMBDA_K (was hardcoded 5.543e-10)
+                        age_i = (1/LAMBDA_K)*math.log(1+Jv*F_i)/1e6
+                        sage_i = abs((1/LAMBDA_K)*Jv/(1+Jv*F_i)/1e6)*sF_i
+                        atm_ratio = 1/b_i  # b_i = (36/40)_t, so 1/b_i = (40/36)_t
                         self._stat_invIso.setText(
                             f'{age_i:.3f} ± {sage_i:.3f} Ma  '
                             f'(MSWD={mswd_i:.2f}, n={len(iso_data)}, '
@@ -4114,7 +4128,7 @@ class AgeCalcPage(QtWidgets.QWidget):
                     else:
                         self._stat_invIso.setText(f'(MSWD={mswd_i:.2f}, F ≤ 0)')
                 else:
-                    self._stat_invIso.setText('—')
+                    self._stat_invIso.setText('— (degenerate fit)')
             except Exception as e:
                 self._stat_normiso.setText(f'fit error')
                 self._stat_invIso.setText(f'fit error')
@@ -4636,6 +4650,14 @@ class AutoPipelineWindow(QtWidgets.QMainWindow):
 
     def set_context(self, params, pnames, nc=10):
         self._params=params; self._pnames=pnames; self._nc=nc
+        # v3.8.4: sync module-level LAMBDA_K with parameters so isochron age
+        # in AgeCalcPage uses the same λ as calcAge (avoids 0.2–1% systematic
+        # mismatch between plateau and isochron ages).
+        global LAMBDA_K
+        try:
+            LAMBDA_K = float(params[pnames.index('λ for age calculation')])
+        except (ValueError, IndexError, TypeError):
+            pass  # keep module default 5.49e-10
 
     def _build(self):
         cw=QtWidgets.QWidget(); self.setCentralWidget(cw)
