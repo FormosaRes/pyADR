@@ -47,6 +47,66 @@ v3 = F_std**2 * ((np.exp(l*t) - 1) / Ar_39_K_40_r_ratio**2) ** 2
 
 ---
 
+### V3.8.3 (cont.)（2026-05-25）— AutoPipeline 大幅擴充：decay correction + σ method toggle + York isochron
+
+同版本第二批變更，集中在 `AutoPipeline.py`（647 insert / 133 delete）。
+
+#### 1. Decay correction 基礎建設
+
+- 加 `LAMBDA_37 = log(2)/35.011`（³⁷Ar，t½ = 35.011 d）、`LAMBDA_39 = log(2)/(269·365.25)`（³⁹Ar，t½ = 269 yr）
+- `decay_correct(t0_net, sig, delta_t_days, isotope)` helper — 對 net T0 做 e^(λΔt) 衰變回推
+- `_extract_dat_date(filepath)` 從 .dat 的 `Project #` 行（YYYY/M/D）抽分析日期；fallback 用 line[1] 的 MM/DD + 檔案 mtime 推年
+- `compute_delta_t_days(ogd_str, spd_date)` — OGD（parameters 內的 irradiation date）→ SPD（分析日期）相減得 Δt (days)
+- `DELTA_T_DAYS` global，預設 0；UI load_signal 時自動算
+
+#### 2. σ method toggle
+
+- `SIGMA_METHOD` global，兩個選項：
+  - `'standard'`（預設）：σ via `pcov[-1,-1]`（Li et al. 2019 Eq.1，跟 v3.8.2 行為一致）
+  - `'calc_t0'`：σ via `std(|residuals|)/√n`（NTNU CalcT0Page convention）
+- `_sigma_from_fit(residuals, n, popt, pcov, t, method)` helper 統一這兩條路徑
+- 重構 `_fit_one()`、`_fit_with_errors()` 透過 toggle 取 σ
+- 新增 `_both_sigmas()` 同時回傳兩種 σ 給 plot 對照顯示
+- CalcT0Page sidebar 加 dropdown 切換 σ method；plot 左上角同時顯示兩個公式、用 ▶ 標出哪個是 active
+
+**注意：** 此 toggle 只影響 AutoPipeline 內的 CalcT0Page，**不影響** NTNU_DataReduction.py 內的 CalcT0Page σ_T0（那條由教授指定 `std(|r|)/√n`，未經教授同意不會動）。
+
+#### 3. Cycle 按鈕 z-score 著色
+
+- `_cycle_z_scores()`：MAD-based robust z = |residual − median| / (1.4826·MAD)
+- `_cs(sel, z)`：z < 1.8 藍（healthy）、1.8 ≤ z < 3 琥珀（suspicious）、z ≥ 3 紅（outlier）；未選的維持灰色背景紅字
+- `_apply_btn_styles()` 統一刷新所有 cycle 按鈕的 style + tooltip（含 t / mV / z / used|excluded）
+
+#### 4. `_signal_out_pass` 重寫為 serial per-isotope
+
+按物理依賴順序選 cycle，不再五個 isotope 各自獨立挑：
+
+1. **Ar37**：min `σ(T0_net)/|T0_net|` + n-penalty；用 `decay_correct` 把 37Ar 衰變回推
+2. **Ar36**：以 step 1 結果反推 Ar36_ca = PR(36/37ca)·Ar37_dc，constraint Ar36_air > 0；score = Ar36_air/|T0_blank| + α·σ_air/|T0_blank| + n-penalty
+3. **Ar38/39/40**：score = σ/T0 + γ·(1−R²) + n-penalty，constraint T0_sample > T0_blank
+
+舊版邏輯保留為 `_legacy_signal_out_pass()`，若新 path 任一步失敗則 fallback 回去。
+
+#### 5. AgeCalcPage isochron 升級（York 2004 + Wendt-Carl 1991）
+
+- `york_regression(x, sx, y, sy, rho_xy=None)` — iterative slope refinement 直到 |Δb| < tol（max 50 iter），回傳 (slope, intercept, σ_slope, σ_intercept, MSWD)
+- `_ratio_sigma(num, snum, den, sden, rho=0)` quadrature helper（可選 correlation）
+- `_update_isochron_stats()` 從 placeholder 改為實算：
+  - **Plateau weighted mean** + Wendt & Carl 1991 √MSWD 修正：MSWD > 1 用 σ_external = σ_internal·√MSWD；否則用 σ_internal
+  - **Normal isochron** (x=39/36, y=40/36)：F = slope, σ_F = σ_slope
+  - **Inverse isochron** (x=39/40, y=36/40)：F = −b/m（跟 v3.8.0 在 `getDFStatistics_sh` 的 fix 一致），σ_F propagation 含 σ_b, σ_m
+
+#### 已知小議題（未修，待後續處理）
+
+- `Utilities.LAMBDA_K` 還沒在 `Utilities.py` 定義；isochron age 計算用 `hasattr(Utilities, 'LAMBDA_K')` fallback 到 `5.543e-10`（Steiger-Jäger 1977），實際應該是 `5.531e-10`（Renne 2010）
+- Inverse isochron `F_i = -b_i/m_i if abs(b_i) > 1e-30 else (1/(-m_i) ...)` 的 fallback 走的是 v3.7 buggy 公式，正常不會觸發但建議改成 0
+
+#### 檔案改動
+
+- `AutoPipeline.py` — 主要變動，+647 / −133 行
+
+---
+
 ## V3.8.1（2026-05-11）— DiagramPlot UI + σ_36/σ_39 correlated-error fix
 
 > **追加修正（同 commit）**：v3.7 `toDP` / `normalize_csv_to_v37` 寫進 CSV 的 σ（cols 90/92/95/97）是雙重計算的 buggy 值。原本 `getDFStatistics_sh` 優先讀這些 pre-calc σ，導致對「之前已轉成 98-col CSV」的樣品 σ fix 完全沒效果。改為**永遠從 raw component 重算 σ**（ratio 值仍可從 CSV 讀，σ 不讀）。同時修正 `normalize_csv_to_v37` 自己的 σ_36m / σ_39m / σ_40m 三處 quadrature bug。

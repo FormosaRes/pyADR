@@ -27,7 +27,7 @@ Integration (4 changes in NTNU_DataReduction.py):
            self.widget.setCurrentIndex(20)
 """
 
-import os, sys, csv, shutil
+import os, sys, csv, shutil, math
 import warnings
 warnings.filterwarnings('ignore', category=UserWarning, module='matplotlib')
 import numpy as np
@@ -35,6 +35,111 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 from scipy.optimize import curve_fit
 from sklearn.metrics import r2_score
 import Utilities
+
+# ── Decay constants (Renne et al. 2010, 2011) ───────────────────────────────
+ARGON_37_HALFLIFE_DAYS = 35.011
+ARGON_39_HALFLIFE_YEARS = 269.0
+LAMBDA_37 = math.log(2) / ARGON_37_HALFLIFE_DAYS                # 1/day
+LAMBDA_39 = math.log(2) / (ARGON_39_HALFLIFE_YEARS * 365.25)    # 1/day
+
+def decay_correct(t0_net, sig, delta_t_days, isotope='37'):
+    """Correct an isotope's net T0 for radioactive decay between irradiation
+    midpoint and analysis time. 37Ar: t½ = 35.011 d; 39Ar: t½ = 269 yr.
+    Returns (t0_corrected, sig_corrected). sig scales by same factor."""
+    if delta_t_days <= 0:
+        return t0_net, sig
+    lam = LAMBDA_37 if str(isotope) == '37' else LAMBDA_39
+    factor = math.exp(lam * delta_t_days)
+    return t0_net * factor, abs(sig) * factor
+
+# ── σ method toggle ─────────────────────────────────────────────────────────
+# 'standard' : SE of y-intercept (statistically correct, Li et al. 2019 Eq.1)
+# 'calc_t0'  : std(|residuals|)/sqrt(n)  (matches Calculate T0; underestimates σ)
+SIGMA_METHOD = 'standard'
+
+# ── Δt (days, irradiation midpoint → analysis) ──────────────────────────────
+# Set via UI; 0 means no decay correction.
+DELTA_T_DAYS = 0.0
+
+def _ratio_sigma(num, snum, den, sden, rho=0.0):
+    """σ of ratio R = num/den via quadrature.
+       (σR/R)² = (σnum/num)² + (σden/den)² - 2·rho·(σnum/num)(σden/den)"""
+    if abs(num) < 1e-30 or abs(den) < 1e-30:
+        return 0.0
+    r = num/den
+    return abs(r) * math.sqrt((snum/num)**2 + (sden/den)**2
+                              - 2*rho*(snum/num)*(sden/den))
+
+
+def york_regression(x, sx, y, sy, rho_xy=None, max_iter=50, tol=1e-12):
+    """York et al. (2004) unified equations for best-fit line with errors
+    in both x and y (and optional correlation).  Iterates slope b until
+    converged.
+    Inputs: x, sx, y, sy as 1-D numpy arrays of length N.
+            rho_xy: correlation ρ(σx, σy) per-point, default 0.
+    Returns: (slope, intercept, σ_slope, σ_intercept, MSWD)
+    Reference: York D., Evensen N.M., Martinez M.L., De Basabe Delgado J. (2004)
+    Am. J. Phys. 72, 367-375."""
+    x = np.asarray(x, float); y = np.asarray(y, float)
+    sx = np.asarray(sx, float); sy = np.asarray(sy, float)
+    n = len(x)
+    if n < 2: return 0.0, 0.0, 0.0, 0.0, 0.0
+    if rho_xy is None: rho_xy = np.zeros(n)
+    else: rho_xy = np.asarray(rho_xy, float)
+    # weights
+    wx = 1.0/(sx**2 + 1e-300)
+    wy = 1.0/(sy**2 + 1e-300)
+    # initial slope from OLS
+    b = np.polyfit(x, y, 1)[0]
+    for _ in range(max_iter):
+        alpha = np.sqrt(wx * wy)
+        W = wx * wy / (wx + b*b * wy - 2*b*rho_xy*alpha + 1e-300)
+        X_bar = np.sum(W*x) / np.sum(W)
+        Y_bar = np.sum(W*y) / np.sum(W)
+        U = x - X_bar
+        V = y - Y_bar
+        beta = W * (U/wy + b*V/wx - (b*U + V)*rho_xy/alpha)
+        num = np.sum(W * beta * V)
+        den = np.sum(W * beta * U)
+        if abs(den) < 1e-300:
+            break
+        b_new = num/den
+        if abs(b_new - b) < tol*max(1.0, abs(b)):
+            b = b_new; break
+        b = b_new
+    a = Y_bar - b * X_bar
+    # σ on slope and intercept
+    x_adj = X_bar + beta
+    x_adj_bar = np.sum(W*x_adj)/np.sum(W)
+    u = x_adj - x_adj_bar
+    sb2 = 1.0 / np.sum(W*u*u)
+    sa2 = 1.0/np.sum(W) + x_adj_bar*x_adj_bar*sb2
+    # MSWD
+    if n > 2:
+        chi2 = np.sum(W * (y - b*x - a)**2)
+        mswd = chi2 / (n - 2)
+    else:
+        mswd = 0.0
+    return float(b), float(a), float(np.sqrt(max(sb2,0))), float(np.sqrt(max(sa2,0))), float(mswd)
+
+
+def _sigma_from_fit(residuals, n, popt, pcov, t, method=None):
+    """Return σ_T0 according to global SIGMA_METHOD (or override).
+    'standard': pcov[-1,-1] (SE of intercept, with closed-form fallback).
+    'calc_t0' : np.std(np.abs(residuals)) / sqrt(n) (Calculate T0 convention)."""
+    m = method or SIGMA_METHOD
+    if m == 'calc_t0':
+        return float(np.std(np.abs(residuals)) / np.sqrt(n)) if n > 0 else 1e-9
+    # standard SE of intercept
+    if pcov is not None and pcov.shape[0] > 0 and np.isfinite(pcov[-1, -1]):
+        return float(np.sqrt(np.abs(pcov[-1, -1])))
+    # closed-form fallback (Li et al. 2019 Eq. 1)
+    if n < 3:
+        return 1e-9
+    x_bar = float(np.mean(t))
+    Sxx = float(np.sum((t - x_bar) ** 2))
+    s = float(np.std(residuals, ddof=max(1, n - len(popt))))
+    return s * np.sqrt(1.0 / n + x_bar ** 2 / Sxx) if Sxx > 0 else s
 
 # ── Irradiation parameters (hardcoded, same for entire irradiation) ──────────
 _PR = {
@@ -164,6 +269,62 @@ def _norm_date(raw):
     return raw
 
 # ── dat parser ───────────────────────────────────────────────────────────────
+def _extract_dat_date(filepath):
+    """Extract analysis date from .dat header.
+    Looks for 'Project #' line which contains YYYY/M/D, falls back to
+    line[1] (MM/DD HH:MM) combined with current year. Returns datetime.date
+    or None."""
+    from datetime import date as _date
+    try:
+        with open(filepath, 'rb') as f:
+            lines = f.read().decode('latin-1').splitlines()
+        # Look for "Project #" line (typically has YYYY/M/D)
+        for ln in lines[:30]:
+            if 'Project' in ln:
+                parts = ln.split()
+                for tok in parts:
+                    if '/' in tok and tok.count('/') == 2:
+                        y, m, d = tok.split('/')
+                        try:
+                            return _date(int(y), int(m), int(d))
+                        except (ValueError, TypeError):
+                            continue
+        # Fallback: line[1] is "MM/DD HH:MM"
+        if len(lines) > 1:
+            t = lines[1].strip().split()[0]
+            if '/' in t:
+                m, d = t.split('/')
+                # default year — try other places in file or use file mtime
+                try:
+                    import os as _os
+                    mt = _os.path.getmtime(filepath)
+                    yr = _date.fromtimestamp(mt).year
+                    return _date(yr, int(m), int(d))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return None
+
+
+def compute_delta_t_days(ogd_str, spd_date):
+    """Δt = SPD − OGD, both as datetime.date.
+    ogd_str: YYYYMMDD or YYYY-MM-DD or YYYY/M/D format from params['OG Date'].
+    Returns int days, or 0 if cannot parse."""
+    from datetime import date as _date
+    import re as _re
+    if spd_date is None or not ogd_str:
+        return 0
+    try:
+        s = _re.sub(r'[-/]', '', str(ogd_str).strip())
+        if len(s) < 8: return 0
+        ogd = _date(int(s[0:4]), int(s[4:6]), int(s[6:8]))
+        d = (spd_date - ogd).days
+        return max(0, int(d))
+    except Exception:
+        return 0
+
+
 def parse_dat(filepath, numCycle=10):
     with open(filepath,'rb') as f: raw=f.read()
     lines = raw.decode('latin-1').splitlines()
@@ -281,22 +442,16 @@ def _fit_one(f, vt_i, mask):
         of popt; hence pcov[-1,-1] is its variance.
     """
     sel = np.where(mask == 1)[0]
-    if len(sel) < 2:
+    n = len(sel)
+    if n < 2:
         return 0.0, 1e-9, 0.0, None
     t, v = vt_i[sel, 1], vt_i[sel, 0]
     try:
         popt, pcov = curve_fit(f, t, v)
         t0  = f(0, *popt)
-        # SE of intercept from pcov; fallback to Li 2019 closed-form
-        if pcov is not None and pcov.shape[0] > 0 and np.isfinite(pcov[-1, -1]):
-            sig = float(np.sqrt(np.abs(pcov[-1, -1])))
-        else:
-            res = v - f(t, *popt)
-            tm = float(np.mean(t))
-            Stt = float(np.sum((t - tm)**2))
-            ddof = max(1, len(sel) - len(popt))
-            s = float(np.std(res, ddof=ddof))
-            sig = s * np.sqrt(1.0/len(sel) + tm**2 / Stt) if Stt > 0 else s
+        residuals = v - f(t, *popt)
+        # σ via global SIGMA_METHOD toggle
+        sig = _sigma_from_fit(residuals, n, popt, pcov, t)
         r2 = r2_score(v, f(t, *popt))
         return t0, sig, r2, popt
     except Exception:
@@ -304,12 +459,18 @@ def _fit_one(f, vt_i, mask):
 
 
 def _fit_with_errors(f, vt_i, mask):
-    """Returns (t0, sig_analytical, sig_model, r2, popt).
-    
-    sig_analytical: residual SE / sqrt(n)  — scatter of measurements
-    sig_model:      SE of y-intercept from linear regression (Li et al. 2019 Eq. 1)
-                    SE = s * sqrt(1/n + x_bar^2 / Sxx)
-                    where s = residual SD, Sxx = sum((x - x_bar)^2)
+    """Returns (t0, sig_a, sig_m, r2, popt).
+
+    Two σ slots kept for back-compat with existing scoring code, BUT both
+    now respect the global SIGMA_METHOD toggle:
+       sig_a = σ via std(|residuals|)/√n (Calculate T0 convention)
+       sig_m = σ via pcov[-1,-1] (statistically correct SE of intercept)
+
+    Down-stream scoring uses `sig_a + sig_m`. To avoid double-counting the
+    "wrong" σ, when SIGMA_METHOD == 'standard' both slots return the same
+    standard-SE value; when 'calc_t0' both return std(|r|)/√n. This makes
+    `sig_a + sig_m == 2·σ_selected`, a constant scale on the score that
+    doesn't affect ranking.
     """
     sel = np.where(mask == 1)[0]
     n = len(sel)
@@ -320,30 +481,30 @@ def _fit_with_errors(f, vt_i, mask):
         popt, pcov = curve_fit(f, t, v)
         t0 = f(0, *popt)
         residuals = v - f(t, *popt)
-        
-        # Analytical σ: standard error of residuals / sqrt(n)
-        sig_analytical = np.std(np.abs(residuals)) / np.sqrt(n)
-        
-        # Model σ: SE of y-intercept from regression (Li et al. 2019)
-        # For linear/quadratic fit, extract intercept uncertainty from pcov
-        # For linear: y = a*x + b, intercept = b, sig_b = sqrt(pcov[-1,-1])
-        # For quadratic: y = a*x^2 + b*x + c, intercept = c, sig_c = sqrt(pcov[-1,-1])
-        # (In both cases, the last parameter is the intercept)
-        if pcov is not None and pcov.shape[0] > 0:
-            # Standard error of intercept from covariance matrix
-            sig_model = np.sqrt(np.abs(pcov[-1, -1]))
-        else:
-            # Fallback: compute manually via Li et al. Eq. 1
-            x_bar = np.mean(t)
-            Sxx = np.sum((t - x_bar)**2)
-            s = np.std(residuals, ddof=max(1, n - len(popt)))
-            if Sxx > 0:
-                sig_model = s * np.sqrt(1.0/n + x_bar**2 / Sxx)
-            else:
-                sig_model = sig_analytical
-        
+        sig = _sigma_from_fit(residuals, n, popt, pcov, t)
+        # both slots = selected σ → score uses 2·σ, ranking preserved
         r2 = r2_score(v, f(t, *popt))
-        return t0, sig_analytical, sig_model, r2, popt
+        return t0, sig, sig, r2, popt
+    except Exception:
+        return 0.0, 1e-9, 1e-9, 0.0, None
+
+
+def _both_sigmas(f, vt_i, mask):
+    """Compute BOTH σ formulas for the same fit. Useful for side-by-side reporting.
+    Returns (t0, sig_calc_t0, sig_standard, r2, popt)."""
+    sel = np.where(mask == 1)[0]
+    n = len(sel)
+    if n < 2:
+        return 0.0, 1e-9, 1e-9, 0.0, None
+    t, v = vt_i[sel, 1], vt_i[sel, 0]
+    try:
+        popt, pcov = curve_fit(f, t, v)
+        t0 = f(0, *popt)
+        residuals = v - f(t, *popt)
+        sig_calc_t0 = _sigma_from_fit(residuals, n, popt, pcov, t, method='calc_t0')
+        sig_standard = _sigma_from_fit(residuals, n, popt, pcov, t, method='standard')
+        r2 = r2_score(v, f(t, *popt))
+        return t0, sig_calc_t0, sig_standard, r2, popt
     except Exception:
         return 0.0, 1e-9, 1e-9, 0.0, None
 
@@ -538,81 +699,158 @@ def _blank_out_pass(blank_vt, fit_type=0, n_total=10):
 
 
 def _signal_out_pass(sample_vt, blank_t0, fit_type=0, n_total=10):
-    """Signal-out pass: find best T0 for each sample isotope,
-    with hard constraint T0_sample > T0_blank.
-    
-    Ar36 selection also considers Ar40_r positivity (joint constraint):
-      Ar40_r = T0_net[40] - Ar36_air × R(40/36a) - Ar39_K × PR(40/39k)
-      
-      If Ar36_air is too large, Ar40_r becomes negative. So we prefer
-      Ar36 solutions that keep Ar36_air small (but positive).
-    
-    Returns: list of 5 result dicts, each with additional 'constraint_ok' flag
+    """Signal-out pass with SERIAL per-isotope cycle selection.
+
+    Order:
+      1. Ar37  — minimize σ(T0_net_37) / |T0_net_37| + n-penalty
+                 (apply 37Ar decay correction with DELTA_T_DAYS for Ca check)
+      2. Ar36  — minimize |Ar36_air|/|T0_blank_36|
+                            + α · σ_air/|T0_blank_36|
+                            + n-penalty
+                 where Ar36_air = T0_net_36 - PR(36/37ca) × T0_net_37_dc
+                 (hard constraint Ar36_air > 0; falls back to legacy score if all
+                 candidates violate)
+      3. Ar38  — same as 39/40 family
+      4. Ar39  — minimize σ/|T0_net| + γ·(1-R²) + n-penalty
+      5. Ar40  — same as 39
+
+    Returns same list-of-5-dicts shape as before, plus extra keys
+    ('Ar36_air_est', 'sig_air_est' for ai==0).
     """
-    results = []
-    
-    # Pre-compute: need Ar37, Ar39, Ar40 T0 for Ar36 constraint check
-    # Use simple "n=10 all cycles" as reference for joint check
+    f = Utilities.fit_func_list[fit_type]
+    p = _PR
+    ALPHA_36 = 0.3                       # bias/variance weight for 36Ar
+    GAMMA_R2 = 0.2                       # linearity penalty for strong isotopes
+    BETA_N   = 1.0                       # n-count penalty (also see STRAT params)
+    results = [None] * 5
+
+    # ── helper: score-min over combos with custom score fn ────────────────
+    def best_combo(ai, score_fn, valid_fn=lambda c: True):
+        combos = _enumerate_combos_for_isotope(sample_vt[ai], fit_type, n_total)
+        if not combos:
+            return None
+        for c in combos:
+            c['custom_score'] = score_fn(c)
+        valid = [c for c in combos if valid_fn(c) and np.isfinite(c['custom_score'])]
+        if not valid:
+            return None
+        return min(valid, key=lambda c: c['custom_score'])
+
+    # ── Step 1: Ar37 ──────────────────────────────────────────────────────
+    bt0_37 = blank_t0[1]
+    def score37(c):
+        t0n = c['t0'] - bt0_37
+        if abs(t0n) < 1e-15:
+            return float('inf')
+        return c['sig_total']/abs(t0n) + BETA_N*(1 - c['n']/n_total)
+    best_37 = best_combo(1, score37)
+    if best_37 is None:
+        # legacy fallback if Ar37 cannot be fit at all
+        return _legacy_signal_out_pass(sample_vt, blank_t0, fit_type, n_total)
+    # apply 37Ar decay (Δt = DELTA_T_DAYS, half-life 35.011 d)
+    t0_net_37_raw = best_37['t0'] - bt0_37
+    sig_37_net    = best_37['sig_total']
+    t0_net_37_dc, sig_37_net_dc = decay_correct(
+        t0_net_37_raw, sig_37_net, DELTA_T_DAYS, isotope='37')
+    best_37['t0_net'] = t0_net_37_raw
+    best_37['t0_net_dc'] = t0_net_37_dc
+    best_37['sig_net'] = sig_37_net
+    best_37['sig_net_dc'] = sig_37_net_dc
+    best_37['constraint_ok'] = True
+    best_37['violation'] = 0.0
+    results[1] = best_37
+
+    # ── Step 2: Ar36 (depends on Ar37) ────────────────────────────────────
+    bt0_36 = blank_t0[0]
+    norm_36 = max(abs(bt0_36), 1e-12)
+    Ar36_ca   = p['PR_36_37ca'] * t0_net_37_dc
+    sig_36_ca = abs(p['PR_36_37ca']) * sig_37_net_dc
+    def score36(c):
+        t0n = c['t0'] - bt0_36
+        Ar36_air = t0n - Ar36_ca
+        sig_air  = math.sqrt(c['sig_total']**2 + sig_36_ca**2)
+        c['Ar36_air_est'] = Ar36_air
+        c['sig_air_est']  = sig_air
+        if Ar36_air <= 0:
+            return float('inf')
+        return (Ar36_air/norm_36
+                + ALPHA_36 * sig_air/norm_36
+                + BETA_N * (1 - c['n']/n_total))
+    best_36 = best_combo(0, score36, valid_fn=lambda c: c.get('Ar36_air_est', -1) > 0)
+    if best_36 is None:
+        # No combo gives Ar36_air > 0: fall back to legacy least-violating logic
+        combos = _enumerate_combos_for_isotope(sample_vt[0], fit_type, n_total)
+        for c in combos:
+            c['violation'] = max(0, bt0_36 - c['t0'])
+            c['combined']  = c['violation']*1e6 + c['score']
+        best_36 = min(combos, key=lambda c: c['combined']) if combos else None
+        if best_36 is not None:
+            best_36['constraint_ok'] = False
+    else:
+        best_36['constraint_ok'] = True
+        best_36['violation'] = 0.0
+    results[0] = best_36
+
+    # ── Steps 3-5: Ar38, Ar39, Ar40 (independent, σ/T0 + R² penalty) ──────
+    for ai in (2, 3, 4):
+        bt = blank_t0[ai]
+        def score_strong(c, bt=bt):
+            t0n = c['t0'] - bt
+            if t0n <= 0:
+                return float('inf')
+            return (c['sig_total']/t0n
+                    + GAMMA_R2 * max(0, 1 - c.get('r2', 0))
+                    + BETA_N * (1 - c['n']/n_total))
+        best = best_combo(ai, score_strong, valid_fn=lambda c, bt=bt: c['t0'] > bt)
+        if best is None:
+            # legacy least-violating
+            combos = _enumerate_combos_for_isotope(sample_vt[ai], fit_type, n_total)
+            for c in combos:
+                c['violation'] = max(0, bt - c['t0'])
+                c['combined']  = c['violation']*1e6 + c['score']
+            best = min(combos, key=lambda c: c['combined']) if combos else None
+            if best is not None:
+                best['constraint_ok'] = False
+        else:
+            best['constraint_ok'] = True
+            best['violation'] = 0.0
+        results[ai] = best
+
+    return results
+
+
+def _legacy_signal_out_pass(sample_vt, blank_t0, fit_type=0, n_total=10):
+    """Old per-isotope independent enumeration. Used as fallback."""
     f = Utilities.fit_func_list[fit_type]
     ref_mask = np.ones(n_total)
     ref_t0 = np.zeros(5)
     for ai in range(5):
         t0, _, _, _, _ = _fit_with_errors(f, sample_vt[ai], ref_mask)
         ref_t0[ai] = t0
-    
     p = _PR
-    
+    results = []
     for ai in range(5):
         combos = _enumerate_combos_for_isotope(sample_vt[ai], fit_type, n_total)
         if not combos:
-            results.append(None)
-            continue
-        
+            results.append(None); continue
         bt0 = blank_t0[ai]
-        
-        # Filter: T0_sample > T0_blank (hard constraint)
         valid = [c for c in combos if c['t0'] > bt0]
-        
-        # ── Additional Ar36 joint constraint: Ar40_r > 0 ──
         if ai == 0 and valid:
-            # For each Ar36 candidate, estimate Ar40_r using n=10 reference for other isotopes
-            t0_net_37_ref = ref_t0[1] - blank_t0[1]
-            t0_net_39_ref = ref_t0[3] - blank_t0[3]
-            t0_net_40_ref = ref_t0[4] - blank_t0[4]
-            
-            Ar39_ca_ref = t0_net_37_ref * p['PR_39_37ca']
-            Ar39_K_ref  = t0_net_39_ref - Ar39_ca_ref
-            Ar40_K_ref  = Ar39_K_ref * p['PR_40_39k'] if Ar39_K_ref > 0 else 0
-            
-            Ar36_ca_ref = t0_net_37_ref * p['PR_36_37ca']
-            
+            t0n37 = ref_t0[1] - blank_t0[1]
+            Ar36_ca_ref = t0n37 * p['PR_36_37ca']
             for c in valid:
-                t0_net_36 = c['t0'] - bt0
-                Ar36_air_c = t0_net_36 - Ar36_ca_ref
-                Ar40_air_c = Ar36_air_c * p['R_40_36a']
-                Ar40_r_c   = t0_net_40_ref - Ar40_air_c - Ar40_K_ref
-                c['Ar40_r_est'] = Ar40_r_c
-                c['Ar36_air_est'] = Ar36_air_c
-            
-            # Prefer candidates where Ar40_r > 0
-            good_40r = [c for c in valid if c['Ar40_r_est'] > 0]
-            if good_40r:
-                valid = good_40r
-            # If no candidate has Ar40_r > 0, fall back to original list
-            # (will be flagged as violation later)
-        
+                c['Ar36_air_est'] = (c['t0'] - bt0) - Ar36_ca_ref
+            good = [c for c in valid if c['Ar36_air_est'] > 0]
+            if good: valid = good
         if valid:
             best = min(valid, key=lambda c: c['score'])
-            best['constraint_ok'] = True
-            best['violation'] = 0.0
+            best['constraint_ok'] = True; best['violation'] = 0.0
         else:
-            # No combo satisfies constraint → pick 'least violating' solution
             for c in combos:
                 c['violation'] = max(0, bt0 - c['t0'])
-                c['combined'] = c['violation'] * 1e6 + c['score']  # hard weight on violation
+                c['combined']  = c['violation']*1e6 + c['score']
             best = min(combos, key=lambda c: c['combined'])
             best['constraint_ok'] = False
-        
         results.append(best)
     return results
 
@@ -838,14 +1076,80 @@ class MvCanvas(QtWidgets.QWidget):
 
 
     # ── cycle button style ───────────────────────────────────
-    def _cs(self, sel):
-        if sel:
-            return (f'QPushButton{{background:{BLUE_BG};color:#1a5fb4;'
-                    f'border:1.5px solid #1a5fb4;border-radius:3px;'
+    def _cs(self, sel, z=None):
+        """Style for cycle button.
+           sel : True if this cycle is included in current mask
+           z   : residual z-score (MAD-based) of this cycle vs current fit.
+                 None → plain colour. z < 1.8 → healthy (blue);
+                 1.8 ≤ z < 3.0 → suspicious (amber); z ≥ 3.0 → outlier (red)."""
+        if not sel:
+            # excluded cycle — always greyed out red text
+            return (f'QPushButton{{background:#eeede8;color:#b41a1a;'
+                    f'border:1px solid {BRD2};border-radius:3px;'
                     f'font-size:11px;font-weight:bold;}}')
-        return (f'QPushButton{{background:#eeede8;color:#b41a1a;'
-                f'border:1px solid {BRD2};border-radius:3px;'
+        # included: tint by z
+        if z is not None and np.isfinite(z):
+            if z >= 3.0:        # outlier — alert red
+                return (f'QPushButton{{background:#ffd6d6;color:#a01010;'
+                        f'border:1.5px solid #b41a1a;border-radius:3px;'
+                        f'font-size:11px;font-weight:bold;}}')
+            if z >= 1.8:        # suspicious — amber
+                return (f'QPushButton{{background:#fff4d0;color:#8a6000;'
+                        f'border:1.5px solid #c0a020;border-radius:3px;'
+                        f'font-size:11px;font-weight:bold;}}')
+        # healthy / no z available
+        return (f'QPushButton{{background:{BLUE_BG};color:#1a5fb4;'
+                f'border:1.5px solid #1a5fb4;border-radius:3px;'
                 f'font-size:11px;font-weight:bold;}}')
+
+    def _cycle_z_scores(self):
+        """Return per-cycle MAD-based z-score from residuals of current fit.
+        Uses ALL cycles to compute residuals against the line fit to the
+        currently-selected subset.  Returns np.array of length nc or None."""
+        if self._vt is None or self._mask is None:
+            return None
+        try:
+            f = Utilities.fit_func_list[self._fit]
+            sel = np.where(self._mask == 1)[0]
+            if len(sel) < 3:
+                return None
+            t_sel = self._vt[sel, 1]; v_sel = self._vt[sel, 0]
+            popt, _ = curve_fit(f, t_sel, v_sel)
+            all_t = self._vt[:self._nc, 1]
+            all_v = self._vt[:self._nc, 0]
+            resid = all_v - f(all_t, *popt)
+            # MAD on selected subset (robust to outliers)
+            med = float(np.median(resid[sel]))
+            mad = float(np.median(np.abs(resid[sel] - med)))
+            sigma_mad = 1.4826 * mad
+            if sigma_mad < 1e-15:
+                sigma_mad = float(np.std(resid[sel]) + 1e-15)
+            return np.abs(resid - med) / sigma_mad
+        except Exception:
+            return None
+
+    def _apply_btn_styles(self):
+        """Re-apply colour + tooltip on all 10 cycle buttons."""
+        if self._vt is None or self._mask is None: return
+        zs = self._cycle_z_scores()
+        for i, b in enumerate(self._btns[:self._nc]):
+            b.setChecked(bool(self._mask[i]))
+            z = float(zs[i]) if zs is not None else None
+            b.setStyleSheet(self._cs(bool(self._mask[i]), z=z))
+            try:
+                t_val = float(self._vt[i, 1])
+                mv_val = float(self._vt[i, 0])
+                lines = [f'Cycle {i+1}',
+                         f't = {t_val:.1f} s',
+                         f'mV = {mv_val:.3e}']
+                if z is not None:
+                    tag = ('outlier' if z >= 3 else
+                           'suspicious' if z >= 1.8 else 'healthy')
+                    lines.append(f'z = {z:.2f}  ({tag})')
+                lines.append(f"status: {'used' if self._mask[i] else 'excluded'}")
+                b.setToolTip('\n'.join(lines))
+            except Exception:
+                pass
 
     # ── toggle ───────────────────────────────────────────────
     def _toggle(self, idx):
@@ -956,9 +1260,7 @@ class MvCanvas(QtWidgets.QWidget):
         if not hasattr(self,'_best_n') or n not in self._best_n: return
         _, _, m = self._best_n[n]
         self._mask = m.copy()
-        for i, b in enumerate(self._btns[:self._nc]):
-            b.setChecked(bool(self._mask[i]))
-            b.setStyleSheet(self._cs(bool(self._mask[i])))
+        self._apply_btn_styles()
         u    = int(self._mask.sum())
         excl = [str(i+1) for i in range(self._nc) if self._mask[i] == 0]
         self.usedLbl.setText(
@@ -988,9 +1290,7 @@ class MvCanvas(QtWidgets.QWidget):
 
     def _refresh(self):
         if self._vt is None: return
-        for i, b in enumerate(self._btns[:self._nc]):
-            b.setChecked(bool(self._mask[i]))
-            b.setStyleSheet(self._cs(bool(self._mask[i])))
+        self._apply_btn_styles()
         u    = int(self._mask.sum())
         excl = [str(i+1) for i in range(self._nc) if self._mask[i] == 0]
         self.usedLbl.setText(
@@ -1119,6 +1419,9 @@ class MvCanvas(QtWidgets.QWidget):
         pts = self._all_pts
         t0_cur, sig_cur, _, _ = _fit_one(
             Utilities.fit_func_list[self._fit], self._vt, self._mask)
+        # Also compute BOTH σ formulas for display
+        _, sig_calc, sig_std, _, _ = _both_sigmas(
+            Utilities.fit_func_list[self._fit], self._vt, self._mask)
 
         # blank T0 vertical line (green dashed)
         if self._bt is not None:
@@ -1182,6 +1485,25 @@ class MvCanvas(QtWidgets.QWidget):
         ax.xaxis.set_major_formatter(_ticker.ScalarFormatter(useMathText=True))
         ax.yaxis.set_major_formatter(_ticker.ScalarFormatter(useMathText=True))
         ax.ticklabel_format(style='sci', axis='both', scilimits=(0,0))
+
+        # ── dual-σ annotation (upper-left, both formulas shown) ──
+        # Highlight whichever matches global SIGMA_METHOD
+        active = SIGMA_METHOD
+        line1 = f'$T_0$ = {t0_cur:.3e}'
+        line2a = f'σ (SE)    = {sig_std:.2e}'
+        line2b = f'σ (Calc T₀) = {sig_calc:.2e}'
+        if active == 'standard':
+            line2a = '▶ ' + line2a
+            line2b = '   ' + line2b
+        else:
+            line2a = '   ' + line2a
+            line2b = '▶ ' + line2b
+        ax.text(0.02, 0.97, line1 + '\n' + line2a + '\n' + line2b,
+                transform=ax.transAxes, fontsize=9, fontfamily='monospace',
+                color='#222', va='top', ha='left',
+                bbox=dict(facecolor='white', alpha=0.8, edgecolor='#cccccc',
+                          boxstyle='round,pad=0.3'))
+
         # No per-canvas legend: shared legend shown below Row 2
         # No per-canvas legend (shared widget below)
         leg = ax.get_legend()
@@ -1215,9 +1537,7 @@ class MvCanvas(QtWidgets.QWidget):
 
         if best is not None:
             self._mask = best.copy()
-            for i, b in enumerate(self._btns[:self._nc]):
-                b.setChecked(bool(self._mask[i]))
-                b.setStyleSheet(self._cs(bool(self._mask[i])))
+            self._apply_btn_styles()
             u    = int(self._mask.sum())
             excl = [str(i+1) for i in range(self._nc) if self._mask[i] == 0]
             self.usedLbl.setText(
@@ -1296,7 +1616,7 @@ class CalcT0Page(QtWidgets.QWidget):
         hl.setContentsMargins(0, 0, 0, 0); hl.setSpacing(0)
 
         # Sidebar with grouped sections
-        sb  = QtWidgets.QWidget(); sb.setFixedWidth(90)
+        sb  = QtWidgets.QWidget(); sb.setFixedWidth(105)
         sb.setStyleSheet(f'background:#f0f0f0;border-right:1px solid #cccccc;')
         sbl = QtWidgets.QVBoxLayout(sb)
         sbl.setContentsMargins(5, 6, 5, 6); sbl.setSpacing(3)
@@ -1349,7 +1669,41 @@ class CalcT0Page(QtWidgets.QWidget):
         sbl.addWidget(self.btnAS)
         sbl.addWidget(self.btnABest)
         sbl.addWidget(self.btnM)
-        
+
+        # ── Stats / decay params group ────────────────────────────────
+        sbl.addWidget(group_hdr('STATS'))
+        # σ method dropdown
+        sigma_lbl = QtWidgets.QLabel('σ method')
+        sigma_lbl.setStyleSheet(f'font-size:9px;color:{TXT3};padding-left:2px;')
+        sbl.addWidget(sigma_lbl)
+        self.sigmaCombo = QtWidgets.QComboBox()
+        self.sigmaCombo.addItem('Standard SE', 'standard')
+        self.sigmaCombo.addItem('Calc T₀',     'calc_t0')
+        self.sigmaCombo.setToolTip(
+            'Standard SE: σ via pcov[-1,-1] (Li et al. 2019 Eq.1).\n'
+            'Calc T₀: σ via std(|residuals|)/√n (matches Calculate T₀ page).')
+        self.sigmaCombo.setStyleSheet(
+            'QComboBox{font-size:10px;padding:2px 4px;'
+            'background:white;border:1px solid #b0b0b0;border-radius:3px;}')
+        idx = 0 if SIGMA_METHOD == 'standard' else 1
+        self.sigmaCombo.setCurrentIndex(idx)
+        self.sigmaCombo.currentIndexChanged.connect(self._on_sigma_method_changed)
+        sbl.addWidget(self.sigmaCombo)
+
+        # Δt (auto, read-only — computed from OGD param + SPD from .dat)
+        dt_lbl = QtWidgets.QLabel('Δt (auto)')
+        dt_lbl.setStyleSheet(f'font-size:9px;color:{TXT3};padding-left:2px;padding-top:4px;')
+        sbl.addWidget(dt_lbl)
+        self.deltaTLbl = QtWidgets.QLabel(f'{DELTA_T_DAYS:.0f} d')
+        self.deltaTLbl.setToolTip(
+            'Auto-computed: OGD (from parameters) → SPD (from .dat Project#).\n'
+            'Used for ³⁷Ar decay (t½=35.011 d) and ³⁹Ar decay (t½=269 yr).')
+        self.deltaTLbl.setStyleSheet(
+            'QLabel{font-size:11px;padding:3px 4px;background:#eeede8;'
+            f'border:1px solid {BRD};border-radius:3px;color:{TXT2};}}')
+        self.deltaTLbl.setAlignment(QtCore.Qt.AlignCenter)
+        sbl.addWidget(self.deltaTLbl)
+
         sbl.addStretch()
 
         self.statusLbl = QtWidgets.QLabel('Ready')
@@ -1680,18 +2034,54 @@ class CalcT0Page(QtWidgets.QWidget):
     def load_signal(self, fps, nc=10):
         self._nc = nc
         self._svt.clear(); self._sinfo.clear(); self._smask.clear()
+        self._step_dates = {}
         for fp in fps:
             nm = os.path.splitext(os.path.basename(fp))[0]
             v, i = parse_dat(fp, nc)
             self._svt[nm] = v; self._sinfo[nm] = i
             self._smask[nm] = np.ones((5, nc))
+            d = _extract_dat_date(fp)
+            if d is not None:
+                self._step_dates[nm] = d
         self._chips['Signal'].setText(f'{len(fps)} steps')
         self._rebuild_step_btns()
         if self._svt:
             self._cur = list(self._svt.keys())[0]
             self._refresh_signal()
+        # auto Δt from OGD (param) + SPD (first sample's Project# date)
+        self._auto_update_delta_t()
         self.nextBtn.setEnabled(True)
         self.footMsg.setText('Files loaded')
+
+    def _auto_update_delta_t(self):
+        """Read OGD from parent's params; combine with first sample date → Δt."""
+        global DELTA_T_DAYS
+        try:
+            parent = self.parent()
+            while parent is not None and not hasattr(parent, 'params'):
+                parent = parent.parent()
+            if parent is None or not hasattr(parent, 'params'):
+                return
+            ogd = parent.params[parent.pnames.index('OG Date')]
+        except (AttributeError, ValueError, IndexError):
+            return
+        if not self._step_dates:
+            return
+        spd = list(self._step_dates.values())[0]   # first step
+        dt = compute_delta_t_days(ogd, spd)
+        DELTA_T_DAYS = float(dt)
+        # update sidebar display if exists
+        ap = parent
+        if hasattr(ap, 'deltaTLbl'):
+            ap.deltaTLbl.setText(f'{dt} d')
+            ap.deltaTLbl.setToolTip(
+                f'OGD: {ogd}\nSPD: {spd}\nΔt = SPD − OGD = {dt} days')
+        if hasattr(ap, 'statusBar'):
+            try:
+                ap.statusBar().showMessage(
+                    f'Auto Δt = {dt} d  (OGD {ogd} → SPD {spd})', 5000)
+            except Exception:
+                pass
 
     # ── Step buttons ─────────────────────────────────────────
     def _rebuild_step_btns(self):
@@ -1891,6 +2281,43 @@ class CalcT0Page(QtWidgets.QWidget):
             else _btn_style(PNL, TXT, BRD))
         self._chips['Fit'].setText('Linear' if ft==0 else 'Average')
         self._refresh_blank(); self._refresh_signal()
+
+    def _on_sigma_method_changed(self, idx):
+        """User toggled σ method in sidebar. Re-fit blank + samples."""
+        global SIGMA_METHOD
+        new_m = self.sigmaCombo.itemData(idx) or 'standard'
+        if new_m == SIGMA_METHOD:
+            return
+        SIGMA_METHOD = new_m
+        self.statusLbl.setText(f'σ method = {SIGMA_METHOD}; re-fitting...')
+        QtWidgets.QApplication.processEvents()
+        try:
+            self._refresh_blank()
+            self._refresh_signal()
+            self.statusLbl.setText(f'σ method = {SIGMA_METHOD}  ✓')
+        except Exception as e:
+            self.statusLbl.setText(f'σ refit error: {e}')
+
+    def _on_delta_t_changed(self):
+        """User edited Δt (days, irradiation→analysis). Re-run signal pass."""
+        global DELTA_T_DAYS
+        try:
+            v = float(self.deltaTEdit.text().strip())
+            if v < 0:
+                v = 0.0
+        except ValueError:
+            self.deltaTEdit.setText(f'{DELTA_T_DAYS:.1f}')
+            return
+        if abs(v - DELTA_T_DAYS) < 1e-9:
+            return
+        DELTA_T_DAYS = v
+        self.statusLbl.setText(f'Δt = {v:.2f} d; re-running signal pass...')
+        QtWidgets.QApplication.processEvents()
+        try:
+            self._refresh_signal()
+            self.statusLbl.setText(f'Δt = {v:.2f} d  ✓')
+        except Exception as e:
+            self.statusLbl.setText(f'Δt refit error: {e}')
 
     def _toggle_manual(self):
         self._manual = not self._manual
@@ -3566,11 +3993,27 @@ class AgeCalcPage(QtWidgets.QWidget):
                     lbl.setText('')
     
     def _update_isochron_stats(self, steps):
-        """Compute weighted plateau, normal/inverse isochron, MSWD from steps.
-        Plateau: weighted mean of contiguous steps with consistent ages.
-        Isochron: York regression on 39/36 vs 40/36 (normal) or 36/40 vs 39/40 (inverse).
+        """Compute plateau (Wendt-Carl 1991 √MSWD corrected), and both
+        normal/inverse isochrons via York (2004) regression.
+
+        Plateau:
+          σ_internal = 1/√Σ(1/σᵢ²)
+          MSWD       = (1/(N−1)) Σ((ageᵢ−mean)/σᵢ)²
+          σ_external = σ_internal · √MSWD   if MSWD > 1   (Wendt-Carl)
+          σ_external = σ_internal           else
+
+        Normal isochron : y = ⁴⁰Ar/³⁶Ar,  x = ³⁹Ar/³⁶Ar
+                          y-intercept = (⁴⁰/³⁶)_trapped
+                          slope ×  = ⁴⁰Ar*/³⁹Ar_K
+        Inverse isochron: y = ³⁶Ar/⁴⁰Ar,  x = ³⁹Ar/⁴⁰Ar
+                          y-intercept = (³⁶/⁴⁰)_trapped (= 1/atm-ratio for air)
+                          x-intercept → ⁴⁰Ar*/³⁹Ar_K
+        Both fit via York et al. (2004) Unified Equations (with x,y errors).
+        Age computed from F = ⁴⁰Ar*/³⁹Ar_K using J value from each step.
         """
-        ages = []
+        # --- collect step-level age + isotope ratios ---
+        ages = []        # (age_Ma, sig_Ma, name)
+        iso_data = []    # (Ar36_m, Ar37_m, Ar39_m, Ar40_m, σ36, σ37, σ39, σ40, J, Js)
         for step in steps:
             ar = step.get('age_result', [])
             if len(ar) > 47:
@@ -3580,33 +4023,104 @@ class AgeCalcPage(QtWidgets.QWidget):
                 ar39k = _sf(ar[18])
                 if age_std > 0 and ar40r > 0 and ar39k > 0:
                     ages.append((age, age_std, step['name']))
-        
-        # Weighted plateau (simple version: weighted mean of all valid ages)
+            # measured (raw) isotopes for isochron
+            if len(ar) > 17:
+                try:
+                    Ar36_m, sAr36 = _sf(ar[2]),  _sf(ar[3])
+                    Ar37_m, sAr37 = _sf(ar[4]),  _sf(ar[5])
+                    Ar38_m, sAr38 = _sf(ar[6]),  _sf(ar[7])
+                    Ar39_m, sAr39 = _sf(ar[8]),  _sf(ar[9])
+                    Ar40_m, sAr40 = _sf(ar[10]), _sf(ar[11])
+                    Jv = _sf(ar[44]) if len(ar) > 44 else 0.0
+                    if Ar36_m > 0 and Ar39_m > 0 and Ar40_m > 0:
+                        iso_data.append({
+                            '36':Ar36_m,'37':Ar37_m,'38':Ar38_m,'39':Ar39_m,'40':Ar40_m,
+                            's36':sAr36,'s37':sAr37,'s38':sAr38,'s39':sAr39,'s40':sAr40,
+                            'J':Jv,'name':step['name']})
+                except Exception:
+                    pass
+
+        # --- Plateau weighted mean (with √MSWD correction) ---
         if ages:
             total_w = sum(1.0/a[1]**2 for a in ages)
             if total_w > 0:
                 mean = sum(a[0]/a[1]**2 for a in ages) / total_w
-                sigma = (1.0/total_w) ** 0.5
-                # MSWD
-                if len(ages) > 1:
+                sigma_int = (1.0/total_w) ** 0.5
+                n = len(ages)
+                if n > 1:
                     chi2 = sum(((a[0]-mean)/a[1])**2 for a in ages)
-                    mswd = chi2 / (len(ages) - 1)
-                    self._stat_mswd.setText(f'{mswd:.2f} (n={len(ages)})')
+                    mswd = chi2 / (n - 1)
+                    # Wendt & Carl 1991: σ_ext = σ_int · √MSWD if MSWD > 1
+                    sigma_ext = sigma_int * math.sqrt(mswd) if mswd > 1 else sigma_int
+                    self._stat_mswd.setText(f'{mswd:.2f} (n={n})')
+                    self._stat_plateau.setText(
+                        f'{mean:.3f} ± {sigma_ext:.3f} Ma  (1σ, '
+                        f'{"ext" if mswd > 1 else "int"})')
                 else:
                     self._stat_mswd.setText('—')
-                self._stat_plateau.setText(f'{mean:.3f} ± {sigma:.3f} Ma')
+                    self._stat_plateau.setText(f'{mean:.3f} ± {sigma_int:.3f} Ma')
             else:
-                self._stat_plateau.setText('—')
-                self._stat_mswd.setText('—')
+                self._stat_plateau.setText('—'); self._stat_mswd.setText('—')
         else:
-            self._stat_plateau.setText('—')
-            self._stat_mswd.setText('—')
-        
-        # Normal / Inverse isochron placeholders
-        # Full York regression would require x,y arrays from age_result columns
-        # For now show "— (requires regression)"
-        self._stat_normiso.setText('— (see diagram)')
-        self._stat_invIso.setText('— (see diagram)')
+            self._stat_plateau.setText('—'); self._stat_mswd.setText('—')
+
+        # --- Normal & Inverse isochron via York regression ---
+        if len(iso_data) >= 3:
+            try:
+                # Normal: x = 39/36, y = 40/36
+                xs_n  = np.array([d['39']/d['36'] for d in iso_data])
+                ys_n  = np.array([d['40']/d['36'] for d in iso_data])
+                sxs_n = np.array([_ratio_sigma(d['39'],d['s39'],d['36'],d['s36']) for d in iso_data])
+                sys_n = np.array([_ratio_sigma(d['40'],d['s40'],d['36'],d['s36']) for d in iso_data])
+                m_n, b_n, sm_n, sb_n, mswd_n = york_regression(xs_n, sxs_n, ys_n, sys_n)
+                # Normal: slope = 40Ar*/39ArK,  intercept = (40/36)_trapped
+                F_n = m_n; sF_n = sm_n
+                Jv = iso_data[0]['J'] if iso_data[0]['J'] > 0 else 0.0
+                if F_n > 0 and Jv > 0:
+                    age_n = (1/Utilities.LAMBDA_K)*math.log(1+Jv*F_n)/1e6 \
+                            if hasattr(Utilities,'LAMBDA_K') \
+                            else (1/5.543e-10)*math.log(1+Jv*F_n)/1e6
+                    sage_n = abs((1/5.543e-10)*Jv/(1+Jv*F_n)/1e6)*sF_n
+                    self._stat_normiso.setText(
+                        f'{age_n:.3f} ± {sage_n:.3f} Ma  '
+                        f'(MSWD={mswd_n:.2f}, n={len(iso_data)}, '
+                        f'(40/36)ₜ={b_n:.1f}±{sb_n:.1f})')
+                else:
+                    self._stat_normiso.setText(f'(MSWD={mswd_n:.2f}, slope ≤ 0)')
+
+                # Inverse: x = 39/40, y = 36/40
+                xs_i  = np.array([d['39']/d['40'] for d in iso_data])
+                ys_i  = np.array([d['36']/d['40'] for d in iso_data])
+                sxs_i = np.array([_ratio_sigma(d['39'],d['s39'],d['40'],d['s40']) for d in iso_data])
+                sys_i = np.array([_ratio_sigma(d['36'],d['s36'],d['40'],d['s40']) for d in iso_data])
+                m_i, b_i, sm_i, sb_i, mswd_i = york_regression(xs_i, sxs_i, ys_i, sys_i)
+                # Inverse: y-intercept = (36/40)_trapped = 1/(40/36)_trapped
+                # x-intercept = (39/40)_radiogenic, F = 1/x_intercept_when_y=0
+                # Equivalently F = -1/m_i if intercept goes through (1/F, 0)
+                # Standard: F = -b_i/m_i (from y = m x + b = 0 → x = -b/m)
+                # But also F = (1 - 0)/x_int = ... use closed form:
+                if abs(m_i) > 1e-30 and Jv > 0:
+                    F_i = -b_i/m_i if abs(b_i) > 1e-30 else (1/(-m_i) if m_i != 0 else 0)
+                    # σ_F propagation: F = -b/m → dF/db = -1/m, dF/dm = b/m²
+                    sF_i = math.sqrt((sb_i/m_i)**2 + (b_i*sm_i/(m_i*m_i))**2) if F_i != 0 else 0
+                    if F_i > 0:
+                        age_i = (1/5.543e-10)*math.log(1+Jv*F_i)/1e6
+                        sage_i = abs((1/5.543e-10)*Jv/(1+Jv*F_i)/1e6)*sF_i
+                        atm_ratio = 1/b_i if abs(b_i) > 1e-30 else float('inf')
+                        self._stat_invIso.setText(
+                            f'{age_i:.3f} ± {sage_i:.3f} Ma  '
+                            f'(MSWD={mswd_i:.2f}, n={len(iso_data)}, '
+                            f'(40/36)ₜ={atm_ratio:.1f})')
+                    else:
+                        self._stat_invIso.setText(f'(MSWD={mswd_i:.2f}, F ≤ 0)')
+                else:
+                    self._stat_invIso.setText('—')
+            except Exception as e:
+                self._stat_normiso.setText(f'fit error')
+                self._stat_invIso.setText(f'fit error')
+        else:
+            self._stat_normiso.setText('— (need ≥3 steps)')
+            self._stat_invIso.setText('— (need ≥3 steps)')
     
     def _axis_dialog(self, key, title):
         """Dialog to set XY axis range for a specific diagram"""
