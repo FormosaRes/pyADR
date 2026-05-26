@@ -752,6 +752,20 @@ class App():
         # initilization for GUI
         QtWidgets.QApplication.setStyle('Fusion')
         self.app = QtWidgets.QApplication(sys.argv)
+
+        # v3.8.4: set taskbar / window icon to pyADR.ico so Windows shows the
+        # Ar 40/39 logo instead of the generic Python icon.  On Windows the
+        # taskbar groups by AppUserModelID, so without an explicit ID the OS
+        # treats us as "Python.exe" and reuses Python's icon.
+        try:
+            _icon_path = os.path.join(self.work_dir, '.work', 'pyADR.ico')
+            if os.path.exists(_icon_path):
+                self.app.setWindowIcon(QtGui.QIcon(_icon_path))
+            if sys.platform.startswith('win'):
+                import ctypes
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('NTNU.pyADR.ArAr.v3.8')
+        except Exception:
+            pass  # icon is cosmetic; never block startup
         self.HomePage = HomePage()
         self.T0CalculationPage = LinearRegressionPage()
         self.TypeSelect = TypeSelect()
