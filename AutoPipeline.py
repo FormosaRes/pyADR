@@ -1003,19 +1003,18 @@ class MvCanvas(QtWidgets.QWidget):
         self.cv_mv.setStyleSheet(f'background:white;border:1px solid {BRD};')
         self.cv_mv.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-        vb.addWidget(self.cv_mv, 3)
+        vb.addWidget(self.cv_mv, 2)   # v3.8.13: was stretch=3; reduced to give
 
-        # cycle buttons: single row 1-10. v3.8.12: 22×22 (was 26) so the row
-        # fits inside cv_mv's 240-pixel min width even when the 5th canvas is
-        # squeezed by the 4 others sharing horizontal space.
-        # 10 buttons × 22 + 9 gaps × 2 = 238 px (< 240).
+        # cycle buttons 1-10. v3.8.13: 24×24, spacing=0 to match T₀ vs 2σ
+        # n-filter button style (bigger digits, tight rows).
+        # 10 buttons × 24 + 9 × 0 = 240 px (== cv_mv min width).
         self._btns = []
         cg = QtWidgets.QWidget()
         gl = QtWidgets.QHBoxLayout(cg)
-        gl.setContentsMargins(0, 0, 0, 0); gl.setSpacing(2)
+        gl.setContentsMargins(0, 0, 0, 0); gl.setSpacing(0)
         for i in range(10):
             b = QtWidgets.QPushButton(str(i + 1))
-            b.setFixedSize(22, 22); b.setCheckable(True); b.setChecked(True)
+            b.setFixedSize(24, 24); b.setCheckable(True); b.setChecked(True)
             b.setStyleSheet(self._cs(True))
             b.clicked.connect(lambda _, idx=i: self._toggle(idx))
             gl.addWidget(b)
@@ -1054,7 +1053,7 @@ class MvCanvas(QtWidgets.QWidget):
         btn_all.setFixedHeight(24); btn_all.setCheckable(True); btn_all.setChecked(True)
         btn_all.setStyleSheet(
             f'QPushButton{{background:{BLUE_BG};color:#000;border:1px solid #1a5fb4;'
-            f'border-radius:3px;font-size:11px;font-weight:bold;}}'
+            f'border-radius:3px;font-size:12px;font-weight:bold;}}'
             f'QPushButton:!checked{{background:#eeede8;color:#000;border:1px solid {BRD};}}')
         btn_all.clicked.connect(self._nf_toggle_all)
         nf_gl.addWidget(btn_all)
@@ -1064,7 +1063,7 @@ class MvCanvas(QtWidgets.QWidget):
             b.setFixedHeight(24); b.setCheckable(True); b.setChecked(True)
             b.setStyleSheet(
                 f'QPushButton{{background:{BLUE_BG};color:#000;border:1px solid #1a5fb4;'
-                f'border-radius:3px;font-size:11px;font-weight:bold;}}'
+                f'border-radius:3px;font-size:12px;font-weight:bold;}}'
                 f'QPushButton:!checked{{background:#eeede8;color:#000;border:1px solid {BRD};}}')
             b.clicked.connect(lambda _, nv=n: self._nf_toggle(nv))
             nf_gl.addWidget(b)
@@ -1080,7 +1079,7 @@ class MvCanvas(QtWidgets.QWidget):
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         self.cv_sc.setStyleSheet(f'border:1px solid {BRD};')
         self.cv_sc.mpl_connect('button_press_event', self._sc_click)
-        vb.addWidget(self.cv_sc, 2)
+        vb.addWidget(self.cv_sc, 3)   # T₀ vs 2σ scatter more vertical room (was 2)
 
         # Best-n buttons: one per n_used (10→4), shows min-error for that n
         best_hdr = QtWidgets.QLabel('Best per cycle count  (min error):')
@@ -1117,21 +1116,21 @@ class MvCanvas(QtWidgets.QWidget):
             # excluded cycle — always greyed out red text
             return (f'QPushButton{{background:#eeede8;color:#b41a1a;'
                     f'border:1px solid {BRD2};border-radius:3px;'
-                    f'font-size:11px;font-weight:bold;}}')
+                    f'font-size:12px;font-weight:bold;}}')
         # included: tint by z
         if z is not None and np.isfinite(z):
             if z >= 3.0:        # outlier — alert red
                 return (f'QPushButton{{background:#ffd6d6;color:#a01010;'
                         f'border:1.5px solid #b41a1a;border-radius:3px;'
-                        f'font-size:11px;font-weight:bold;}}')
+                        f'font-size:12px;font-weight:bold;}}')
             if z >= 1.8:        # suspicious — amber
                 return (f'QPushButton{{background:#fff4d0;color:#8a6000;'
                         f'border:1.5px solid #c0a020;border-radius:3px;'
-                        f'font-size:11px;font-weight:bold;}}')
+                        f'font-size:12px;font-weight:bold;}}')
         # healthy / no z available
         return (f'QPushButton{{background:{BLUE_BG};color:#1a5fb4;'
                 f'border:1.5px solid #1a5fb4;border-radius:3px;'
-                f'font-size:11px;font-weight:bold;}}')
+                f'font-size:12px;font-weight:bold;}}')
 
     def _cycle_z_scores(self):
         """Return per-cycle MAD-based z-score from residuals of current fit.
@@ -1408,7 +1407,12 @@ class MvCanvas(QtWidgets.QWidget):
             )
 
         ax.set_xlabel('t (sec)', fontsize=15)
-        ax.set_ylabel('mV', fontsize=15)
+        # v3.8.13: only Ar36 shows the y-axis 'mV' label; the other four share
+        # implicit context, saving horizontal space inside each canvas.
+        if self.ai == 0:
+            ax.set_ylabel('mV', fontsize=15)
+        else:
+            ax.set_ylabel('')
         ax.tick_params(labelsize=14)
         ax.yaxis.set_major_formatter(
             _ticker.ScalarFormatter(useMathText=True))
@@ -1520,7 +1524,11 @@ class MvCanvas(QtWidgets.QWidget):
             edgecolors='black', linewidths=0.6)
 
         ax.set_xlabel('$T_0$', fontsize=15)
-        ax.set_ylabel('2σ', fontsize=15)
+        # v3.8.13: only Ar36 shows the y-axis '2σ' label
+        if self.ai == 0:
+            ax.set_ylabel('2σ', fontsize=15)
+        else:
+            ax.set_ylabel('')
         ax.tick_params(labelsize=14)
         ax.xaxis.set_major_formatter(_ticker.ScalarFormatter(useMathText=True))
         ax.yaxis.set_major_formatter(_ticker.ScalarFormatter(useMathText=True))
@@ -4105,7 +4113,7 @@ class AutoPipelineWindow(QtWidgets.QMainWindow):
         self.nextBtn = QtWidgets.QPushButton('Next: Mass Ratio →')
         self.nextBtn.setStyleSheet(
             f'QPushButton{{background:#1a5fb4;color:white;border:1px solid #1a5fb4;'
-            f'border-radius:3px;padding:6px 12px;font-size:11px;font-weight:bold;}}'
+            f'border-radius:3px;padding:6px 12px;font-size:12px;font-weight:bold;}}'
             f'QPushButton:hover{{background:#1c5fa0;}}')
         self.nextBtn.setFixedHeight(40)
         self.nextBtn.setEnabled(False)

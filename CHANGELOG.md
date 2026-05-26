@@ -1,8 +1,40 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13
 最後整理日期：2026-05-27
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.13（2026-05-27）— AutoPipeline T0 頁面 UI 微調
+
+### 改動
+
+**1. mV vs time / T₀ vs 2σ 只有 Ar36 顯示 y-axis 標題**
+
+```python
+if self.ai == 0: ax.set_ylabel('mV', fontsize=15)
+else:            ax.set_ylabel('')
+```
+
+Ar37-Ar40 的 'mV' / '2σ' label 拿掉，每個 canvas 多 ~40 px 橫向空間給 plot。
+
+**2. Cycle button 視覺對齊 T₀ vs 2σ n-filter button**
+
+- size 22×22 → 24×24
+- spacing 2 → 0（按鈕相連，跟 n-filter 風格一致）
+- font 11px → 12px bold（_cs 整個 helper 一次改）
+
+10 × 24 + 0 spacing = 240 px，剛好等於 cv_mv min width，第 10 cycle 仍不被切。
+
+**3. T₀ vs 2σ scatter 拉高**
+
+MvCanvas vb layout 的 stretch 比例從 cv_mv:cv_sc = 3:2 改成 2:3。Scatter 多拿到約 20% 額外垂直空間，不再被擠扁。
+
+### 檔案改動
+
+- `AutoPipeline.py` — MvCanvas (`_paint_mv`, `_paint_sc`, cycle button row, vb stretch)
+- `.work/.app_info.txt` — 3.8.12 → 3.8.13
 
 ---
 
