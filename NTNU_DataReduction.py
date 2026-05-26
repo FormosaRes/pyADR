@@ -766,6 +766,35 @@ class App():
                 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('NTNU.pyADR.ArAr.v3.8')
         except Exception:
             pass  # icon is cosmetic; never block startup
+
+        # v3.8.4: splash screen during startup. Reads version from .work/.app_info.txt
+        # so version label updates automatically with each release.
+        self._splash = None
+        try:
+            _splash_path = os.path.join(self.work_dir, '.work', 'splash.png')
+            if os.path.exists(_splash_path):
+                _pix = QtGui.QPixmap(_splash_path)
+                self._splash = QtWidgets.QSplashScreen(
+                    _pix, QtCore.Qt.WindowStaysOnTopHint)
+                self._splash.setMask(_pix.mask())
+                # read version
+                _ver = '?'
+                try:
+                    with open(os.path.join(self.work_dir, '.work', '.app_info.txt'),
+                              encoding='utf-8') as _f:
+                        _lines = [ln.strip() for ln in _f.readlines()]
+                    if len(_lines) > 1: _ver = _lines[1]
+                except Exception:
+                    pass
+                self._splash.showMessage(
+                    f'v{_ver}    Loading…',
+                    QtCore.Qt.AlignRight | QtCore.Qt.AlignBottom,
+                    QtGui.QColor(40, 40, 40))
+                self._splash.show()
+                self.app.processEvents()
+        except Exception:
+            self._splash = None  # splash is cosmetic; never block startup
+
         self.HomePage = HomePage()
         self.T0CalculationPage = LinearRegressionPage()
         self.TypeSelect = TypeSelect()
@@ -1925,6 +1954,13 @@ class App():
         self.AgeCalculationPage.new_2.clicked.connect(self.toAC)
 
         self.widget.show()
+        # v3.8.4: dismiss splash once main window is visible
+        if getattr(self, '_splash', None) is not None:
+            try:
+                self._splash.finish(self.widget)
+            except Exception:
+                pass
+            self._splash = None
         # FIX: center window on screen — use frameGeometry to include title bar
         QtWidgets.QApplication.processEvents()
         _sg  = QtWidgets.QApplication.primaryScreen().availableGeometry()
