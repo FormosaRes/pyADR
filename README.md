@@ -1,5 +1,5 @@
 ![logo](.work/logo.png)
-# pyADR — NTNU modified fork (v3.8.1)
+# pyADR — NTNU modified fork (v3.8.4)
 
 40Ar/39Ar data reduction tool with GUI. Modified fork of [pyADR](https://github.com/AndrewLiu0725/pyADR) (original by **An-Jun (Andrew) Liu**), now maintained by **PANG Chi-Hsiu (NTNU)**.
 
@@ -125,6 +125,47 @@ python NTNU_DataReduction.py
 ---
 
 ## Changelog 摘要
+
+### v3.8.4 (2026-05-25)
+
+**AutoPipeline AgeCalcPage isochron 公式修正 + λ 統一來源**。
+
+v3.8.3 (cont.) 在 `_update_isochron_stats` 加 York 2004 isochron 時寫錯主公式：`F_i = -b_i/m_i`（intercept/slope）。文獻正解是 `F = -slope/intercept = -m_i/b_i`（Vermeesch 2024 Geochronology 6:398 page 2, Li & Vermeesch 2021 Eq. 5）。WIP 算出來的是 1/F 不是 F，對 10 Ma 樣品偏高約 18%。σ_F propagation 偏導跟著修，inverse b≈0 fallback（v3.7 buggy `1/(-m_i)`）刪掉改 degenerate 顯示。
+
+λ 統一：原 `_update_isochron_stats` 內 4 處 hardcoded `5.543e-10`（Steiger-Jäger 1977），加上 2 處 `hasattr(Utilities,'LAMBDA_K')` fallback（Utilities 從未定義 LAMBDA_K）。calcAge 主路徑用 parameters.csv 內 5.49e-10，所以 plateau age 跟 isochron age 之間有 ~1% 系統性偏移。加 module-level `LAMBDA_K = 5.49e-10`，`AutoPipelineWindow.set_context()` 從 `params['λ for age calculation']` 注入，所有 isochron age / σ_age 改用同一條 λ。
+
+不影響 plateau age、calcAge 主路徑、Utilities、DiagramPlot SH。NO.65 muscovite 驗證：Inv. Iso 從 ~11.5 Ma 應變回 ~9.77 Ma；SYL31 LS Sylhet Trap basalt（115.4 ± 3.9 Ma）作為第二驗證樣品。
+
+附加：`NTNU_DataReduction.py` 加 `setWindowIcon` + `SetCurrentProcessExplicitAppUserModelID`，PyQt5 主視窗 taskbar 圖示顯示 pyADR.ico 而非 Python 預設圖。`pyADR.ico` 多解析度 (16/24/32/48/64/128/256) 加入 `.work/`，logo 拉伸填滿 ~94% canvas。可選 `pyADR_launch.vbs` silent launcher（不彈 cmd 視窗）。
+
+### v3.8.3 (2026-05-25)
+
+**`Utilities.py:getJVolumeStatistics` σ_J 括號 bug fix + AutoPipeline 大幅擴充**。
+
+#### σ_J bug
+
+`getJVolumeStatistics` L2864 σ_J 計算有 operator precedence 造成的括號錯誤：
+
+```python
+v3 = F_std**2 * ((np.exp(l*t)) - 1 / Ar_39_K_40_r_ratio**2) ** 2   # 錯
+v3 = F_std**2 * ((np.exp(l*t) - 1) / Ar_39_K_40_r_ratio**2) ** 2   # 正
+```
+
+由 `J = (e^(λt) − 1) / F_r` 的偏導 `∂J/∂F_r = (e^(λt) − 1)/F_r²` 推得正確分子是 `(e^(λt) − 1)`。typical `λt ≈ 1.5e-10`，錯誤公式算 `e^(λt) − 1/F_r² ≈ 1 − 1/F_r²`，量級錯了好幾個 order，σ_J 系統性高估數個數量級，並透過 `∂T/∂J = F/(λ(1+JF))` 傳到所有 step 的 σ_age。age 中心值不變（J 中心值未動），只有 σ_age 變小。
+
+#### AutoPipeline 擴充（同版本 cont. commit）
+
+- **Decay correction 基礎建設**：`LAMBDA_37` / `LAMBDA_39` (Renne 2010 / 2011 半衰期)、`decay_correct()` helper、`_extract_dat_date()` 從 .dat header 抓 SPD、`compute_delta_t_days()` 算 Δt = SPD − OGD、`DELTA_T_DAYS` global 與 CalcT0Page Δt UI 自動更新
+- **σ method toggle**：`SIGMA_METHOD` global，UI dropdown 切換 `'standard'`（pcov[-1,-1]，v3.8.2 行為）與 `'calc_t0'`（std(|r|)/√n，NTNU CalcT0Page convention），plot 上同時顯示兩種公式對照（active 用 ▶ 標）。**不影響 NTNU_DataReduction CalcT0Page**（Lee 老師指定的 σ 寫法不動）
+- **Cycle 按鈕 z-score 著色**：MAD-based robust z-score，藍/琥珀/紅三段，tooltip 含 t / mV / z / used|excluded
+- **`_signal_out_pass` serial per-isotope 重寫**：Ar37（含 decay correction）→ Ar36（用 Ar37_dc 推 Ar36_ca、constraint Ar36_air > 0）→ Ar38/39/40（σ/T0 + R² penalty）。舊邏輯保留為 `_legacy_signal_out_pass()` fallback
+- **AgeCalcPage isochron 升級**：York 2004 regression + Wendt & Carl 1991 √MSWD 修正（MSWD > 1 用 σ_external = σ_internal·√MSWD）+ Normal/Inverse isochron age 從 placeholder 改實算
+
+### v3.8.2 (2026-05-13)
+
+**AutoPipeline `σ_T0` SE-from-covariance fix + PlaneFit3D refactor**。
+
+AutoPipeline 內 baseline / signal `_fit_one` / `_fit_with_errors` 把 σ_T0 從 `std(|residuals|)/√n` 換成 `sqrt(pcov[-1,-1])`（Li et al. 2019 Eq.1），舊式系統性低估約 4×。NTNU_DataReduction CalcT0Page 的 σ 寫法是 Lee 老師指定，**不動**。`PlaneFit3D.py` 大幅 refactor（+358 行），整合 Kent 1990 ML σ-cap。
 
 ### v3.8.1 (2026-05-11)
 
