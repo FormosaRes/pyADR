@@ -1535,19 +1535,22 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
         if i < len(original_indices_inv) and np.isfinite(x_inv[i]) and np.isfinite(y_inv[i])
     ]
 
-    # v3.8.5 (A2/B1): annotate regression method + regression MSWD on plot.
+    # v3.8.5/v3.8.6 (A2/B1): annotate regression method + regression MSWD.
     # The MSWD shown here is the REGRESSION MSWD (χ² of points to fit line),
     # distinct from the PLATEAU MSWD (returned in result[4]) which is computed
     # from step ages around WMA.  Both numbers are meaningful but represent
     # different things — labelling them avoids ambiguity.
+    # v3.8.6 position: lower-left corner (legend is upper-left, group info
+    # boxes are usually upper-right / by data clusters, atm X marker is left-
+    # axis at y≈0.003 well above lower-left).
     try:
         _method_lbl = 'York 2004' if isochron_method == 'york' else 'OLS'
         _mswd_reg_str = f'{mswd_regression:.2f}' if np.isfinite(mswd_regression) else '—'
         _annot = (f'Regression: {_method_lbl}\n'
                   f'Regression MSWD: {_mswd_reg_str} (n={len(x_inv)})')
-        ax_iv.text(0.98, 0.98, _annot,
+        ax_iv.text(0.02, 0.02, _annot,
                    transform=ax_iv.transAxes,
-                   fontsize=8, ha='right', va='top',
+                   fontsize=8, ha='left', va='bottom',
                    bbox=dict(facecolor='white', alpha=0.85,
                              edgecolor='gray', boxstyle='round,pad=0.3'),
                    zorder=20)
