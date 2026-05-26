@@ -4001,8 +4001,15 @@ class App():
                         x39 = df3["39Ar(k)"].values[m3]
                         s39 = df3["39Ar(k)_std"].values[m3]
                         x40 = (df3["40Ar(r)"] + df3["40Ar(a)"]).values[m3]
-                        s40 = np.hypot(df3["40Ar(r)_std"].values,
-                                       df3["40Ar(a)_std"].values)[m3]
+                        # v3.8.6 fix (FORMULAS.md §11.10):
+                        # 40Ar(r) and 40Ar(a) are anti-correlated through the
+                        # 40Ar(r) = 40Ar(m) − 40Ar(a) − 40Ar(K) decomposition.
+                        # cov(40r, 40a) = −σ²_40a, so var(40r + 40a) = σ²_40r − σ²_40a,
+                        # NOT σ²_40r + σ²_40a (which double-counts σ_40a).
+                        # Equivalent to var(40Ar(m) − 40Ar(K)) when independent assumption holds.
+                        _v40r = df3["40Ar(r)_std"].values ** 2
+                        _v40a = df3["40Ar(a)_std"].values ** 2
+                        s40 = np.sqrt(np.maximum(_v40r - _v40a, 0.0))[m3]
                         J3  = float(df3["J"].iloc[0])
                         sJ3 = float(df3["J_std"].iloc[0])
                         T_labels3 = [f"{int(t)}°C" for t in df3["deg C"].values[m3]]
@@ -4594,7 +4601,10 @@ class App():
             x39_a = df["39Ar(k)"].values[mask]
             s39_a = df["39Ar(k)_std"].values[mask]
             x40_a = (df["40Ar(r)"] + df["40Ar(a)"]).values[mask]
-            s40_a = np.hypot(df["40Ar(r)_std"].values, df["40Ar(a)_std"].values)[mask]
+            # v3.8.6 fix: same σ_40 double-counting fix as L4003 (see FORMULAS.md §11.10).
+            _v40r_g = df["40Ar(r)_std"].values ** 2
+            _v40a_g = df["40Ar(a)_std"].values ** 2
+            s40_a = np.sqrt(np.maximum(_v40r_g - _v40a_g, 0.0))[mask]
             T_a   = [f"{int(t)}°C" for t in df["deg C"].values[mask]]
             J  = float(df["J"].iloc[0])
             sJ = float(df["J_std"].iloc[0])
