@@ -49,6 +49,23 @@ import PlaneFit3D
 import ExcelChartExporter  # V3.4.1: Excel native chart export
 
 
+# v3.8.7: helper to add a standard "Return" button on the left edge of
+# select-style sub-windows that didn't ship with one in their UI file.
+# Matches the style/position used by other pages (return_2, QRect(0, 200, 91, 51)).
+# The wrapper class still needs the App side to connect btn.clicked → toMain.
+def _add_return_button(window, y=200):
+    """Create window.return_2 button at standard left-side position. Idempotent."""
+    if getattr(window, 'return_2', None) is not None:
+        return
+    if not hasattr(window, 'centralwidget'):
+        return
+    btn = QtWidgets.QPushButton(window.centralwidget)
+    btn.setGeometry(QtCore.QRect(0, y, 91, 51))
+    btn.setObjectName("return_2")
+    btn.setText("Return")
+    window.return_2 = btn
+
+
 # v3.8.7: helper to keep buttons / title-label horizontally centered when the
 # user resizes a select-style sub-window (TypeSelect, StatSelect, JSelect,
 # SaltSelect, DiagramSelect, DatumSelect).  These UI files use absolute
@@ -429,6 +446,7 @@ class TypeSelect(QtWidgets.QMainWindow, UI.TypeSelect.Ui_MainWindow):
     def __init__(self, parent=None):
         QtWidgets.QMainWindow.__init__(self, parent)
         self.setupUi(self)
+        _add_return_button(self)
         _make_select_page_responsive(self)
 
 class LinearRegressionPage(QtWidgets.QMainWindow, UI.LinearRegression.Ui_MainWindow):
@@ -446,6 +464,7 @@ class StatSelect(QtWidgets.QMainWindow, UI.StatSelect.Ui_MainWindow):
     def __init__(self, parent=None):
         QtWidgets.QMainWindow.__init__(self, parent)
         self.setupUi(self)
+        _add_return_button(self)
         _make_select_page_responsive(self)
 
 class JStatistics(QtWidgets.QMainWindow, UI.JStatistics.Ui_MainWindow):
@@ -495,6 +514,7 @@ class JSelect(QtWidgets.QMainWindow, UI.JSelect.Ui_MainWindow):
     def __init__(self, parent=None):
         QtWidgets.QMainWindow.__init__(self, parent)
         self.setupUi(self)
+        _add_return_button(self)
         _make_select_page_responsive(self)
 
 class ReselectTable(QtWidgets.QDialog, UI.ReselectDialog.Ui_Dialog):
@@ -531,6 +551,7 @@ class SaltSelect(QtWidgets.QMainWindow, UI.SaltSelect.Ui_MainWindow):
     def __init__(self, parent=None):
         QtWidgets.QMainWindow.__init__(self, parent)
         self.setupUi(self)
+        _add_return_button(self)
         _make_select_page_responsive(self)
 
 class SaltStat(QtWidgets.QMainWindow, UI.SaltStat.Ui_MainWindow):
@@ -546,6 +567,7 @@ class SaltStatSelect(QtWidgets.QMainWindow, UI.SaltStatSelect.Ui_MainWindow):
     def __init__(self, parent=None):
         QtWidgets.QMainWindow.__init__(self, parent)
         self.setupUi(self)
+        _add_return_button(self)
         _make_select_page_responsive(self)
 
 class SmartSpinBox(QtWidgets.QDoubleSpinBox):
@@ -1143,12 +1165,14 @@ class DiagramSelect(QtWidgets.QMainWindow, UI.DiagramSelect.Ui_MainWindow):
     def __init__(self, parent=None):
         QtWidgets.QMainWindow.__init__(self, parent)
         self.setupUi(self)
+        _add_return_button(self)
         _make_select_page_responsive(self)
 
 class DatumSelect(QtWidgets.QMainWindow, UI.DatumSelect.Ui_MainWindow):
     def __init__(self, parent=None):
         QtWidgets.QMainWindow.__init__(self, parent)
         self.setupUi(self)
+        _add_return_button(self)
         _make_select_page_responsive(self)
         
 # main app
@@ -2567,6 +2591,16 @@ class App():
         self.DiagramSelectPage.actionAbout_pyADR.triggered.connect(self.systemInfo)
         self.DiagramSelectPage.actionCheck_Update.triggered.connect(self.checkVersion)
         self.DiagramSelectPage.goHome.triggered.connect(self.toMain)
+        # v3.8.7: select pages got a Return button added by _add_return_button().
+        # Wire each one to toMain (same pattern as the existing return_2 buttons
+        # on the calculation / statistics pages).
+        self.TypeSelect.return_2.clicked.connect(self.toMain)
+        self.StatSelectPage.return_2.clicked.connect(self.toMain)
+        self.JSelectPage.return_2.clicked.connect(self.toMain)
+        self.SaltSelectPage.return_2.clicked.connect(self.toMain)
+        self.SaltStatSelectPage.return_2.clicked.connect(self.toMain)
+        self.DiagramSelectPage.return_2.clicked.connect(self.toMain)
+        self.DatumSelectPage.return_2.clicked.connect(self.toMain)
         
         # click button on Datum Select Pag
         self.DatumSelectPage.TT.clicked.connect(self.toDP)

@@ -1,5 +1,5 @@
 ![logo](.work/logo.png)
-# pyADR — NTNU modified fork (v3.8.7)
+# pyADR — NTNU modified fork (v3.8.8)
 
 40Ar/39Ar data reduction tool with GUI. Modified fork of [pyADR](https://github.com/AndrewLiu0725/pyADR) (original by **An-Jun (Andrew) Liu**), now maintained by **PANG Chi-Hsiu (NTNU)**.
 
@@ -125,6 +125,10 @@ python NTNU_DataReduction.py
 ---
 
 ## Changelog 摘要
+
+### v3.8.8 (2026-05-26)
+
+**Select-style sub-window 加上 Return 按鈕**。`TypeSelect`、`StatSelect`、`JSelect`、`SaltSelect`、`SaltStatSelect`、`DiagramSelect`、`DatumSelect` 七個分支選擇子視窗原本沒 Return 按鈕（只能透過 menubar 回主頁），跟其他子頁面介面不一致。新增 `_add_return_button` helper 在左側標準位置（`QRect(0, 200, 91, 51)`）放上按鈕，App init 加 7 個 `clicked → toMain` 連線。UI/*.py 保持不動。
 
 ### v3.8.7 (2026-05-26)
 

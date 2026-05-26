@@ -1,8 +1,73 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8
 最後整理日期：2026-05-26
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.8（2026-05-26）— select-style sub-window 加上 Return 按鈕
+
+### 問題
+
+七個 select-style 子視窗（TypeSelect / StatSelect / JSelect / SaltSelect / SaltStatSelect / DiagramSelect / DatumSelect）的 UI 檔沒有 Return 按鈕，回主頁只能透過 menubar 的「Main Menu」action。其他大多數子頁面（ParameterSetting / AgeCalculation / MassRatio / JCalculation / Statistics / DiagramPlot SH/LS / SaltCalculation 等）左側都有標準 Return 按鈕，介面行為不一致。
+
+### 修法
+
+新增 module-level helper `_add_return_button(window, y=200)`：
+
+```python
+def _add_return_button(window, y=200):
+    if getattr(window, 'return_2', None) is not None:
+        return  # idempotent: skip if UI already has return_2
+    if not hasattr(window, 'centralwidget'):
+        return
+    btn = QtWidgets.QPushButton(window.centralwidget)
+    btn.setGeometry(QtCore.QRect(0, y, 91, 51))
+    btn.setObjectName("return_2")
+    btn.setText("Return")
+    window.return_2 = btn
+```
+
+每個 select wrapper 的 `__init__` 加一行：
+
+```python
+class DiagramSelect(QtWidgets.QMainWindow, UI.DiagramSelect.Ui_MainWindow):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setupUi(self)
+        _add_return_button(self)              # ← 新加
+        _make_select_page_responsive(self)
+```
+
+App init 加 7 個訊號連線（跟既有 return_2 wiring 同 pattern）：
+
+```python
+self.TypeSelect.return_2.clicked.connect(self.toMain)
+self.StatSelectPage.return_2.clicked.connect(self.toMain)
+self.JSelectPage.return_2.clicked.connect(self.toMain)
+self.SaltSelectPage.return_2.clicked.connect(self.toMain)
+self.SaltStatSelectPage.return_2.clicked.connect(self.toMain)
+self.DiagramSelectPage.return_2.clicked.connect(self.toMain)
+self.DatumSelectPage.return_2.clicked.connect(self.toMain)
+```
+
+### 為什麼不直接改 UI/*.py
+
+`UI/*.py` 是 `pyuic5` 從 `.ui` 自動產生，檔首有「WARNING! All changes made in this file will be lost!」。改了未來重 generate 會被蓋掉。Fix 寫在 wrapper class，永久安全。
+
+### 位置 / 樣式
+
+`QRect(0, 200, 91, 51)` 跟其他子頁面標準 Return 按鈕一致（AgeCalculation 在 y=170、AirRatioStatistics 在 y=200、DiagramPlots_SH/LS 在 y=190）。原生 PyQt5 按鈕樣式（不額外 setStyleSheet）→ 跟其他 Return 按鈕視覺一致。
+
+### 互動
+
+點 Return → 跳回 pyADR 主頁面（toMain）。menubar 的「Main Menu」action 跟新加的 Return 按鈕 **獨立但等效**，使用者可選任一條路徑。
+
+### 檔案改動
+
+- `NTNU_DataReduction.py`：新增 helper `_add_return_button`；7 個 select wrapper class 加 `_add_return_button(self)`；App init 加 7 個 `return_2.clicked.connect(self.toMain)`
+- `.work/.app_info.txt`：`3.8.7` → `3.8.8`
 
 ---
 
