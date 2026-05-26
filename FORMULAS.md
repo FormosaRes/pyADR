@@ -753,6 +753,207 @@ Validation: SYL31 LS (NTU thesis R94224113, Sylhet Trap basalt 115.4 ± 3.9 Ma).
 
 ---
 
+## 11. 3D Plane Fit — `PlaneFit3D.py`
+
+`PlaneFit3D.py:1–791`
+
+Reference implementation of Kent et al. (1990) maximum-likelihood plane regression for ⁴⁰Ar/³⁹Ar, following Wu (2007) NTU master thesis (R94224113, advisor: Ching-Hua Lo). Provides an alternative to the 2D isochron projection that retains all three isotope axes directly, avoiding error accumulation from ratio computation.
+
+### 11.1 Plane equation
+
+For a well-behaved sample with two end-members (trapped + radiogenic), the three Ar isotopes lie on a plane in (³⁶Ar, ³⁹Ar, ⁴⁰Ar) space:
+
+$$
+^{40}\text{Ar} \;=\; \alpha \cdot {}^{36}\text{Ar} \;+\; \beta \cdot {}^{39}\text{Ar}
+$$
+
+**Physical meaning**:
+- $\alpha = (^{40}\text{Ar}/^{36}\text{Ar})_0$ = trapped (initial / atmospheric) composition (≈ 298.56 for pure air)
+- $\beta = ^{40}\text{Ar}^*/^{39}\text{Ar}_K$ = radiogenic-to-K ratio (= F in the standard age equation)
+
+Age from β:
+$$
+T \;=\; \frac{1}{\lambda} \ln(1 + \beta \cdot J)
+$$
+
+### 11.2 Maximum-likelihood objective
+
+Following Wu (2007) eq 3-7 and Kent et al. (1990), with each data point $x_i = (^{36}\text{Ar}_i, ^{39}\text{Ar}_i, ^{40}\text{Ar}_i)$ assumed to follow a 3D multivariate normal $N_3(\mu_i, A_i)$:
+
+Define the plane normal vector $\gamma = [\alpha, \beta, -1]^T$ and:
+
+$$
+s_i \;=\; \gamma^T x_i \;=\; \alpha\,^{36}\text{Ar}_i + \beta\,^{39}\text{Ar}_i - {}^{40}\text{Ar}_i
+$$
+
+$$
+q_i \;=\; \gamma^T A_i\, \gamma \;=\; \alpha^2\,A_{i,11} + \beta^2\,A_{i,22} + A_{i,33} + 2\alpha\beta\,A_{i,12} - 2\alpha\,A_{i,13} - 2\beta\,A_{i,23}
+$$
+
+After Lagrange-multiplier elimination of $\mu_i$ (Wu 2007 eq 3-5 → 3-7), the **profile log-likelihood** is:
+
+$$
+L_p(\delta) \;=\; -\tfrac{1}{2}\sum_i \frac{s_i^2}{q_i}
+\qquad \text{where}\;\delta = [\alpha, \beta]^T
+$$
+
+Maximizing $L_p$ is equivalent to a weighted-least-squares minimisation where weights account for variance in all three isotope dimensions (no axis is preferred).
+
+`PlaneFit3D.py:_Lp` L126-129.
+
+### 11.3 Per-point covariance matrix $A_i$ (3×3)
+
+`PlaneFit3D.py:build_cov` L56-63.
+
+$$
+A_i \;=\;
+\begin{bmatrix}
+\sigma_{36,i}^2 & 0 & 0 \\
+0 & \sigma_{39,i}^2 & -k_0\,\sigma_{39,i}^2 \\
+0 & -k_0\,\sigma_{39,i}^2 & \sigma_{40,i}^2
+\end{bmatrix}
+$$
+
+where $k_0 = $ PR(⁴⁰Ar/³⁹Ar)_K production ratio (default 0.025004).
+
+The off-diagonal $\text{cov}(^{39}\text{Ar},^{40}\text{Ar}) = -k_0\,\sigma_{39}^2$ captures the anti-correlation introduced when ⁴⁰Ar = ⁴⁰Ar(m) − k₀·³⁹Ar(K) is back-corrected for the K-derived interference. Other off-diagonals are zero under the standard assumption of independent isotope measurements.
+
+### 11.4 Newton–Raphson optimisation
+
+`PlaneFit3D.py:_newton_raphson` L174-198. `PlaneFit3D.py:_grad`, `_hess` L132-158.
+
+Solve $\partial L_p/\partial \delta = 0$ iteratively starting from an OLS initial guess (`_ols_initial`, L161-171):
+
+$$
+\delta_{k+1} \;=\; \delta_k + H^{-1}\, g
+$$
+
+where
+$$
+g = -\frac{\partial L_p}{\partial \delta}\Big|_{\delta_k}, \qquad H = -\frac{\partial^2 L_p}{\partial \delta \partial \delta^T}\Big|_{\delta_k}
+$$
+
+At the MLE, $-\partial^2 L_p/\partial \delta \partial \delta^T$ is positive-definite (the observed Fisher information).
+
+**Backtracking line search** (v3.4 addition): halve the step size up to 20× until $L_p$ strictly increases. Prevents Newton-method overshoot in regions with large curvature. Convergence tolerance $|\Delta\delta|/|\delta| < 10^{-10}$.
+
+> **Sign-convention note**: pyADR's `_grad()` returns $+\partial L_p/\partial \delta$ (opposite sign to Wu 2007 eq 3-10). Combined with $H = -\partial^2 L_p$, the update $\delta_{k+1} = \delta_k + H^{-1} g$ moves uphill on $L_p$ (signs cancel). Documented inline in `_grad`'s docstring.
+
+### 11.5 MSWD goodness-of-fit
+
+`PlaneFit3D.py:_compute_mswd` L201-208.
+
+$$
+S^2 \;=\; \sum_i \frac{s_i^2}{q_i}, \qquad \text{df} = n - 2
+$$
+
+$$
+\text{MSWD} \;=\; \frac{S^2}{n - 2}
+$$
+
+(Wu 2007 eq 3-24; Mahon 1996.) Two free parameters (α, β) → df = n−2.
+
+**95% confidence interval** for MSWD computed exactly via $\chi^2_{df}$ quantiles (`scipy.stats.chi2`), not the normal approximation of Wendt & Carl (1991):
+$$
+\text{CI}_{95\%}(\text{MSWD}) \;=\; \left[\frac{\chi^2_{df}(0.025)}{df}, \frac{\chi^2_{df}(0.975)}{df}\right]
+$$
+
+If MSWD exceeds the upper bound, pyADR applies a Wendt-Carl style σ-expansion:
+$$
+\tau^2 \;=\; \frac{S^2}{df} \;=\; \text{MSWD}
+\qquad \Longrightarrow \qquad \sigma_{\delta} \to \sqrt{\tau^2}\,\sigma_{\delta}
+$$
+
+### 11.6 Parameter covariance
+
+`PlaneFit3D.py:_param_cov` L211-226.
+
+$$
+\text{cov}(\hat{\delta}) \;=\; \tau^2 \cdot H^{-1}
+$$
+
+where $H = -\partial^2 L_p/\partial \delta \partial \delta^T$ (positive definite at MLE).
+
+> **Wu (2007) eq 3-27 sign-error correction**: The thesis writes $\text{cov}(\hat{\delta}) = \tau^2 \cdot (\partial^2 L_p/\partial \delta \partial \delta^T)^{-1}$. At the MLE, $\partial^2 L_p$ is negative-definite, so its inverse gives **negative variances** — clearly wrong. The correct ML asymptotic covariance is $\tau^2 \cdot (-\partial^2 L_p/\partial \delta \partial \delta^T)^{-1} = \tau^2 \cdot H^{-1}$. pyADR uses the corrected form and documents this inline.
+
+Marginal 1σ uncertainties:
+$$
+\sigma_\alpha \;=\; \sqrt{\text{cov}(\hat\delta)_{11}}, \qquad \sigma_\beta \;=\; \sqrt{\text{cov}(\hat\delta)_{22}}
+$$
+
+### 11.7 Age and σ_T
+
+`PlaneFit3D.py:age_from_beta`, `age_error_1sigma` L229-243.
+
+$$
+T \;=\; \frac{1}{\lambda}\,\ln(1 + \beta J)
+$$
+
+Renne (1998) / Min et al. (2000) error propagation:
+
+$$
+\sigma_T^2 \;=\; \left(\frac{\partial T}{\partial \beta}\sigma_\beta\right)^2 + \left(\frac{\partial T}{\partial J}\sigma_J\right)^2 + \left(\frac{\partial T}{\partial \lambda}\sigma_\lambda\right)^2
+$$
+
+with partial derivatives:
+$$
+\frac{\partial T}{\partial \beta} = \frac{J}{\lambda(1 + \beta J)}, \qquad
+\frac{\partial T}{\partial J} = \frac{\beta}{\lambda(1 + \beta J)}, \qquad
+\frac{\partial T}{\partial \lambda} = -\frac{\ln(1 + \beta J)}{\lambda^2}
+$$
+
+### 11.8 Mahon (1996) modified weighting — optional σ-cap
+
+`PlaneFit3D.py:_apply_sigma_cap` L66-71 (v3.4.3 addition).
+
+For background-dominated steps where $\sigma_i / |x_i| \gg 1$ (e.g. blank-corrected low-signal steps), classical Kent weights give those points outsize influence and underdisperse MSWD. Mahon (1996) suggests capping the relative uncertainty:
+
+$$
+\sigma_{i,\text{eff}} \;=\; \min\bigl(\sigma_i,\;c \cdot |x_i|\bigr)
+$$
+
+with typical $c = 0.2$–$0.5$. pyADR exposes `sigma_cap_rel` parameter; `None` disables (classical Kent), per-axis values supported.
+
+### 11.9 Sub-plane search
+
+`PlaneFit3D.py:find_subplanes` L325+.
+
+Sliding-window search over consecutive heating steps to identify the longest run with MSWD inside the 95% χ² CI. Used to detect sub-plateaus when not all steps share a single isotope system. Returns ranked candidates by window length.
+
+### 11.10 ⚠ Known issue — input σ_40 double-counting (caller-side bug)
+
+**Location**: `NTNU_DataReduction.py:3901-3902` (single fit) and `:4489+` (group fit).
+
+```python
+x40 = (df3["40Ar(r)"] + df3["40Ar(a)"]).values[m3]
+s40 = np.hypot(df3["40Ar(r)_std"].values, df3["40Ar(a)_std"].values)[m3]
+```
+
+**Math problem**:
+- $x_{40} = ^{40}\text{Ar}(r) + ^{40}\text{Ar}(a)$
+- $^{40}\text{Ar}(r) = ^{40}\text{Ar}_m - ^{40}\text{Ar}(a) - ^{40}\text{Ar}(K)$, so $^{40}\text{Ar}(r)$ and $^{40}\text{Ar}(a)$ are **anti-correlated**: $\text{cov}(^{40}\text{Ar}(r), ^{40}\text{Ar}(a)) = -\sigma_{40a}^2$
+- Correct variance: $\sigma_{x_{40}}^2 = \sigma_{40r}^2 + \sigma_{40a}^2 + 2\,\text{cov} = \sigma_{40r}^2 - \sigma_{40a}^2$
+- pyADR's `np.hypot` gives $\sigma_{40r}^2 + \sigma_{40a}^2$ — **over by $2\sigma_{40a}^2$**
+
+Same pattern as v3.8.1 fix for σ_36(m)/σ_39(m). Effect: σ_40 inflated, MSWD systematically low, α/β/T potentially biased toward 36Ar/39Ar.
+
+**Proposed fix**: `s40 = np.sqrt(max(σ_40r² − σ_40a², 0))` (clip-to-zero in the rare case σ_40a > σ_40r). Validation sample: SYL31 (Wu 2007, 115.4 ± 3.9 Ma).
+
+### References for §11
+
+| Topic | Reference |
+|---|---|
+| 3D plane ML algorithm | Kent J.T. et al. (1990) *Maximum likelihood estimation of a plane in three dimensions.* Statistics 21: 411–426 |
+| Implementation (NTU thesis) | Wu C.-Y. (2007) *3-D Plane-fitting Program in 40Ar/39Ar Dating.* MSc thesis, NTU Geosciences (R94224113), advisor Ching-Hua Lo. Math derivations in Chapter 3 |
+| Newton-Raphson + Lagrange | Titterington D.M., Halliday A.N. (1979) *On the fitting of parallel isochrons and the method of maximum likelihood.* Chem. Geol. 26: 183–195 |
+| MSWD / residual analysis | Mahon K.I. (1996) *The new "York" regression: application of an improved statistical method to geochemistry.* Int. Geol. Rev. 38: 293–303 |
+| σ-cap modified weighting | Mahon (1996); pyADR v3.4.3 addition |
+| Age + σ_T propagation | Renne P.R. et al. (1998) *Intercalibration of standards, absolute ages and uncertainties in 40Ar/39Ar dating.* Chem. Geol. 145: 117–152.  Min K. et al. (2000) *A test for systematic errors in 40Ar/39Ar geochronology.* GCA 64: 73–98 |
+| Koppers age error tables | Koppers A.A.P. (2002) *ArArCALC — software for 40Ar/39Ar age calculations.* Comput. Geosci. 28: 605–619 |
+| Validation sample | SYL31 (Sylhet Trap basalt, India), Rajmahal-Sylhet eruption 119–116 Ma, Kerguelen Plume early product. Wu 2007 chapter 5
+
+---
+
 ## ⚠️ Code-state warnings (v3.8.1 — synced with v5 math-audit report)
 
 ### Resolved in v3.7.4 / v3.8.0 (kept for traceability)

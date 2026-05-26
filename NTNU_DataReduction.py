@@ -73,6 +73,7 @@ def _show_diagram_plot_help(parent):
     _add_tab("MSWD",          _HELP_MSWD_HTML)
     _add_tab("Age formula",   _HELP_AGE_HTML)
     _add_tab("Ar components", _HELP_AR_COMP_HTML)
+    _add_tab("3D Plane Fit",  _HELP_PLANE3D_HTML)
     _add_tab("References",    _HELP_REFS_HTML)
 
     btn_close = QtWidgets.QPushButton("Close")
@@ -220,8 +221,110 @@ Literature standard is 1.83 (McDougall &amp; Harrison 1999 Eq. 4.30) but
 that's for a different reactor.</p>
 """
 
+_HELP_PLANE3D_HTML = """
+<h2>3D Plane Fit (PlaneFit3D.py)</h2>
+<p>Alternative to 2D isochron projection: regress the data directly in
+(³⁶Ar, ³⁹Ar, ⁴⁰Ar) space.  Avoids error accumulation from ratio computation
+and lets you see the spatial structure of isotope systems within a sample.</p>
+<p><b>Reference</b>: Kent et al. (1990) maximum-likelihood plane regression,
+implemented per Wu C.-Y. (2007) NTU MSc thesis (R94224113, advisor Ching-Hua Lo).
+Validation sample SYL31 (Sylhet Trap basalt, 115.4 ± 3.9 Ma).</p>
+<h3>Plane equation</h3>
+<p style="margin-left:20px">
+<b><sup>40</sup>Ar = &alpha; &middot; <sup>36</sup>Ar + &beta; &middot; <sup>39</sup>Ar</b></p>
+<ul>
+<li><b>&alpha;</b> = (<sup>40</sup>Ar/<sup>36</sup>Ar)<sub>trapped</sub>
+    &mdash; initial (air / inherited) composition (&asymp; 298.56 for pure air)</li>
+<li><b>&beta;</b> = <sup>40</sup>Ar* / <sup>39</sup>Ar<sub>K</sub> = F &mdash;
+    radiogenic-to-K ratio (feeds into the age formula)</li>
+</ul>
+<p>Age:&nbsp;&nbsp; <b>T = (1/&lambda;) &middot; ln(1 + &beta; &middot; J)</b></p>
+<h3>Maximum-likelihood objective</h3>
+<p>Each data point x<sub>i</sub> = (<sup>36</sup>Ar, <sup>39</sup>Ar, <sup>40</sup>Ar)
+is modelled as N<sub>3</sub>(&mu;<sub>i</sub>, A<sub>i</sub>) where &mu;<sub>i</sub>
+lies on the plane.  Define plane normal &gamma; = [&alpha;, &beta;, &minus;1]<sup>T</sup>:</p>
+<p style="margin-left:20px">s<sub>i</sub> = &gamma;<sup>T</sup>x<sub>i</sub> = &alpha;&middot;<sup>36</sup>Ar<sub>i</sub> + &beta;&middot;<sup>39</sup>Ar<sub>i</sub> &minus; <sup>40</sup>Ar<sub>i</sub>&nbsp;&nbsp;(signed distance)</p>
+<p style="margin-left:20px">q<sub>i</sub> = &gamma;<sup>T</sup>A<sub>i</sub>&gamma;&nbsp;&nbsp;(variance projected onto normal)</p>
+<p>After Lagrange-multiplier elimination of &mu;<sub>i</sub> (Wu 2007 eq 3-5 → 3-7),
+the <b>profile log-likelihood</b>:</p>
+<p style="margin-left:20px"><b>L<sub>p</sub>(&delta;) = &minus;&frac12; &Sigma;<sub>i</sub> s<sub>i</sub>&sup2; / q<sub>i</sub></b>
+&nbsp;&nbsp;where &delta; = [&alpha;, &beta;]<sup>T</sup></p>
+<p>Maximising L<sub>p</sub> = weighted least squares with weights from all three isotope axes
+(no axis preferred over others).</p>
+<h3>Per-point covariance matrix A<sub>i</sub> (3×3)</h3>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><td>&sigma;<sub>36</sub>&sup2;</td><td>0</td><td>0</td></tr>
+<tr><td>0</td><td>&sigma;<sub>39</sub>&sup2;</td><td>&minus;k<sub>0</sub>&middot;&sigma;<sub>39</sub>&sup2;</td></tr>
+<tr><td>0</td><td>&minus;k<sub>0</sub>&middot;&sigma;<sub>39</sub>&sup2;</td><td>&sigma;<sub>40</sub>&sup2;</td></tr>
+</table>
+<p>where k<sub>0</sub> = PR(<sup>40</sup>Ar/<sup>39</sup>Ar)<sub>K</sub> (default 0.025004).
+Off-diagonal cov(<sup>39</sup>, <sup>40</sup>) captures the anti-correlation from the
+⁴⁰Ar(K) back-correction.</p>
+<h3>Newton–Raphson optimisation</h3>
+<p>Starting from OLS &delta;<sub>0</sub>, iterate:</p>
+<p style="margin-left:20px"><b>&delta;<sub>k+1</sub> = &delta;<sub>k</sub> + H<sup>&minus;1</sup>&middot;g</b></p>
+<p>with gradient g = &part;L<sub>p</sub>/&part;&delta; and Hessian H = &minus;&part;&sup2;L<sub>p</sub>/&part;&delta;&part;&delta;<sup>T</sup>
+(positive-definite at the MLE, = observed Fisher information).</p>
+<p><b>Backtracking line search</b> (pyADR v3.4 addition):
+halve step up to 20× until L<sub>p</sub> strictly increases.  Prevents Newton overshoot.
+Convergence: |&Delta;&delta;|/|&delta;| &lt; 10<sup>&minus;10</sup>.</p>
+<h3>MSWD and 95% CI</h3>
+<p style="margin-left:20px"><b>S&sup2; = &Sigma;<sub>i</sub> s<sub>i</sub>&sup2; / q<sub>i</sub>,&nbsp;&nbsp;&nbsp;
+df = n &minus; 2,&nbsp;&nbsp;&nbsp; MSWD = S&sup2; / df</b></p>
+<p>(Wu 2007 eq 3-24; Mahon 1996.)</p>
+<p>95% CI computed exactly via &chi;<sup>2</sup><sub>df</sub> quantiles (scipy.stats.chi2),
+not the normal approximation.  If MSWD &gt; upper bound, pyADR applies Wendt-Carl
+&sigma;-expansion:</p>
+<p style="margin-left:20px">&tau;&sup2; = MSWD,&nbsp;&nbsp; &sigma;<sub>&delta;</sub> &rarr; &radic;&tau;&sup2; &middot; &sigma;<sub>&delta;</sub></p>
+<h3>Parameter covariance</h3>
+<p style="margin-left:20px"><b>cov(&delta;&#x0302;) = &tau;&sup2; &middot; H<sup>&minus;1</sup></b></p>
+<p>1&sigma; uncertainties: &sigma;<sub>&alpha;</sub> = &radic;cov<sub>11</sub>, &sigma;<sub>&beta;</sub> = &radic;cov<sub>22</sub>.</p>
+<p style="background:#fff4d0;padding:6px;border:1px solid #c0a020;">
+<b>&#9888; Wu (2007) eq 3-27 sign-error correction</b>: the thesis writes
+cov(&delta;&#x0302;) = &tau;&sup2; &middot; (&part;&sup2;L<sub>p</sub>/&part;&delta;&part;&delta;<sup>T</sup>)<sup>&minus;1</sup>.
+At the MLE, &part;&sup2;L<sub>p</sub> is <i>negative</i>-definite, so its inverse gives
+<i>negative variances</i> &mdash; clearly wrong.  The correct ML asymptotic covariance is
+&tau;&sup2; &middot; (&minus;&part;&sup2;L<sub>p</sub>/&part;&delta;&part;&delta;<sup>T</sup>)<sup>&minus;1</sup> = &tau;&sup2; &middot; H<sup>&minus;1</sup>.
+pyADR uses the corrected form.</p>
+<h3>Age error propagation (Renne 1998, Min 2000)</h3>
+<p style="margin-left:20px"><b>&sigma;<sub>T</sub>&sup2; = (&part;T/&part;&beta;)&sup2; &sigma;<sub>&beta;</sub>&sup2;
++ (&part;T/&part;J)&sup2; &sigma;<sub>J</sub>&sup2;
++ (&part;T/&part;&lambda;)&sup2; &sigma;<sub>&lambda;</sub>&sup2;</b></p>
+<p>with</p>
+<ul>
+<li>&part;T/&part;&beta; = J / [&lambda;(1 + &beta;J)]</li>
+<li>&part;T/&part;J = &beta; / [&lambda;(1 + &beta;J)]</li>
+<li>&part;T/&part;&lambda; = &minus;ln(1 + &beta;J) / &lambda;&sup2;</li>
+</ul>
+<h3>Mahon (1996) σ-cap (optional)</h3>
+<p>For background-dominated steps where &sigma;<sub>i</sub>/|x<sub>i</sub>| &gt;&gt; 1, classical
+Kent weights give those points outsize influence.  Set per-axis caps to limit:</p>
+<p style="margin-left:20px"><b>&sigma;<sub>i,eff</sub> = min(&sigma;<sub>i</sub>, c &middot; |x<sub>i</sub>|)</b></p>
+<p>Typical c = 0.2–0.5.  None (default) disables (classical Kent).</p>
+<p>See FORMULAS.md §11 for full derivations.</p>
+"""
+
+
 _HELP_REFS_HTML = """
 <h2>References</h2>
+<h3>3D plane fit (PlaneFit3D.py)</h3>
+<ul>
+<li>Kent J.T., Watson G.S., Onstott T.C. (1990) <i>Maximum likelihood estimation
+of a plane in three dimensions.</i> Statistics 21: 411&ndash;426.</li>
+<li>Wu C.-Y. (2007) <i>3-D Plane-fitting Program in 40Ar/39Ar Dating.</i>
+MSc thesis, NTU Geosciences (R94224113), advisor Ching-Hua Lo.  Math derivations
+in Chapter 3.</li>
+<li>Titterington D.M., Halliday A.N. (1979) <i>On the fitting of parallel isochrons
+and the method of maximum likelihood.</i> Chem. Geol. 26: 183&ndash;195.</li>
+<li>Mahon K.I. (1996) <i>The new "York" regression.</i> Int. Geol. Rev. 38: 293&ndash;303.
+(MSWD &amp; modified weighting)</li>
+<li>Renne P.R. et al. (1998) <i>Intercalibration of standards, absolute ages and
+uncertainties in 40Ar/39Ar dating.</i> Chem. Geol. 145: 117&ndash;152.</li>
+<li>Min K. et al. (2000) <i>A test for systematic errors in 40Ar/39Ar
+geochronology.</i> GCA 64: 73&ndash;98.</li>
+<li>Koppers A.A.P. (2002) <i>ArArCALC &mdash; software for 40Ar/39Ar age calculations.</i>
+Comput. Geosci. 28: 605&ndash;619.</li>
+</ul>
 <h3>Isochron regression</h3>
 <ul>
 <li>York D., Evensen N.M., Mart&iacute;nez M.L., De Basabe Delgado J. (2004)
