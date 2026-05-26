@@ -957,11 +957,13 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
             return result, {"DFN": lim_DFN, "DFI": lim_DFI, "DFN_pts": [], "DFI_pts": []}
         return result
     
-    # First fit: all data
+    # First fit: all data (pre-outlier-removal)
     try:
         popt, _ = curve_fit(linear, x, y)
         ax_n.plot(x, y, marker=Nmaker, linestyle='None', label="data")
-        ax_n.plot(x, linear(x, *popt), linestyle='--', label="fitted line")
+        # v3.8.6: removed first-fit line (kept the data scatter only).  Final
+        # fit (post-outlier-removal, with selected method) is the single line
+        # drawn — avoids two overlapping lines on the diagram.
     except:
         ax_n.set_xlabel('$^{39}$Ar/$^{36}$Ar')
         ax_n.set_ylabel('$^{40}$Ar/$^{36}$Ar')
@@ -1295,8 +1297,9 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
     try:
         popt_inv, _ = curve_fit(linear, x_inv, y_inv)
         ax_iv.plot(x_inv, y_inv, marker=Nmaker, linestyle='None', label="data")
-        if show_overall_fit:
-            ax_iv.plot(x_inv, linear(x_inv, *popt_inv), linestyle='--', label="fitted line")
+        # v3.8.6: removed first-fit (pre-outlier-removal) line.  The final fit
+        # below (with chosen isochron_method, post-outlier-removal) is the only
+        # line shown — avoids visual clutter from two near-overlapping lines.
     except:
         ax_iv.set_xlabel('$^{39}$Ar/$^{40}$Ar')
         ax_iv.set_ylabel('$^{36}$Ar/$^{40}$Ar')
