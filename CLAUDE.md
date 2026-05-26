@@ -1,0 +1,139 @@
+# CLAUDE.md — pyADR 開發指引
+
+此檔案給 Claude Code（以及任何接手此 repo 的 AI agent）使用。讀完再動程式碼。
+
+---
+
+## 1. 專案背景
+
+pyADR 是 ⁴⁰Ar/³⁹Ar geochronology data reduction 工具，fork 自 NTNU CalcT0/DataReduction 老版本，逐步補上 ArArCALC v2.5.2 規格 + 現代 isochron 數學（York 2004, Vermeesch 2018/2024, Schaen 2021）。
+
+- 主要 entry point：`NTNU_DataReduction.py`（GUI，~244k 行）+ `AutoPipeline.py`（批次/自動化）
+- 數學核心：`Utilities.py`（~163k 行）
+- 目前版本：v3.8.3（2026-05-25），版本字串在 `.work/.app_info.txt`
+- 開發者：Chi-Hsiu Pang（龐麒修，Academia Sinica PhD candidate）
+- 完整版本歷史看 `CHANGELOG.md`，數學式推導看 `FORMULAS.md`
+
+---
+
+## 2. 三資料夾分工（鐵則）
+
+| 用途 | 路徑 | 操作 |
+|---|---|---|
+| **DEV**（改 .py） | `C:\Users\龐麒修\Documents\GitHub\pyADR\` | git repo，所有 Edit/Write 都在這 |
+| **RUN**（執行） | `C:\pyADR-main\` | 跑 program，不改檔 |
+| **DATA**（樣品數據） | iCloud `pyADR開發\` 各 transect 資料夾 | 只放 .dat / .csv，不放 .py |
+
+**版本歸檔用 git tag**，不要開 `pyADR-v3.8.2/`、`pyADR-backup/` 這種目錄。
+
+---
+
+## 3. 絕對不要動的東西
+
+### 3.1 NTNU_DataReduction.py 內的 CalcT0Page σ_T0
+
+該頁 σ_T0 用 `std(|residuals|)/√n`，**教授（Jian-Cheng Lee）指定保留**，未經他同意不改。
+
+AutoPipeline.py 的 σ_T0 已經改成 SE-from-covariance（pcov[-1,-1]，v3.8.2），並透過 `SIGMA_METHOD` toggle 提供兩條路徑 — 但這只影響 AutoPipeline，**不要把這個改動 port 回 NTNU_DataReduction**。
+
+### 3.2 在 iCloud 路徑下 Edit 大型 .py 檔
+
+iCloud 同步會把寫入截斷，且 tool 會回報成功（無錯誤訊息）。曾經發生：`UI/DiagramPlots_SH.py` row 14 setText 被截斷，整列標籤空白。
+
+**規則**：所有 .py 編輯必須在 `Documents\GitHub\pyADR\`（本地 SSD），絕不在 iCloud。
+
+### 3.3 教授沒同意的大幅重寫
+
+指出問題 → 等同意 → 才動手。不要為了「順便清理」改 unrelated 段落。
+
+---
+
+## 4. 任務完成通知
+
+長任務跑完要通知 Pang，**不要直接呼叫 Telegram API**。寫進 queue 即可：
+
+```
+C:\Users\龐麒修\iCloudDrive\claude cowork\telegram-notify\notify-queue.jsonl
+```
+
+格式參考該資料夾的 README。daemon 會自動送出。
+
+---
+
+## 5. 近期關鍵修正（v3.8.x，2026-05）
+
+理解這些 fix 的脈絡再動相關函式：
+
+### v3.8.0（DiagramPlot 數學式 critical fixes）
+影響**所有歷史 Int age + WMA**。修在 `Utilities.py`：
+- `getDFStatistics_sh` / `getDFStatistics_ls`：inverse isochron `F = -slope/intercept`（York convention，Vermeesch 2024）
+- WMA：`Σ(T/σ²)/Σ(1/σ²)`（原本 1/σ² 互消 → 退化成 Σ T_i）
+- MSWD 參考點從 arithmetic mean 改成 WMA
+
+### v3.8.1（DiagramPlot UI + σ_36/σ_39 雙重計算）
+- σ²_36m = σ²_36a − σ²_36ca − σ²_36cl − σ²_36c（避免 corrections σ 被雙重計算）
+- σ²_39m = σ²_39k − σ²_39ca
+- 永遠從 raw component 重算 σ，**不讀 CSV 內 pre-calc σ**（v3.7 寫進去的是 buggy 值）
+
+### v3.8.2（AutoPipeline σ_T0 SE-from-covariance）
+- AutoPipeline 的 baseline fit σ_T0 改用 `pcov[-1,-1]`（Li et al. 2019 Eq.1）
+- 舊公式 `std(|r|)/√n` 系統性低估約 4×
+- **注意**：NTNU_DataReduction.CalcT0Page 仍維持舊公式（見 §3.1）
+
+### v3.8.3（σ_J 括號 bug fix）
+- `Utilities.py` L2864 `getJVolumeStatistics`：`((np.exp(l*t) - 1) / Ar_39_K_40_r_ratio**2)`
+- 影響：σ_age 過去整條 pipeline 系統性高估數個數量級
+- age 中心值不變，只有 σ_age 變小
+
+### v3.8.3 cont.（AutoPipeline 大擴充）
+- `LAMBDA_37` / `LAMBDA_39` decay constants + `decay_correct()` helper
+- `SIGMA_METHOD` global toggle（'standard' = pcov vs 'calc_t0' = std(|r|)/√n）
+- `_signal_out_pass` 改 serial per-isotope（Ar37 → Ar36 → Ar38/39/40，按物理依賴順序）
+- York 2004 isochron + Wendt-Carl 1991 √MSWD 修正
+
+---
+
+## 6. 已知未解 issue（不要忘記）
+
+### 6.1 `Utilities.LAMBDA_K` 還沒定義
+AutoPipeline isochron age 計算用 `hasattr(Utilities, 'LAMBDA_K')` fallback 到 `5.543e-10`（Steiger-Jäger 1977）。**應該**改成 `5.531e-10`（Renne 2010）並在 `Utilities.py` 正式定義。
+
+### 6.2 Inverse isochron F 的 fallback
+`AutoPipeline.py` 內 `F_i = -b_i/m_i if abs(b_i) > 1e-30 else (1/(-m_i) ...)` — fallback 走的是 v3.7 buggy 公式。正常不會觸發，但建議改成回傳 0 或 raise。
+
+### 6.3 馬遠溪 phengite excess Ar
+research-side 議題，不是 code bug。若 AutoPipeline 跑馬遠溪數據出現 plateau 異常或 inverse isochron trapped 40/36 偏離大氣值，這是 excess Ar 物理問題，不是 reduction 錯誤。
+
+---
+
+## 7. 開發 SOP
+
+1. **改之前**：先 `git log --oneline -20` 看最近改了什麼、`cat CHANGELOG.md | head -100` 看當前版本脈絡
+2. **改 .py**：一律在 `Documents\GitHub\pyADR\`，不在 iCloud
+3. **改完**：
+   - bump `.work/.app_info.txt` 版本號
+   - 在 `CHANGELOG.md` 開新區塊（格式參考 v3.8.3）：問題 → 影響 → 文獻 → 驗證 checklist → 檔案改動
+   - git commit 訊息格式：`vX.Y.Z: <one-line summary>`
+4. **驗證**：盡量用 NO.65 muscovite（irradiation 0621-01C）或 SYL31 LS（Sylhet Trap 玄武岩，論文值 115.4 ± 3.9 Ma）對照
+5. **完成通知**：寫 telegram-notify queue（見 §4）
+
+---
+
+## 8. 相關文件
+
+- `CHANGELOG.md` — 完整版本歷史（V2.5 → 現在）
+- `FORMULAS.md` — Ar isotope 數學式 reference
+- `README.md` — 安裝 + 使用
+- `pyADR_全module數學式審查_v5.docx`（iCloud 開發資料夾）— 公式審查報告，含 P1/P2 分類與文獻 quote
+
+---
+
+## 9. 溝通風格（給 AI agent）
+
+Pang 偏好：
+- 直接、簡短、不要鋪陳
+- 預設 Python + 構造地質學 + Ar/Ar geochronology 專業知識，不解釋基礎
+- 「不要糾結了」「直接告訴我」= 給結論
+- 程式碼直接給，不逐行解釋
+- 繁中為主，技術術語英文
+- em-dash 結構（— ... —）拒用，改逗號 appositive
