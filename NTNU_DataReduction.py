@@ -821,6 +821,9 @@ class App():
                     QtGui.QColor(60, 60, 60))
                 self._splash.show()
                 self.app.processEvents()
+                # record show time so run() can enforce minimum splash duration
+                import time as _time
+                self._splash_t0 = _time.monotonic()
         except Exception:
             self._splash = None  # splash is cosmetic; never block startup
 
@@ -1981,6 +1984,20 @@ class App():
         self.AgeCalculationPage.return_2.clicked.connect(self.toMain)
         self.AgeCalculationPage.save.clicked.connect(self.AC_save)
         self.AgeCalculationPage.new_2.clicked.connect(self.toAC)
+
+        # v3.8.4: enforce minimum 3-second splash display so users can
+        # actually read it.  Uses QEventLoop + QTimer so the splash keeps
+        # painting during the wait (a plain time.sleep would freeze it).
+        _splash_min_ms = 3000
+        if getattr(self, '_splash', None) is not None and \
+           getattr(self, '_splash_t0', None) is not None:
+            import time as _time
+            _elapsed_ms = int((_time.monotonic() - self._splash_t0) * 1000)
+            _remaining = _splash_min_ms - _elapsed_ms
+            if _remaining > 0:
+                _loop = QtCore.QEventLoop()
+                QtCore.QTimer.singleShot(_remaining, _loop.quit)
+                _loop.exec_()
 
         self.widget.show()
         # v3.8.4: dismiss splash once main window is visible
