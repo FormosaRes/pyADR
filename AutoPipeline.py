@@ -1186,58 +1186,65 @@ class MvCanvas(QtWidgets.QWidget):
         self._fit    = fit
         self._manual = manual
         self._nc     = len(mask)
-        self._build_combos()
+        # v3.8.10 perf: cache the expensive combo enumeration (~848 curve_fits
+        # per isotope) keyed by (vt object id, fit type, nc). When user switches
+        # between Blank ↔ signal step, each step reuses its cached fits and only
+        # validity flags (cheap) are recomputed. Cuts step-switch latency ~20×.
+        cache_key = (id(vt_i), fit, self._nc)
+        if getattr(self, '_combo_cache_key', None) != cache_key:
+            self._enumerate_combos()
+            self._combo_cache_key = cache_key
+        self._recompute_validity()
         self._refresh()
 
-    def _build_combos(self):
-        """Pre-compute ALL C(nc,k) for k=4..nc; find best-per-n."""
+    def _enumerate_combos(self):
+        """Run C(nc,k) curve_fit enumeration for k=4..nc. Stores raw (t0, sig, k, mask)
+        in self._combo_fits. Does NOT compute valid flags — those depend on bt and
+        sibling T0_net[37] which can change without invalidating the cached fits."""
         if self._vt is None: return
         f  = Utilities.fit_func_list[self._fit]
         nc = self._nc
-        self._all_pts = []
-        best_n = {}
-
-        # For Ar36: compute 36Ar_ca threshold from sibling T0_net[37]
-        # 36Ar_air = T0_net[36] - T0_net[37]*PR(36/37ca) must be > 0
-        # T0_net[36] = T0_sig[36](combo) - T0_blank[36](bt)
-        ar36_ca_thresh = self._t0_net_37 * _PR['PR_36_37ca'] if self.ai == 0 else 0.0
-
+        self._combo_fits = []
         for k in range(nc, 3, -1):
             for combo in _iter_combos(nc, k):
                 m = np.zeros(nc)
                 for idx in combo: m[idx] = 1
                 t0, sig, _, _ = _fit_one(f, self._vt, m)
+                self._combo_fits.append((t0, sig, k, m.copy()))
 
+    def _recompute_validity(self):
+        """Reapply current bt / _t0_net_37 to the cached combo fits to derive
+        _all_pts (with valid flag) and _best_n. Cheap — no curve_fit calls."""
+        if self._vt is None or not getattr(self, '_combo_fits', None): return
+        ar36_ca_thresh = self._t0_net_37 * _PR['PR_36_37ca'] if self.ai == 0 else 0.0
+        self._all_pts = []
+        best_n = {}
+        bt = self._bt or 0.0
+        for t0, sig, k, m in self._combo_fits:
+            if self.ai == 0:
+                t0_net = t0 - bt
+                valid  = (t0_net > 0) and (t0_net - ar36_ca_thresh > 0)
+            elif self.ai == 1:
+                valid = (t0 - bt) > 0
+            else:
+                valid = (self._bt is None) or (t0 > self._bt)
+            self._all_pts.append((t0, sig * 2, k, valid, m))
+            if valid:
                 if self.ai == 0:
-                    # Ar36: valid = T0_net > 0 AND 36Ar_air > 0
-                    t0_net = t0 - (self._bt or 0.0)
-                    valid  = (t0_net > 0) and (t0_net - ar36_ca_thresh > 0)
-                elif self.ai == 1:
-                    # Ar37: valid = T0_net > 0 (simple)
-                    t0_net = t0 - (self._bt or 0.0)
-                    valid  = t0_net > 0
+                    score = t0 - bt
+                    if k not in best_n or score < best_n[k][3]:
+                        best_n[k] = (t0, sig, m, score)
                 else:
-                    valid = (self._bt is None) or (t0 > self._bt)
-
-                self._all_pts.append((t0, sig * 2, k, valid, m.copy()))
-
-                if valid:
-                    if self.ai == 0:
-                        # Ar36 best: smallest 36Ar_air (T0_net closest to threshold)
-                        # use t0_net as sorting key (smaller = closer to threshold)
-                        t0_net = t0 - (self._bt or 0.0)
-                        score  = t0_net  # smaller net = smaller 36air = better
-                        if k not in best_n or score < best_n[k][3]:
-                            best_n[k] = (t0, sig, m.copy(), score)
-                    else:
-                        # All other isotopes: best = min sigma
-                        if k not in best_n or sig < best_n[k][1]:
-                            best_n[k] = (t0, sig, m.copy(), sig)
-
-        # Normalise best_n to (t0, sig, mask) dropping score field
-        self._best_n = {k: (v[0], v[1], v[2]) for k,v in best_n.items()}
+                    if k not in best_n or sig < best_n[k][1]:
+                        best_n[k] = (t0, sig, m, sig)
+        self._best_n = {k: (v[0], v[1], v[2]) for k, v in best_n.items()}
         self._ar36_ca_thresh = ar36_ca_thresh
         self._update_best_btns()
+
+    # Back-compat alias (used by set_sibling_t0_net_37 below)
+    def _build_combos(self):
+        self._enumerate_combos()
+        self._recompute_validity()
 
     def _update_best_btns(self):
         """Colour best-n buttons; highlight the currently selected n."""
@@ -1300,9 +1307,9 @@ class MvCanvas(QtWidgets.QWidget):
         if self.ai != 0: return
         if abs(t0_net_37 - self._t0_net_37) < 1e-15: return  # no change
         self._t0_net_37 = t0_net_37
-        # Rebuild combos with new threshold, then repaint
+        # Only validity changes — fits are cached and don't need to re-run
         if self._vt is not None:
-            self._build_combos()
+            self._recompute_validity()
             self._paint_sc()
 
     def _refresh(self):
@@ -1639,13 +1646,11 @@ class CalcT0Page(QtWidgets.QWidget):
         sbl.setContentsMargins(5, 6, 5, 6); sbl.setSpacing(3)
 
         def sb_btn(txt, col='default'):
+            # v3.8.10: uniform neutral grey to match other sub-pages
+            # (AgeCalculation / MassRatio / JCalculation etc.). The col argument
+            # is kept for back-compat with existing call sites but is ignored.
             b = QtWidgets.QPushButton(txt)
-            styles = {
-                'green'  : _btn_style(GRN_BG,  '#1c7a3a', '#1c7a3a'),
-                'blue'   : _btn_style(BLUE_BG, '#1a5fb4', '#1a5fb4'),
-                'default': _btn_style(PNL, TXT, BRD),
-            }
-            b.setStyleSheet(styles.get(col, styles['default']))
+            b.setStyleSheet(_btn_style(PNL, TXT, BRD))
             return b
 
         def group_hdr(txt):
@@ -1740,33 +1745,39 @@ class CalcT0Page(QtWidgets.QWidget):
         left_vb.setContentsMargins(8, 4, 6, 6); left_vb.setSpacing(4)
         ml = left_vb  # alias for compatibility
 
-        # Blank / Temperature step buttons (single row with scroll)
-        btn_scroll = QtWidgets.QScrollArea()
-        btn_scroll.setWidgetResizable(True)
-        btn_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOn)
-        btn_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        btn_scroll.setMaximumHeight(50)
-        
-        btn_row_w = QtWidgets.QWidget()
-        btn_row = QtWidgets.QHBoxLayout(btn_row_w)
-        btn_row.setSpacing(4)
-        btn_row.setContentsMargins(0, 0, 0, 0)
-        
-        # Blank button (fixed leftmost, compact size)
-        self._blank_btn = QtWidgets.QPushButton('Blank')
-        self._blank_btn.setStyleSheet(_btn_style(BLUE_BG, '#1a5fb4', '#1a5fb4') +
-                                      'QPushButton{font-size:11px;padding:4px 8px;}')
-        self._blank_btn.setFixedWidth(55)
-        self._blank_btn.clicked.connect(lambda: self._sel_step('__BLANK__'))
-        btn_row.addWidget(self._blank_btn)
-        
-        # Temperature buttons will be added here by _rebuild_step_btns
-        self._step_row = btn_row
-        self._sbtn_map = {}
-        btn_row.addStretch()
-        
-        btn_scroll.setWidget(btn_row_w)
-        left_vb.addWidget(btn_scroll)
+        # v3.8.10: Blank / Temperature step switcher — QTabBar (Chrome-style)
+        # Replaces previous colored-button row. Tab 0 = Blank; tabs 1..N built by
+        # _rebuild_step_btns() when signal files are loaded.
+        self._step_tabs = QtWidgets.QTabBar()
+        self._step_tabs.setShape(QtWidgets.QTabBar.RoundedNorth)
+        self._step_tabs.setDocumentMode(True)
+        self._step_tabs.setExpanding(False)
+        self._step_tabs.setUsesScrollButtons(True)
+        self._step_tabs.setDrawBase(False)
+        self._step_tabs.setStyleSheet(
+            'QTabBar::tab{'
+            f'background:#eeede8;border:1px solid {BRD};border-bottom:none;'
+            'border-top-left-radius:6px;border-top-right-radius:6px;'
+            'padding:6px 14px;margin-right:2px;font-size:11px;color:#444;'
+            'min-width:50px;}'
+            'QTabBar::tab:selected{'
+            'background:white;color:#1a5fb4;font-weight:bold;}'
+            'QTabBar::tab:hover:!selected{background:#f5f4f0;}'
+        )
+        # _tab_step_map[index] = step name ('__BLANK__' or 'Temperature 1100°C')
+        self._tab_step_map = {0: '__BLANK__'}
+        self._step_tabs.addTab('Blank')
+        self._step_tabs.currentChanged.connect(self._on_tab_changed)
+        # Suppress recursion when _sel_step calls back into setCurrentIndex
+        self._tab_sync_lock = False
+
+        tab_wrap = QtWidgets.QWidget()
+        tab_l = QtWidgets.QHBoxLayout(tab_wrap)
+        tab_l.setContentsMargins(8, 4, 0, 0); tab_l.setSpacing(0)
+        tab_l.addWidget(self._step_tabs)
+        tab_l.addStretch()
+        tab_wrap.setMaximumHeight(36)
+        left_vb.addWidget(tab_wrap)
 
         # ── Single canvas area (replaces Blank/Signal tabs) ──
         canvas_w = QtWidgets.QWidget()
@@ -1779,7 +1790,9 @@ class CalcT0Page(QtWidgets.QWidget):
             f'border-bottom:1px solid {BRD};padding-bottom:2px;')
         cvl.addWidget(self._lbl_title)
         
-        # 5 canvases in a horizontal row (shared by Blank and Signal)
+        # 5 canvases in a horizontal row (shared by Blank and Signal).
+        # v3.8.10: wrap in horizontal scroll so the 5th canvas (⁴⁰Ar) + its cycle-10
+        # button stay reachable on narrower windows instead of being clipped.
         crow = QtWidgets.QHBoxLayout(); crow.setSpacing(2)
         self._cv = [MvCanvas(i) for i in range(5)]
         for cv in self._cv:
@@ -1787,7 +1800,13 @@ class CalcT0Page(QtWidgets.QWidget):
             crow.addWidget(cv)
         crow_w = QtWidgets.QWidget(); crow_w.setLayout(crow)
         crow_w.setMinimumHeight(680)
-        cvl.addWidget(crow_w, 1)
+        crow_scroll = QtWidgets.QScrollArea()
+        crow_scroll.setWidgetResizable(True)
+        crow_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        crow_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        crow_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        crow_scroll.setWidget(crow_w)
+        cvl.addWidget(crow_scroll, 1)
         
         # ── Shared legend for Row 1 (mV vs time) ────────────────
         mv_legend = QtWidgets.QLabel(
@@ -1816,24 +1835,14 @@ class CalcT0Page(QtWidgets.QWidget):
         
         left_vb.addWidget(canvas_w, 1)
 
-        # ── Analysis & Strategy panel (2×2 grid) ──
+        # ── Degassing Pattern Overview (single panel) ──
+        # v3.8.10: removed Panel ⑥ MC, ⑦ Bi-Dir, ⑧ Final Rec — only ⑤ kept.
         analysis_hdr_row = QtWidgets.QHBoxLayout()
         analysis_hdr = QtWidgets.QLabel(
-            '<b style="font-size:15px;">Analysis & Advanced Strategy</b>')
+            '<b style="font-size:15px;">Degassing Pattern Overview</b>')
         analysis_hdr.setStyleSheet(
             f'color:{TXT2};border-top:1px solid {BRD};padding-top:3px;margin-bottom:2px;')
         analysis_hdr_row.addWidget(analysis_hdr, 1)
-        
-        # Refresh button: in Manual mode shows orange (dirty), normal otherwise
-        self._btn_refresh_analysis = QtWidgets.QPushButton('⟳ Refresh Analysis')
-        self._btn_refresh_analysis.setStyleSheet(
-            _btn_style(PNL, TXT, BRD) + 'QPushButton{font-size:11px;padding:3px 8px;}')
-        self._btn_refresh_analysis.setFixedHeight(26)
-        self._btn_refresh_analysis.setToolTip(
-            'In Manual mode, click to update Analysis panels after changing cycles.\n'
-            'In Auto mode, panels update automatically (300ms debounce).')
-        self._btn_refresh_analysis.clicked.connect(self._on_refresh_analysis_clicked)
-        analysis_hdr_row.addWidget(self._btn_refresh_analysis)
         left_vb.addLayout(analysis_hdr_row)
 
         # Container for 2×2 grid
@@ -1842,18 +1851,9 @@ class CalcT0Page(QtWidgets.QWidget):
         guide_vl.setContentsMargins(0,0,0,0)
         guide_vl.setSpacing(6)
 
-        # ══════════════════════════════════════════════════════════
-        # Upper row: Degassing Pattern + MC Uncertainty
-        # ══════════════════════════════════════════════════════════
-        row1 = QtWidgets.QHBoxLayout()
-        row1.setSpacing(4)
-
-        # ── Panel ⑤: Degassing Pattern Overview (10-cycle) ───────
+        # ── Degassing Pattern Overview (single panel; ⑥⑦⑧ removed in v3.8.10) ──
         p5 = QtWidgets.QWidget()
         p5l = QtWidgets.QVBoxLayout(p5); p5l.setContentsMargins(0,0,0,0); p5l.setSpacing(1)
-        h5 = QtWidgets.QLabel('⑤ Degassing Pattern Overview')
-        h5.setStyleSheet(f'font-size:14px;font-weight:bold;color:#1c7a3a;')
-        p5l.addWidget(h5)
         self._degas_fig = _mfig.Figure(facecolor='white')
         self._degas_ax1 = self._degas_fig.add_subplot(211)
         self._degas_ax2 = self._degas_fig.add_subplot(212)
@@ -1862,114 +1862,12 @@ class CalcT0Page(QtWidgets.QWidget):
         self.cv_degas.setMinimumSize(1,1)
         self.cv_degas.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         p5l.addWidget(self.cv_degas, 1)
-        row1.addWidget(p5, 1)
+        guide_vl.addWidget(p5, 1)
 
-        # ── Panel ⑥: MC Uncertainty Analysis ─────────────────────
-        p6 = QtWidgets.QWidget()
-        p6l = QtWidgets.QVBoxLayout(p6); p6l.setContentsMargins(0,0,0,0); p6l.setSpacing(1)
-        h6 = QtWidgets.QLabel('⑥ MC Uncertainty Analysis')
-        h6.setStyleSheet(f'font-size:14px;font-weight:bold;color:#1c7a3a;')
-        p6l.addWidget(h6)
-        self._mc_fig = _mfig.Figure(facecolor='white')
-        self._mc_ax  = self._mc_fig.add_subplot(111)
-        QtWidgets.QApplication.processEvents()
-        self.cv_mc   = _FigCanvas(self._mc_fig)
-        self.cv_mc.setMinimumSize(1,1)
-        self.cv_mc.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-        p6l.addWidget(self.cv_mc, 1)
-        row1.addWidget(p6, 1)
-
-        guide_vl.addLayout(row1, 1)
-
-        # ══════════════════════════════════════════════════════════
-        # Lower row: Strategy Compare + Recommendation
-        # ══════════════════════════════════════════════════════════
-        row2 = QtWidgets.QHBoxLayout()
-        row2.setSpacing(4)
-
-        # ── Panel ⑦: Bi-directional Strategy Compare ─────────────
-        p7 = QtWidgets.QWidget()
-        p7l = QtWidgets.QVBoxLayout(p7); p7l.setContentsMargins(0,0,0,0); p7l.setSpacing(1)
-        h7 = QtWidgets.QLabel('⑦ Bi-directional Strategy')
-        h7.setStyleSheet(f'font-size:14px;font-weight:bold;color:#9b59b6;')
-        p7l.addWidget(h7)
-        self._strat_fig = _mfig.Figure(facecolor='white')
-        self._strat_ax  = self._strat_fig.add_subplot(111)
-        QtWidgets.QApplication.processEvents()
-        self.cv_strat   = _FigCanvas(self._strat_fig)
-        self.cv_strat.setMinimumSize(1,1)
-        self.cv_strat.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-        p7l.addWidget(self.cv_strat, 1)
-        row2.addWidget(p7, 1)
-
-        # ── Panel ⑧: Final Recommendation (enhanced) ─────────────
-        p8 = QtWidgets.QWidget()
-        p8l = QtWidgets.QVBoxLayout(p8); p8l.setContentsMargins(0,0,0,0); p8l.setSpacing(4)
-        h8 = QtWidgets.QLabel('⑧ Final Recommendation')
-        h8.setStyleSheet(f'font-size:14px;font-weight:bold;color:#9b59b6;')
-        p8l.addWidget(h8)
-        
-        # Explanation text (updated)
-        guide_exp = QtWidgets.QLabel(
-            '<b>Strategy:</b> Sample-out vs Blank-out<br>'
-            '<b>Criteria:</b> min(analytical σ + model σ + penalties)<br>'
-            '<b>Constraints:</b> a/b/c/d checks')
-        guide_exp.setWordWrap(True)
-        guide_exp.setStyleSheet(
-            f'font-size:12px;color:{TXT2};background:{PNL};'
-            f'border:1px solid {BRD};padding:5px;border-radius:3px;')
-        p8l.addWidget(guide_exp)
-        
-        # Recommended solution display
-        self.recLbl = QtWidgets.QLabel('—')
-        self.recLbl.setWordWrap(True)
-        self.recLbl.setStyleSheet(
-            f'font-size:13px;font-family:Courier New;'
-            f'background:{PNL};border:1px solid {BRD};padding:6px;')
-        p8l.addWidget(self.recLbl)
-        
-        # Apply + Run Full MC buttons
-        btn_row_rec = QtWidgets.QHBoxLayout()
-        btn_row_rec.setSpacing(4)
-        self.recApplyBtn = QtWidgets.QPushButton('Apply Recommendation')
-        self.recApplyBtn.setStyleSheet(
-            _btn_style('#9b59b6','white','#9b59b6') +
-            'QPushButton{font-size:13px;font-weight:bold;padding:6px;}')
-        self.recApplyBtn.clicked.connect(self._apply_recommended)
-        btn_row_rec.addWidget(self.recApplyBtn)
-        
-        self.recMCBtn = QtWidgets.QPushButton('Run Full MC')
-        self.recMCBtn.setStyleSheet(
-            _btn_style('#1c7a3a','white','#1c7a3a') +
-            'QPushButton{font-size:13px;font-weight:bold;padding:6px;}')
-        self.recMCBtn.clicked.connect(self._run_full_mc)
-        btn_row_rec.addWidget(self.recMCBtn)
-        p8l.addLayout(btn_row_rec)
-        
-        p8l.addStretch()
-        row2.addWidget(p8, 1)
-
-        guide_vl.addLayout(row2, 1)
-
-        # Set minimum height for the entire guide container (2 rows)
-        guide_container.setMinimumHeight(600)
+        guide_container.setMinimumHeight(300)
         left_vb.addWidget(guide_container)
         
-        # Hidden for compat (legacy references)
-        self.bestNTbl = QtWidgets.QTableWidget(0, 5); self.bestNTbl.hide()
-        # Legacy scatter canvases replaced with stubs (FigCanvas hangs on Py3.13+mpl3.10)
-        class _StubCanvas:
-            def isVisible(self): return False
-            def draw(self): pass
-            def hide(self): pass
-        self.cv_sc37 = _StubCanvas()
-        self.cv_sc36 = _StubCanvas()
-        self.cv_air36 = _StubCanvas()
-        self._sc37_fig = None; self._sc37_ax = None
-        self._sc36_fig = None; self._sc36_ax = None
-        self._air36_fig = None; self._air36_ax = None
-
-        # keep sumTbl/prevTbl as hidden (needed by _refresh_sum/_refresh_prev)
+        # Hidden tables used by _refresh_sum / _refresh_prev (no UI surface)
         self.sumTbl = QtWidgets.QTableWidget(0, 8); self.sumTbl.hide()
         self.prevTbl = QtWidgets.QTableWidget(0, 10); self.prevTbl.hide()
 
@@ -2089,9 +1987,12 @@ class CalcT0Page(QtWidgets.QWidget):
         DELTA_T_DAYS = float(dt)
         # update sidebar display if exists
         ap = parent
-        if hasattr(ap, 'deltaTLbl'):
-            ap.deltaTLbl.setText(f'{dt} d')
-            ap.deltaTLbl.setToolTip(
+        # v3.8.10 fix: deltaTLbl lives on self (CalcT0Page), not on AutoPipelineWindow.
+        # Previously this hasattr check always failed → Δt UI never updated, even
+        # though DELTA_T_DAYS global was being set correctly.
+        if hasattr(self, 'deltaTLbl'):
+            self.deltaTLbl.setText(f'{dt} d')
+            self.deltaTLbl.setToolTip(
                 f'OGD: {ogd}\nSPD: {spd}\nΔt = SPD − OGD = {dt} days')
         if hasattr(ap, 'statusBar'):
             try:
@@ -2102,61 +2003,63 @@ class CalcT0Page(QtWidgets.QWidget):
 
     # ── Step buttons ─────────────────────────────────────────
     def _rebuild_step_btns(self):
-        # 只刪除 Temperature buttons (保留 Blank button)
-        # Blank button 是 _step_row 第 0 個，從第 1 個開始刪
-        while self._step_row.count() > 1:
-            item = self._step_row.takeAt(1)
-            if item.widget():
-                item.widget().deleteLater()
-        self._sbtn_map.clear()
-        
+        # v3.8.10: rebuild QTabBar tabs (Blank stays at index 0, signal steps follow)
+        self._tab_sync_lock = True
+        while self._step_tabs.count() > 1:
+            self._step_tabs.removeTab(1)
+        self._tab_step_map = {0: '__BLANK__'}
         for nm in self._svt:
-            # 簡化 label - 只保留數字
-            lbl = nm.replace('Temperature ','').replace('°C','°').strip()
-            b = QtWidgets.QPushButton(lbl)
-            b.setStyleSheet(_btn_style(PNL, TXT, BRD) +
-                           'QPushButton{font-size:11px;padding:4px 6px;}')
-            # 按鈕寬度固定但隨文字略微調整
-            b.setFixedWidth(max(40, len(lbl)*9 + 8))
-            b.clicked.connect(lambda _, n=nm: self._sel_step(n))
-            # 插在 stretch 之前
-            self._step_row.insertWidget(self._step_row.count() - 1, b)
-            self._sbtn_map[nm] = b
+            lbl = nm.replace('Temperature ', '').replace('°C', '°').strip()
+            idx = self._step_tabs.addTab(lbl)
+            self._tab_step_map[idx] = nm
+        self._tab_sync_lock = False
         self._update_step_colors()
+
+    def _on_tab_changed(self, idx):
+        if self._tab_sync_lock: return
+        nm = self._tab_step_map.get(idx)
+        if nm is not None:
+            self._sel_step(nm)
+
+    def _sync_tab_to_step(self, nm):
+        """Keep the QTabBar selection in sync when _sel_step is called directly."""
+        target_idx = None
+        for idx, sn in self._tab_step_map.items():
+            if sn == nm:
+                target_idx = idx; break
+        if target_idx is None or target_idx == self._step_tabs.currentIndex():
+            return
+        self._tab_sync_lock = True
+        self._step_tabs.setCurrentIndex(target_idx)
+        self._tab_sync_lock = False
 
     def _sel_step(self, nm):
         self._cur = nm
+        self._sync_tab_to_step(nm)
         if nm == '__BLANK__':
             self._chips['Current step'].setText('Blank')
             self._lbl_title.setText('Blank — mV vs time (sec)')
             self._refresh_blank()
         else:
             self._chips['Current step'].setText(nm)
-            # 簡化 Temperature label
-            lbl = nm.replace('Temperature ','').replace('°C','°').strip()
+            lbl = nm.replace('Temperature ', '').replace('°C', '°').strip()
             self._lbl_title.setText(f'{lbl} — mV vs time (sec)')
             self._refresh_signal()
         self._update_step_colors()
         self._refresh_guide()
 
     def _update_step_colors(self):
-        compact = 'QPushButton{font-size:11px;padding:4px 6px;}'
-        compact_blank = 'QPushButton{font-size:11px;padding:4px 8px;}'
-        # Blank button
-        if self._cur == '__BLANK__':
-            self._blank_btn.setStyleSheet(_btn_style(BLUE_BG, '#1a5fb4', '#1a5fb4') + compact_blank)
-        else:
-            self._blank_btn.setStyleSheet(_btn_style(PNL, TXT, BRD) + compact_blank)
-        
-        # Temperature buttons
-        for nm, b in self._sbtn_map.items():
+        """v3.8.10: tabs use QTabBar's built-in selected-tab highlight.
+        Only flag invalid signal steps with an amber text color."""
+        for idx, nm in self._tab_step_map.items():
+            if nm == '__BLANK__':
+                self._step_tabs.setTabTextColor(idx, QtGui.QColor('#1a5fb4'))
+                continue
             ok = self._step_ok(nm)
-            if nm == self._cur:
-                b.setStyleSheet(_btn_style(BLUE_BG, '#1a5fb4', '#1a5fb4') + compact)
-            elif not ok:
-                b.setStyleSheet(_btn_style(AMB_BG, '#8a5a00', '#8a5a00') + compact)
+            if not ok:
+                self._step_tabs.setTabTextColor(idx, QtGui.QColor('#8a5a00'))
             else:
-                b.setStyleSheet(_btn_style(GRN_BG, '#1c7a3a', '#1c7a3a') + compact)
+                self._step_tabs.setTabTextColor(idx, QtGui.QColor('#222222'))
 
     def _step_ok(self, nm):
         if nm not in self._smask or self._bvt is None: return True
@@ -2208,18 +2111,11 @@ class CalcT0Page(QtWidgets.QWidget):
         # Always do fast summary update
         self._refresh_sum_only()
         self._update_step_colors()
-        # In Manual mode: skip auto guide refresh (user clicks Refresh Analysis button)
-        # In Auto mode: debounced refresh after 300ms idle
+        # Auto mode: debounced guide (Degassing) refresh after 300ms idle.
+        # Manual mode: skip (Degassing pattern uses cache so refresh is cheap on next step click).
         if not self._manual:
             self._schedule_guide_refresh()
-        else:
-            # Just update the dirty indicator on the button
-            if hasattr(self, '_btn_refresh_analysis'):
-                self._btn_refresh_analysis.setStyleSheet(
-                    _btn_style('#e67e00', 'white', '#e67e00') +
-                    'QPushButton{font-weight:bold;}'
-                )
-    
+
     def _schedule_guide_refresh(self):
         """Debounced refresh: triggers guide update only after user pauses clicking."""
         if not hasattr(self, '_guide_timer'):
@@ -2227,16 +2123,9 @@ class CalcT0Page(QtWidgets.QWidget):
             self._guide_timer.setSingleShot(True)
             self._guide_timer.timeout.connect(self._do_guide_refresh)
         self._guide_timer.start(300)
-    
-    def _on_refresh_analysis_clicked(self):
-        """Manual trigger for Analysis panels. Resets dirty indicator."""
-        if hasattr(self, '_btn_refresh_analysis'):
-            self._btn_refresh_analysis.setStyleSheet(
-                _btn_style(PNL, TXT, BRD) + 'QPushButton{font-size:11px;padding:3px 8px;}')
-        self._do_guide_refresh()
-    
+
     def _do_guide_refresh(self):
-        """Actually refresh the heavy guide panels."""
+        """Actually refresh the guide panels."""
         self._refresh_prev()
         self._refresh_guide()
     
@@ -2632,271 +2521,11 @@ class CalcT0Page(QtWidgets.QWidget):
                     item.setForeground(QtGui.QColor('#1c7a3a'))
                 self.prevTbl.setItem(ri, ci, item)
 
-    # ── Guide panels (new 2×2 grid: ⑤⑥⑦⑧) ─────────────────────
+    # ── Guide panel (only ⑤ Degassing kept in v3.8.10) ─────────────────────
     def _refresh_guide(self):
-        """Refresh all 4 advanced analysis panels."""
         if not hasattr(self, 'cv_degas'): return
         self._paint_degas_pattern()
-        self._paint_mc_uncertainty()
-        self._paint_strategy_compare()
-        self._refresh_recommendation()
-        # Legacy panels (hidden but still callable for backward compat)
-        if hasattr(self,'cv_sc37') and self.cv_sc37.isVisible():
-            self._paint_guide_sc37()
-        if hasattr(self,'cv_sc36') and self.cv_sc36.isVisible():
-            self._paint_guide_sc36()
-        if hasattr(self,'cv_air36') and self.cv_air36.isVisible():
-            self._paint_guide_air36()
 
-    def _paint_guide_sc37(self):
-        """Panel 1: Ar37 T0 vs 2σ, all combos, current step."""
-        ax = self._sc37_ax; ax.clear()
-        ax.set_facecolor('white'); self._sc37_fig.patch.set_facecolor('white')
-        cv = self._get_cur_scv(1, force_signal=True)   # Ar37 signal canvas
-        if cv is None or not cv._all_pts:
-            self._sc37_fig.tight_layout(pad=0.3); self.cv_sc37.draw(); return
-        _NCOLS = MvCanvas._NCOLS
-        from collections import defaultdict
-        grp = defaultdict(list)
-        for t0, e2, nu, valid, _ in cv._all_pts:
-            grp[nu].append((t0, e2, valid))
-        for nu in sorted(grp.keys(), reverse=True):
-            col = _NCOLS.get(nu, '#888')
-            vx=[p[0] for p in grp[nu] if p[2]]; vy=[p[1] for p in grp[nu] if p[2]]
-            ix=[p[0] for p in grp[nu] if not p[2]]; iy=[p[1] for p in grp[nu] if not p[2]]
-            if vx: ax.scatter(vx,vy,s=max(3,(nu-3)*2.5),color=col,alpha=0.7,linewidths=0,label=f'n={nu}',zorder=3)
-            if ix: ax.scatter(ix,iy,s=max(3,(nu-3)*2.5),color='#ccc',alpha=0.3,linewidths=0,zorder=1)
-        # current selection
-        t0c,sc,_=cv.get_t0_sig_r2()
-        ax.scatter(t0c,sc*2,marker='^',s=60,color='#e67e00',zorder=6,edgecolors='black',lw=0.5)
-        # blank T0 line
-        if self._bT0[1]!=0:
-            ax.axvline(self._bT0[1],color='grey',ls='--',lw=0.8,alpha=0.6)
-        ax.set_xlabel('T₀',fontsize=7); ax.set_ylabel('2σ',fontsize=7)
-        ax.tick_params(labelsize=6)
-        ax.ticklabel_format(style='sci',axis='both',scilimits=(0,0))
-        ax.legend(fontsize=5,ncol=2,framealpha=0.7,handlelength=0.8,borderpad=0.2)
-        ax.grid(True,alpha=0.2)
-        self._sc37_fig.tight_layout(pad=0.3); self.cv_sc37.draw()
-
-    def _paint_guide_sc36(self):
-        """Panel 2: Ar36 T0_net vs 2σ_net with threshold line."""
-        ax = self._sc36_ax; ax.clear()
-        ax.set_facecolor('white'); self._sc36_fig.patch.set_facecolor('white')
-        cv = self._get_cur_scv(0, force_signal=True)   # Ar36 signal canvas
-        if cv is None or not cv._all_pts:
-            self._sc36_fig.tight_layout(pad=0.3); self.cv_sc36.draw(); return
-        _NCOLS = MvCanvas._NCOLS
-        bt36 = self._bT0[0]
-        ar36_ca = cv._t0_net_37 * _PR['PR_36_37ca']
-        thresh  = bt36 + ar36_ca   # abs T0 threshold: T0_sig must exceed this
-        from collections import defaultdict
-        grp = defaultdict(list)
-        for t0, e2, nu, valid, _ in cv._all_pts:
-            # valid here means physical constraint met
-            grp[nu].append((t0, e2, valid))
-        for nu in sorted(grp.keys(), reverse=True):
-            col = _NCOLS.get(nu, '#888')
-            vx=[p[0] for p in grp[nu] if p[2]]; vy=[p[1] for p in grp[nu] if p[2]]
-            ix=[p[0] for p in grp[nu] if not p[2]]; iy=[p[1] for p in grp[nu] if not p[2]]
-            if vx: ax.scatter(vx,vy,s=max(3,(nu-3)*2.5),color=col,alpha=0.75,linewidths=0,label=f'n={nu}',zorder=3)
-            if ix: ax.scatter(ix,iy,s=max(3,(nu-3)*2.5),color='#ccc',alpha=0.3,linewidths=0,zorder=1)
-        # threshold line (purple)
-        ax.axvline(thresh,color='#9b59b6',ls=':',lw=1.2,alpha=0.9,label=f'min={thresh:.2e}')
-        # blank T0 (green)
-        ax.axvline(bt36,color='#1c7a3a',ls='--',lw=0.8,alpha=0.6)
-        # best point (diamond)
-        if hasattr(cv,'_best_n') and cv._best_n:
-            best=min(cv._best_n.values(),key=lambda v:v[0])
-            ax.scatter(best[0],best[1]*2,marker='D',s=55,color='#9b59b6',
-                      zorder=7,edgecolors='black',lw=0.5,label='36air min')
-        # current
-        t0c,sc,_=cv.get_t0_sig_r2()
-        ax.scatter(t0c,sc*2,marker='^',s=60,color='#e67e00',zorder=6,edgecolors='black',lw=0.5)
-        ax.set_xlabel('T₀[36]',fontsize=7); ax.set_ylabel('2σ',fontsize=7)
-        ax.tick_params(labelsize=6)
-        ax.ticklabel_format(style='sci',axis='both',scilimits=(0,0))
-        ax.legend(fontsize=5,ncol=2,framealpha=0.7,handlelength=0.8,borderpad=0.2)
-        ax.grid(True,alpha=0.2)
-        self._sc36_fig.tight_layout(pad=0.3); self.cv_sc36.draw()
-
-    def _paint_guide_air36(self):
-        """Panel 3: 36Ar_air(net) bar chart per signal step.
-        36Ar_air(net) = T0_net[36] - T0_net[37]*PR(36/37ca)
-        where T0_net = T0_signal - T0_blank
-        """
-        ax = self._air36_ax; ax.clear()
-        ax.set_facecolor('white'); self._air36_fig.patch.set_facecolor('white')
-        if not self._svt:
-            ax.text(0.5,0.5,'Load signal files',transform=ax.transAxes,
-                   ha='center',va='center',fontsize=8,color='grey')
-            self._air36_fig.tight_layout(pad=0.3); self.cv_air36.draw(); return
-        f = Utilities.fit_func_list[self._fit]
-        steps=[]; air36_vals=[]; colors=[]
-        cur_idx = None
-        nm_list = list(self._svt.keys())
-        for idx, (nm, vt) in enumerate(self._svt.items()):
-            mask = self._smask[nm]
-            t0s36,_,_,_  = _fit_one(f, vt[0], mask[0])
-            t0s37,_,_,_  = _fit_one(f, vt[1], mask[1])
-            t0b36 = self._bT0[0]; t0b37 = self._bT0[1]
-            t0net36 = t0s36 - t0b36
-            t0net37 = t0s37 - t0b37
-            ar36_ca = t0net37 * _PR['PR_36_37ca']
-            air36   = t0net36 - ar36_ca   # 36Ar_air(net)
-            # short label: strip 'Temperature ' prefix
-            lbl = nm.replace('Temperature ','').replace('°C','°').strip()
-            steps.append(lbl)
-            air36_vals.append(air36)
-            colors.append('#1c7a3a' if air36>0 else '#b41a1a')
-            if nm == self._cur: cur_idx = idx
-
-        y = list(range(len(steps)))
-        bars = ax.barh(y, air36_vals, color=colors, alpha=0.75, height=0.6)
-        # highlight current step
-        if cur_idx is not None:
-            bars[cur_idx].set_edgecolor('black')
-            bars[cur_idx].set_linewidth(2.0)
-            bars[cur_idx].set_alpha(1.0)
-        ax.axvline(0, color='black', lw=0.8)
-        ax.set_yticks(y)
-        ax.set_yticklabels(steps, fontsize=7)
-        ax.set_xlabel('36Ar_air (net)', fontsize=7)
-        ax.tick_params(labelsize=7)
-        ax.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
-        ax.grid(True, alpha=0.2, axis='x')
-        self._air36_fig.tight_layout(pad=0.5)
-        self.cv_air36.draw()
-
-    def _refresh_bestn_tbl(self):
-        """Panel 4: find and display the single recommended Ar36 cycle combo.
-        Criteria:
-          1. T0_net[36] > 0  (signal > blank)
-          2. 36Ar_air = T0_net[36] - 36Ar_ca > 0
-          3. Among valid: pick the combo where 36Ar_air is smallest (closest to 0)
-             AND σ is also minimal — score = 36air/max_air + sig/max_sig (normalised sum)
-        """
-        if not hasattr(self, 'recLbl'): return
-        cv = self._get_cur_scv(0, force_signal=True)
-        if cv is None or not cv._all_pts:
-            self.recLbl.setText('No data'); return
-
-        bt36    = self._bT0[0]
-        t0n_37  = cv._t0_net_37
-        ar36_ca = t0n_37 * _PR['PR_36_37ca']
-
-        # Collect all valid combos across all n
-        valid_pts = []
-        for t0, e2, nu, valid_flag, m in cv._all_pts:
-            t0net = t0 - bt36
-            air36 = t0net - ar36_ca
-            if t0net > 0 and air36 > 0:
-                valid_pts.append((t0, e2/2, nu, air36, m))  # e2/2 = σ
-
-        if not valid_pts:
-            self.recLbl.setText(
-                '<span style="color:#b41a1a">No valid combo found!<br>'
-                '36Ar_air < 0 for all combinations.</span>')
-            self._rec_mask = None; return
-
-        # Normalise air36 and sigma for combined score
-        air_vals = [p[3] for p in valid_pts]
-        sig_vals = [p[1] for p in valid_pts]
-        max_air  = max(air_vals) + 1e-30
-        max_sig  = max(sig_vals) + 1e-30
-
-        # score = normalised_air36 + normalised_sigma (both should be small)
-        scored = [(p[0],p[1],p[2],p[3],p[4],
-                   p[3]/max_air + p[1]/max_sig) for p in valid_pts]
-        scored.sort(key=lambda x: x[5])
-        best = scored[0]
-        t0_best, sig_best, n_best, air36_best, mask_best, _ = best
-
-        # Store for _apply_recommended
-        self._rec_mask   = mask_best.copy()
-        self._rec_n      = n_best
-        cyc_str = ','.join(str(i+1) for i in range(len(mask_best)) if mask_best[i]==1)
-
-        # Compute 40Ar_r impact
-        ar40_air = air36_best * _PR['R_40_36a']
-        f = Utilities.fit_func_list[self._fit]
-        t0_40s,_,_,_ = _fit_one(f, self._get_cur_scv(4,True)._vt,
-                                  self._get_cur_scv(4,True)._mask) if self._get_cur_scv(4,True) else (0,0,0,0)
-        t0b_39 = self._bT0[3]; t0b_40 = self._bT0[4]
-        ar39_ca = t0n_37 * _PR['PR_39_37ca']
-        t0net39 = (self._get_cur_scv(3,True).get_t0_sig_r2()[0] if self._get_cur_scv(3,True) else 0) - t0b_39
-        ar39_K  = t0net39 - ar39_ca
-        ar40_K  = ar39_K * _PR['PR_40_39k']
-        t0net40 = (self._get_cur_scv(4,True).get_t0_sig_r2()[0] if self._get_cur_scv(4,True) else 0) - t0b_40
-        ar40_r  = t0net40 - ar40_air - ar40_K
-        pct40r  = ar40_r / (t0net40 + t0b_40) * 100 if (t0net40+t0b_40)!=0 else 0
-
-        color = '#1c7a3a' if ar40_r > 0 else '#b41a1a'
-        txt = (
-            f'<b>Recommended: n={n_best}  cycles=[{cyc_str}]</b><br>'
-            f'T₀[36] = {t0_best:.3e}<br>'
-            f'σ[36]  = {sig_best:.2e}<br>'
-            f'36Ar_air = {air36_best:.3e}<br>'
-            f'<span style="color:{color};">'
-            f'40Ar_r ≈ {ar40_r:.3e}  ({pct40r:.1f}%)</span><br>'
-            f'<span style="color:#666;font-size:8px;">'
-            f'score=min(36air+σ), {len(valid_pts)} valid combos</span>'
-        )
-        self.recLbl.setText(txt)
-        self.recApplyBtn.setEnabled(True)
-
-    def _apply_recommended_legacy(self):
-        """[Deprecated] Old single-isotope apply; replaced by new multi-isotope version."""
-        if not hasattr(self,'_rec_mask') or self._rec_mask is None: return
-        cv = self._get_cur_scv(0)
-        if cv is None: return
-        cv._mask = self._rec_mask.copy()
-        cv._refresh()
-        cv.maskChanged.emit()
-
-    def _get_cur_scv(self, ai, force_signal=False):
-        """Return MvCanvas for isotope ai.
-        Guide panels always use signal canvases (force_signal=True).
-        Other calls follow the current selection.
-        """
-        # 統一用 _cv，不需要判斷 Blank/Signal
-        return self._cv[ai] if ai < len(self._cv) else None
-
-    def _guide_sc37_click(self, event):
-        """Manual-mode click on guide Ar37 scatter → apply mask to Ar37 canvas."""
-        if not self._manual or event.inaxes is None: return
-        cv = self._get_cur_scv(1)
-        if cv is None or not cv._all_pts: return
-        t0_click=event.xdata; e2_click=event.ydata
-        if t0_click is None: return
-        t0s=[p[0] for p in cv._all_pts]; e2s=[p[1] for p in cv._all_pts]
-        t0r=max(t0s)-min(t0s)+1e-30; e2r=max(e2s)-min(e2s)+1e-30
-        best=None; best_d=1e30
-        for t0,e2,nu,valid,m in cv._all_pts:
-            d=((t0-t0_click)/t0r)**2+((e2-e2_click)/e2r)**2
-            if d<best_d: best_d=d; best=m
-        if best is not None:
-            cv._mask=best.copy()
-            cv._refresh(); cv.maskChanged.emit()
-
-    def _guide_sc36_click(self, event):
-        """Manual-mode click on guide Ar36 scatter → apply mask to Ar36 canvas."""
-        if not self._manual or event.inaxes is None: return
-        cv = self._get_cur_scv(0, force_signal=True)
-        if cv is None or not cv._all_pts: return
-        t0_click=event.xdata; e2_click=event.ydata
-        if t0_click is None: return
-        t0s=[p[0] for p in cv._all_pts]; e2s=[p[1] for p in cv._all_pts]
-        t0r=max(t0s)-min(t0s)+1e-30; e2r=max(e2s)-min(e2s)+1e-30
-        best=None; best_d=1e30
-        for t0,e2,nu,valid,m in cv._all_pts:
-            d=((t0-t0_click)/t0r)**2+((e2-e2_click)/e2r)**2
-            if d<best_d: best_d=d; best=m
-        if best is not None:
-            cv._mask=best.copy()
-            cv._refresh(); cv.maskChanged.emit()
-
-    # ══════════════════════════════════════════════════════════
     # New advanced analysis panels (⑤⑥⑦⑧)
     # ══════════════════════════════════════════════════════════
     
@@ -3016,408 +2645,56 @@ class CalcT0Page(QtWidgets.QWidget):
         self._degas_fig.tight_layout(pad=0.5)
         self.cv_degas.draw()
     
-    def _paint_mc_uncertainty(self):
-        """Panel ⑥: MC Uncertainty Analysis for current step.
-        Stacked bar: analytical σ (blue) + model σ (orange) for each isotope.
-        
-        Analytical σ = residual SE / sqrt(n)  — measurement scatter
-        Model σ      = SE of y-intercept from regression (Li et al. 2019 Eq. 1)
-                     = sqrt(pcov[-1,-1]) extracted from curve_fit covariance matrix
-        """
-        ax = self._mc_ax; ax.clear()
-        ax.set_facecolor('white'); self._mc_fig.patch.set_facecolor('white')
-        
-        if self._cur is None or self._cur == '__BLANK__':
-            ax.text(0.5, 0.5, 'Select a temperature step', 
-                   transform=ax.transAxes, ha='center', va='center',
-                   fontsize=10, color='grey')
-            self._mc_fig.tight_layout(pad=0.5)
-            self.cv_mc.draw()
-            return
-        
-        iso_names = ['³⁶Ar', '³⁷Ar', '³⁸Ar', '³⁹Ar', '⁴⁰Ar']
-        analytical_σ = []
-        model_σ = []
-        
-        vt = self._svt[self._cur]
-        mask = self._smask[self._cur]
-        f = Utilities.fit_func_list[self._fit]
-        
-        # Compute REAL analytical and model σ using _fit_with_errors
-        for ai in range(5):
-            t0, sig_a, sig_m, r2, _ = _fit_with_errors(f, vt[ai], mask[ai])
-            analytical_σ.append(sig_a)
-            model_σ.append(sig_m)
-        
-        x = np.arange(len(iso_names))
-        width = 0.6
-        
-        # Stacked bars
-        ax.bar(x, analytical_σ, width, label='Analytical σ (residual)', 
-              color='#3584e4', alpha=0.8)
-        ax.bar(x, model_σ, width, bottom=analytical_σ, 
-              label='Model σ (regression SE)', color='#e67e00', alpha=0.8)
-        
-        # Add ratio annotation on top of each bar
-        for i, (a, m) in enumerate(zip(analytical_σ, model_σ)):
-            total = a + m
-            if total > 0:
-                model_pct = m / total * 100
-                ax.text(i, total, f'{model_pct:.0f}%', ha='center', va='bottom',
-                       fontsize=7, color='#e67e00', fontweight='bold')
-        
-        ax.set_ylabel('Uncertainty (σ)', fontsize=8)
-        ax.set_xticks(x)
-        ax.set_xticklabels(iso_names, fontsize=8)
-        ax.tick_params(labelsize=7)
-        ax.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
-        ax.legend(fontsize=7, framealpha=0.8, loc='upper left')
-        ax.grid(True, alpha=0.2, axis='y')
-        
-        # Title with current step
-        step_lbl = self._cur.replace('Temperature ', '').replace('°C', '°').strip()
-        ax.set_title(f'Step: {step_lbl}  (% = model σ contribution)',
-                    fontsize=8, color='#444')
-        
-        self._mc_fig.tight_layout(pad=0.5)
-        self.cv_mc.draw()
-    
-    def _compute_bidirectional_strategy(self, ai=0):
-        """Compute blank-out and signal-out recommendations for isotope ai.
-        
-        Blank-out pass:
-          - For blank: find best T0 for each isotope
-          - For sample: use blank T0 as constraint (signal > blank)
-          - Score = (σ_a + σ_m) × (1 + α·w_n) + β·spread_penalty
-        
-        Signal-out pass:
-          - For each sample isotope: enumerate all combos
-          - Constraint: T0_sample > T0_blank (hard)
-          - If no valid: return 'least violating' with warning flag
-        
-        Returns dict with 'blank_out' and 'signal_out' keys, each containing 5 isotope results.
-        """
-        if self._cur is None or self._cur == '__BLANK__' or not self._svt:
-            return None
-        
-        vt = self._svt[self._cur]
-        
-        # Blank T0 is already computed in self._bT0
-        # For signal-out: we need blank sig too, approximate from current masks
-        f = Utilities.fit_func_list[self._fit]
-        blank_sig_a = np.zeros(5)
-        blank_sig_m = np.zeros(5)
-        for bai in range(5):
-            if self._bvt is not None:
-                bmask = self._cv[bai]._mask if self._cv[bai]._mask is not None else np.ones(self._nc)
-                _, sa, sm, _, _ = _fit_with_errors(f, self._bvt[bai], bmask)
-                blank_sig_a[bai] = sa
-                blank_sig_m[bai] = sm
-        
-        # Run signal-out pass (blank is already fixed)
-        signal_out_results = _signal_out_pass(vt, self._bT0, self._fit, self._nc)
-        
-        # Run blank-out pass (re-optimize blank, then use it as constraint for signal)
-        # For display purposes: we show what blank-out recommends for the sample
-        # given a freshly computed blank
-        if self._bvt is not None:
-            blank_results = _blank_out_pass(self._bvt, self._fit, self._nc)
-            # Compute new blank T0 from these recommendations
-            new_blank_t0 = np.array([b['t0'] if b else 0.0 for b in blank_results])
-            # Then find signal combos given new blank T0
-            blank_out_sample = _signal_out_pass(vt, new_blank_t0, self._fit, self._nc)
-        else:
-            blank_results = None
-            blank_out_sample = None
-        
-        return {
-            'signal_out': {
-                'sample': signal_out_results,
-                'blank_t0_used': self._bT0.copy(),
-            },
-            'blank_out': {
-                'blank': blank_results,
-                'sample': blank_out_sample,
-                'blank_t0_used': new_blank_t0 if blank_results else None,
-            },
-        }
-    
-    def _paint_strategy_compare(self):
-        """Panel ⑦: Bi-directional Strategy Comparison (Ar36-focused).
-        
-        Display both blank-out and signal-out recommendations for Ar36,
-        showing n, σ_total, and constraint status.
-        """
-        ax = self._strat_ax; ax.clear()
-        ax.set_facecolor('white'); self._strat_fig.patch.set_facecolor('white')
-        
-        if self._cur is None or self._cur == '__BLANK__':
-            ax.text(0.5, 0.5, 'Select a temperature step', 
-                   transform=ax.transAxes, ha='center', va='center',
-                   fontsize=10, color='grey')
-            self._strat_fig.tight_layout(pad=0.5)
-            self.cv_strat.draw()
-            return
-        
-        # Compute strategies
-        result = self._compute_bidirectional_strategy(ai=0)
-        
-        if not result:
-            ax.text(0.5, 0.5, 'No valid data', 
-                   transform=ax.transAxes, ha='center', va='center',
-                   fontsize=10, color='grey')
-            self._strat_fig.tight_layout(pad=0.5)
-            self.cv_strat.draw()
-            return
-        
-        # Extract Ar36 results from both passes
-        so = result['signal_out']['sample'][0] if result['signal_out']['sample'] else None
-        bo = result['blank_out']['sample'][0] if result['blank_out']['sample'] else None
-        
-        labels = []
-        ns = []
-        sig_as = []
-        sig_ms = []
-        constraint_flags = []
-        scores = []
-        
-        if bo:
-            labels.append('Blank-out')
-            ns.append(bo['n'])
-            sig_as.append(bo['sig_a'])
-            sig_ms.append(bo['sig_m'])
-            constraint_flags.append(bo.get('constraint_ok', True))
-            scores.append(bo['score'])
-        
-        if so:
-            labels.append('Signal-out')
-            ns.append(so['n'])
-            sig_as.append(so['sig_a'])
-            sig_ms.append(so['sig_m'])
-            constraint_flags.append(so.get('constraint_ok', True))
-            scores.append(so['score'])
-        
-        if not labels:
-            ax.text(0.5, 0.5, 'No valid strategy found', 
-                   transform=ax.transAxes, ha='center', va='center',
-                   fontsize=10, color='grey')
-            self._strat_fig.tight_layout(pad=0.5)
-            self.cv_strat.draw()
-            return
-        
-        x = np.arange(len(labels))
-        
-        # Twin axis: left = n, right = σ
-        ax2 = ax.twinx()
-        
-        # Left: n (blue bars)
-        bars_n = ax.bar(x - 0.2, ns, 0.35, label='Recommended n', 
-                       color='#3584e4', alpha=0.8)
-        ax.set_ylabel('Number of cycles (n)', fontsize=8, color='#3584e4')
-        ax.tick_params(axis='y', labelcolor='#3584e4', labelsize=7)
-        ax.set_ylim(0, 11)
-        
-        # Annotate n values + constraint warning
-        for bar, n, ok in zip(bars_n, ns, constraint_flags):
-            label = f'n={n}'
-            color = '#3584e4' if ok else '#b41a1a'
-            if not ok:
-                label += ' ⚠'
-            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.2,
-                   label, ha='center', va='bottom',
-                   fontsize=9, color=color, fontweight='bold')
-        
-        # Right: stacked σ
-        bars_a = ax2.bar(x + 0.2, sig_as, 0.35, label='Analytical σ', 
-                        color='#1c7a3a', alpha=0.8)
-        bars_m = ax2.bar(x + 0.2, sig_ms, 0.35, bottom=sig_as, 
-                        label='Model σ', color='#e67e00', alpha=0.8)
-        ax2.set_ylabel('σ (Ar³⁶)', fontsize=8, color='#666')
-        ax2.tick_params(axis='y', labelcolor='#666', labelsize=7)
-        ax2.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
-        
-        # Annotate total σ + score
-        for i, (sa, sm, sc) in enumerate(zip(sig_as, sig_ms, scores)):
-            total = sa + sm
-            ax2.text(i + 0.2, total, f'σ={total:.1e}\nscore={sc:.2e}', 
-                    ha='center', va='bottom',
-                    fontsize=6, color='#444')
-        
-        ax.set_xticks(x)
-        ax.set_xticklabels(labels, fontsize=9)
-        ax.grid(True, alpha=0.2, axis='y')
-        
-        # Combined legend
-        lines1, labels1 = ax.get_legend_handles_labels()
-        lines2, labels2 = ax2.get_legend_handles_labels()
-        ax.legend(lines1 + lines2, labels1 + labels2, 
-                 fontsize=6, framealpha=0.8, loc='upper left')
-        
-        # Title
-        step_lbl = self._cur.replace('Temperature ', '').replace('°C', '°').strip()
-        params_str = f'α={STRAT_ALPHA}, β={STRAT_BETA}'
-        ax.set_title(f'Ar³⁶ strategies — {step_lbl}  ({params_str})',
-                    fontsize=8, color='#444')
-        
-        # Store for _apply_recommended
-        self._strategy_result = result
-        
-        self._strat_fig.tight_layout(pad=0.5)
-        self.cv_strat.draw()
-    
-    def _refresh_recommendation(self):
-        """Panel ⑧: Final Recommendation — show both blank-out and signal-out results,
-        with physics constraint checks and radio button for user choice.
-        """
-        if not hasattr(self, 'recLbl'): return
-        
-        # Need strategy result from _paint_strategy_compare
-        result = getattr(self, '_strategy_result', None)
-        if result is None or self._cur is None or self._cur == '__BLANK__':
-            self.recLbl.setText('Select a temperature step first')
-            self.recApplyBtn.setEnabled(False)
-            return
-        
-        # Get sample recommendations from both passes (all 5 isotopes)
-        bo_sample = result['blank_out']['sample']
-        so_sample = result['signal_out']['sample']
-        
-        if not bo_sample or not so_sample:
-            self.recLbl.setText('No valid recommendations available')
-            self.recApplyBtn.setEnabled(False)
-            return
-        
-        # Compute derived quantities and constraint status for each pass
-        blank_t0_bo = result['blank_out']['blank_t0_used']
-        blank_t0_so = result['signal_out']['blank_t0_used']
-        
-        def eval_pass(sample_recs, blank_t0):
-            """Check physics for a full 5-isotope recommendation."""
-            t0s = np.array([s['t0'] if s else 0 for s in sample_recs])
-            sig_as = np.array([s['sig_a'] if s else 0 for s in sample_recs])
-            sig_ms = np.array([s['sig_m'] if s else 0 for s in sample_recs])
-            
-            # Blank sig approximation (use current blank masks)
-            f = Utilities.fit_func_list[self._fit]
-            blank_sig_a = np.zeros(5)
-            blank_sig_m = np.zeros(5)
-            for bai in range(5):
-                if self._bvt is not None:
-                    bmask = self._cv[bai]._mask if self._cv[bai]._mask is not None else np.ones(self._nc)
-                    _, sa, sm, _, _ = _fit_with_errors(f, self._bvt[bai], bmask)
-                    blank_sig_a[bai] = sa
-                    blank_sig_m[bai] = sm
-            
-            chk = _check_physics_constraints(t0s, sig_as, sig_ms, 
-                                              blank_t0, blank_sig_a, blank_sig_m)
-            ns = [s['n'] if s else 0 for s in sample_recs]
-            return chk, ns, t0s
-        
-        bo_chk, bo_ns, bo_t0 = eval_pass(bo_sample, blank_t0_bo)
-        so_chk, so_ns, so_t0 = eval_pass(so_sample, blank_t0_so)
-        
-        # Build display text
-        def fmt_pass(name, ns, chk):
-            n_str = ','.join(str(n) for n in ns)
-            status_icon = '✓' if chk['ok'] else '⚠'
-            status_color = '#1c7a3a' if chk['ok'] else '#b41a1a'
-            
-            v = chk['values']
-            ar40r_pct = v['Ar40r_pct']
-            ar40r_color = '#1c7a3a' if v['Ar40_r'] > 0 else '#b41a1a'
-            
-            lines = [
-                f'<b style="color:{status_color}">{status_icon} {name}</b>',
-                f'n = [{n_str}]',
-                f'Ar40_r = <span style="color:{ar40r_color}">{v["Ar40_r"]:.2e} ({ar40r_pct:.1f}%)</span>',
-                f'Ar36_air = {v["Ar36_air"]:.2e}',
-                f'Ar39_K = {v["Ar39_K"]:.2e}',
-            ]
-            if chk['violations']:
-                viol_str = '<br>'.join(f'  • {v}' for v in chk['violations'][:3])
-                lines.append(f'<span style="color:#b41a1a;font-size:10px;">Violations:<br>{viol_str}</span>')
-            return '<br>'.join(lines)
-        
-        txt_bo = fmt_pass('Blank-out', bo_ns, bo_chk)
-        txt_so = fmt_pass('Signal-out', so_ns, so_chk)
-        
-        combined = (
-            f'<div style="font-size:11px;">'
-            f'{txt_bo}'
-            f'<hr style="margin:4px 0;">'
-            f'{txt_so}'
-            f'</div>'
-        )
-        self.recLbl.setText(combined)
-        
-        # Decide which to apply by default (pick the one with fewer violations)
-        bo_viol_count = len(bo_chk['violations'])
-        so_viol_count = len(so_chk['violations'])
-        
-        if bo_viol_count <= so_viol_count:
-            self._rec_choice = 'blank_out'
-            self._rec_masks = [s['mask'] if s else None for s in bo_sample]
-        else:
-            self._rec_choice = 'signal_out'
-            self._rec_masks = [s['mask'] if s else None for s in so_sample]
-        
-        self.recApplyBtn.setEnabled(True)
-        
-        # Update button text to show which pass is default
-        self.recApplyBtn.setText(f'Apply {self._rec_choice.replace("_", "-")}')
-    
-    def _apply_recommended(self):
-        """Apply recommended cycle masks to all 5 isotope canvases."""
-        if not hasattr(self, '_rec_masks') or self._rec_masks is None:
-            return
-        
-        for ai, mask in enumerate(self._rec_masks):
-            if mask is None: continue
-            cv = self._get_cur_scv(ai)
-            if cv is None: continue
-            cv._mask = mask.copy()
-            cv._refresh()
-            cv.maskChanged.emit()
-    
-    def _run_full_mc(self):
-        """Placeholder: trigger full Monte Carlo analysis (10⁶ iterations)."""
-        msg = QtWidgets.QMessageBox(self)
-        msg.setIcon(QtWidgets.QMessageBox.Information)
-        msg.setWindowTitle('Run Full MC')
-        msg.setText('Monte Carlo analysis (10⁶ iterations) will be implemented in next phase.')
-        msg.setInformativeText('This will compute analytical + model uncertainties using Li et al. (2019) methodology.')
-        msg.exec_()
-
-    # ══════════════════════════════════════════════════════════
-    # End of new advanced analysis panels
-    # ══════════════════════════════════════════════════════════
 
     # ── Save ─────────────────────────────────────────────────
     def _save(self):
-        if self._bvt is None: return
-        os.makedirs('Data/T0', exist_ok=True)
+        # v3.8.10: always show explicit feedback with the absolute output path.
+        # Previously only updated the tiny status label, which users often missed
+        # → reported as "Save T₀ button doesn't work" even though files were written.
+        if self._bvt is None:
+            QtWidgets.QMessageBox.warning(self, 'Save T₀',
+                'No blank loaded — load Blank + Sample first.')
+            return
+        # Output dir: 'Data/T0/' relative to current working directory.
+        # When launched via pyADR.bat from C:\pyADR-main\ this writes to
+        # C:\pyADR-main\Data\T0\, matching what the pipeline does on Next.
+        t0_dir = os.path.abspath(os.path.join('Data', 'T0'))
+        os.makedirs(t0_dir, exist_ok=True)
+
+        written = []
         nm = self._chips['Blank file'].text().replace('.dat','') or 'blank'
-        write_t0_csv(f'Data/T0/{nm}.csv', self._binfo,
-                     self._bT0, self._bSIG, np.zeros(5))
+        bp = os.path.join(t0_dir, nm + '.csv')
+        write_t0_csv(bp, self._binfo, self._bT0, self._bSIG, np.zeros(5))
+        written.append(bp)
         for sn, vt in self._svt.items():
             f  = Utilities.fit_func_list[self._fit]
             T0 = np.zeros(5); SIG = np.zeros(5); R = np.zeros(5)
             for ai in range(5):
                 t0, sig, r2, _ = _fit_one(f, vt[ai], self._smask[sn][ai])
                 T0[ai]=t0; SIG[ai]=sig; R[ai]=r2
-            write_t0_csv(f'Data/T0/{sn}.csv', self._sinfo[sn], T0, SIG, R)
-        self.statusLbl.setText('✓ Saved')
+            sp = os.path.join(t0_dir, sn + '.csv')
+            write_t0_csv(sp, self._sinfo[sn], T0, SIG, R)
+            written.append(sp)
+        self.statusLbl.setText(f'✓ Saved {len(written)} files')
+        QtWidgets.QMessageBox.information(self, 'Save T₀ — Done',
+            f'Saved {len(written)} T₀ CSV(s) to:\n{t0_dir}')
 
     # ── Public getters ────────────────────────────────────────
     def get_blank_csv(self, out_dir):
         if self._bvt is None: return None
         os.makedirs(os.path.join(out_dir,'T0'), exist_ok=True)
-        # Re-compute from current canvas masks
         f = Utilities.fit_func_list[self._fit]
         T0=np.zeros(5); SIG=np.zeros(5); R=np.zeros(5)
-        for ai, cv in enumerate(self._cv):
-            mask = cv._mask if cv._mask is not None else self._bmask[ai]
-            t0,sig,r2,_ = _fit_one(f, self._bvt[ai], mask)
+        # v3.8.9 fix: only sync canvas mask → _bmask when canvas IS showing blank.
+        # Previously this always took cv._mask, so if user navigated to a signal
+        # step before Save, the blank got re-fit with that step's mask, writing
+        # a wrong blank T0 → MassRatio Measurement (esp. 36Ar/37Ar) off by 25×/13×.
+        if self._cur == '__BLANK__':
+            for ai, cv in enumerate(self._cv):
+                if cv._mask is not None:
+                    self._bmask[ai] = cv._mask.copy()
+        for ai in range(5):
+            t0,sig,r2,_ = _fit_one(f, self._bvt[ai], self._bmask[ai])
             T0[ai]=t0; SIG[ai]=sig; R[ai]=r2
         nm = self._chips['Blank file'].text().replace('.dat','') or 'blank'
         p  = os.path.join(out_dir,'T0', nm+'.csv')
@@ -4839,18 +4116,8 @@ class AutoPipelineWindow(QtWidgets.QMainWindow):
         self.nextBtn.clicked.connect(self._next_action)  # 改為動態判斷
         tbl.addWidget(self.nextBtn)
         
-        tbl.addSpacing(8)
-        
-        # Right: Output dir + 📁
-        tbl.addWidget(QtWidgets.QLabel('<span style="color:#666;font-size:10px;">Out:</span>'))
-        self.outEdit=QtWidgets.QLineEdit('Data/')
-        self.outEdit.setStyleSheet('background:white;color:#333;border:1px solid #ccc;padding:3px 8px;font-size:11px;')
-        self.outEdit.setFixedWidth(140)
-        ob=QtWidgets.QPushButton('📁')
-        ob.setStyleSheet('background:#e8e8e8;color:#333;border:1px solid #ccc;padding:3px 8px;')
-        ob.setFixedWidth(30); ob.clicked.connect(self._browse)
-        tbl.addWidget(self.outEdit); tbl.addWidget(ob)
-        
+        # v3.8.10: removed Output dir picker (Out: [Data/] 📁). Pipeline writes
+        # to './Data/' relative to cwd (same as previous default).
         vb.addWidget(top_bar)
 
         # Stack
@@ -4924,10 +4191,6 @@ class AutoPipelineWindow(QtWidgets.QMainWindow):
         try: self.parent().toMain()
         except: pass
 
-    def _browse(self):
-        d=QtWidgets.QFileDialog.getExistingDirectory(self,'Output directory')
-        if d: self.outEdit.setText(d)
-
     def _run_pipeline(self):
         # BUG FIX: B7 - Require set_context() to load parameters, prevent invalid standalone mode
         if self._params is None:
@@ -4937,7 +4200,7 @@ class AutoPipelineWindow(QtWidgets.QMainWindow):
                 "Please access AutoPipeline from the main program, not standalone mode."
             )
             return
-        out=self.outEdit.text() or 'Data/'
+        out = 'Data/'   # v3.8.10: hardcoded after Out picker removal
         blank_csv=self.t0Page.get_blank_csv(out)
         if blank_csv is None:
             QtWidgets.QMessageBox.warning(self,'Error','Load blank file first.'); return

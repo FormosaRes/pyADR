@@ -1,8 +1,146 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8
-最後整理日期：2026-05-26
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10
+最後整理日期：2026-05-27
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.10（2026-05-27）— AutoPipeline T0 頁面瘦身、效能與 UX 大改
+
+### 範圍
+
+教授指示砍掉用不到的進階分析 panel、修正 Δt / Save T₀ 行為、統一介面風格、解決切換步驟卡頓。AutoPipeline.py 淨減少 ~750 行。
+
+### 改動清單
+
+**1. 砍 Panel ⑥ MC Uncertainty / ⑦ Bi-directional Strategy / ⑧ Final Recommendation**
+
+只保留 ⑤ Degassing Pattern Overview（多階釋氣總覽圖，對 15 step 樣品有總覽價值）。砍掉的理由：
+
+- ⑥ MC Uncertainty 名字誤導，實際只是把 σ_a + σ_m 拆成堆疊棒；同樣資訊在 T0 頁面 `σ(SE)` / `σ(Calc T₀)` 已顯示
+- ⑦ Bi-directional Strategy 跟「Auto Best All」按鈕功能重疊；單一 step 視覺對比 panel 實務上沒人 step-by-step 看
+- ⑧ Final Recommendation 的「Run Full MC」是空殼，按下去只跳 placeholder 訊息
+- 「Bi-Dir All」核心邏輯（一鍵跑完 15 step）仍保留在左側按鈕
+
+連帶移除：`_paint_mc_uncertainty` / `_paint_strategy_compare` / `_refresh_recommendation` / `_apply_recommended` / `_run_full_mc` / `_compute_bidirectional_strategy` / `_paint_guide_sc37` / `_paint_guide_sc36` / `_paint_guide_air36` / `_refresh_bestn_tbl` / `_apply_recommended_legacy` / `_guide_sc37_click` / `_guide_sc36_click` / `_get_cur_scv` 以及對應的 stub canvas / legacy widget。
+
+**2. 切換 Blank ↔ Signal step 加速（~20× 提升）**
+
+`MvCanvas.load()` 原本每次都重跑 `_build_combos`（每個 isotope 848 個 curve_fit，5 個 isotope 共 4240 次）。改成：
+
+- `_enumerate_combos()`：純列舉 + curve_fit，結果 cache 在 `_combo_fits`，by `(id(vt), fit, nc)` 為 key
+- `_recompute_validity()`：用 cached fits + 當下 bt / `_t0_net_37` 重算 valid flag 跟 best_n（無 curve_fit calls）
+
+切換步驟時，每個 step 的 fits 只算一次，之後切回去都是讀 cache。`set_sibling_t0_net_37` 也改用 `_recompute_validity()`。
+
+**3. 修正 Δt 顯示永遠是 `0 d` 的 bug**
+
+`_auto_update_delta_t` 把 label 找錯 widget — `deltaTLbl` 在 `CalcT0Page (self)`，但程式碼裡 `hasattr(ap, 'deltaTLbl')` 找的是 `AutoPipelineWindow (parent)`，永遠 False。導致 `DELTA_T_DAYS` 全域變數有更新（decay correction 是對的），但 UI label 一直顯示初始 `0 d`。改回 `self.deltaTLbl`。
+
+**4. Save T₀ 按鈕修復 + 加 feedback**
+
+原本寫到相對路徑 `Data/T0/` 沒提示。若 cwd 不是 `C:\pyADR-main\` 就寫到別處而使用者不知道。改成：
+
+- 路徑用 `os.path.abspath(os.path.join('Data', 'T0'))`（絕對路徑）
+- `os.makedirs(t0_dir, exist_ok=True)` 確保資料夾存在
+- 寫完彈出 `QMessageBox.information` 顯示存了幾個檔、完整路徑
+- 沒載 blank 時也彈警告而非 silent return
+
+**5. 移除右上 Out [Data/] 輸出資料夾選擇器**
+
+`outEdit` 跟 📁 browse 按鈕拿掉；`_run_pipeline` 改用 hardcoded `'Data/'`（跟原本 default 一致）。`_browse` 方法刪除。
+
+**6. 左側 sidebar 按鈕統一灰色**
+
+`sb_btn(col)` 忽略 col 參數，一律 `_btn_style(PNL, TXT, BRD)` 灰色，跟 AgeCalculation / MassRatio / JCalculation 等子頁的 Return / Save 按鈕一致。原本 Save T₀ 綠、Load Blank/Sample 藍、Auto * 綠看起來雜亂。
+
+**7. Blank/1100°C 步驟切換改 QTabBar (Chrome-style)**
+
+原本 `_blank_btn` + `_sbtn_map`（彩色 push button + 一堆顏色狀態）→ 改 `QTabBar`：
+
+- `setDocumentMode(True) + setDrawBase(False)` → 接近 Chrome 分頁外觀
+- 選中 tab 白底 / 藍字 / 粗體；未選 tab 米色背景
+- 失敗 step 用 tab text color 改成琥珀色（取代以前整個按鈕變色）
+- `_on_tab_changed` ↔ `_sync_tab_to_step` 互鎖，避免 `_sel_step` 跟 tab signal 互打
+
+**8. Ar40 第 10 cycle 被視窗右緣裁切**
+
+5 個 mV-vs-time canvas 包進 `QScrollArea`（horizontal `ScrollBarAsNeeded`）。視窗夠寬時不顯示 scroll；窄視窗時 ⁴⁰Ar 跟其 cycle-10 按鈕仍可橫向滑到。
+
+### 驗證 checklist
+
+- [ ] NO.65 muscovite 1100°C：年代仍是 10.918 ± 0.866 Ma（不能因為這次大改而動到科學結果）
+- [ ] NO.65 完整 step heating：plateau 9.77 ± 0.28 Ma
+- [ ] Save T₀ 按鈕：點下去有 popup 提示存檔路徑
+- [ ] Δt (auto)：載完 blank+signal 後左下顯示真實天數（不再是 `0 d`）
+- [ ] 切換 Blank ↔ 1100°C：第一次切到該步驟稍卡（建 cache），之後切回去秒切
+- [ ] Tab 風格：選中/未選中清楚分辨，失敗步驟琥珀字
+- [ ] 視窗寬度 < 1600px：canvas row 出現橫向 scrollbar，可滑到 Ar40
+
+### 檔案改動
+
+- `AutoPipeline.py` — 淨減 ~750 行（4964 → ~4220）
+- `.work/.app_info.txt` — 3.8.9 → 3.8.10
+
+---
+
+## V3.8.9（2026-05-27）— AutoPipeline blank T0 寫檔用錯 mask 的 critical bug fix
+
+### 問題
+
+`AutoPipelineWindow.T0Page.get_blank_csv()` 在寫 blank T0 CSV 時，不論當下 canvas 顯示的是 blank 還是 signal step，都直接抓 `cv._mask`（canvas 當前顯示的 mask）去 fit blank 數據：
+
+```python
+for ai, cv in enumerate(self._cv):
+    mask = cv._mask if cv._mask is not None else self._bmask[ai]
+    t0,sig,r2,_ = _fit_one(f, self._bvt[ai], mask)
+```
+
+T0 頁面 UI 顯示的 blank T0 是對的（因為切到 Blank 時 canvas mask 就是 blank mask），但只要使用者在點 Next 進 Mass Ratio 前切去看任何一個 signal step，`cv._mask` 就變成那個 signal step 的 mask，寫到 disk 的 `Data/T0/<blank>.csv` 就是「用 signal step mask fit blank 數據」的結果。
+
+對照 `get_signal_csvs()`（line 3427-3448）有正確判斷 `if nm == self._cur`，只在 canvas 確實顯示該 step 時才用 canvas mask，blank 路徑就漏了這個檢查。
+
+### 影響
+
+NO.65 muscovite 1100°C 單一 step 重現：
+
+| 項目 | 正確（CalcT0Page 工作流） | AutoPipeline 跑出來 |
+|------|---------------------------|----------------------|
+| Blank Ar36 T0 | 2.8045e-04 (R²=0.011) | 2.387e-04 (R²=0.024) |
+| Blank Ar37 T0 | +2.434e-05 | −1.308e-04（連正負號都反）|
+| Blank Ar40 T0 | −9.63e-05 (R²=0.921) | +2.39e-04 (R²=0.077) |
+| Ar36 Measurement | 1.72e-06 | 4.35e-05（25× 偏掉）|
+| Ar37 Measurement | 6.72e-05 | 8.70e-04（13× 偏掉）|
+| 40Ar(r)% | 95.1% | 33.1% |
+| Age | 10.918 ± 0.866 Ma | 3.770 ± 19.069 Ma |
+
+Ar36/Ar37 受傷最重是因為 sample T0 − blank T0 本來就接近零，blank 多差 4e-5 在 Ar36 上殘量直接從 1.7e-6 跳成 4.3e-5。Ar38/39/40 因為訊號本身大，相對偏差只有 1%，但 Ar40_air = Ar36_air × 298.56 會把 Ar36 的錯誤放大 → Ar40_r 跟著錯 → F 跟著錯 → 年代直接砍到 1/3。
+
+### 修法
+
+加上 `_cur == '__BLANK__'` 檢查，只有當下 canvas 真的在顯示 blank 時才把 canvas mask 同步回 `_bmask`，fit 一律用 `_bmask`：
+
+```python
+if self._cur == '__BLANK__':
+    for ai, cv in enumerate(self._cv):
+        if cv._mask is not None:
+            self._bmask[ai] = cv._mask.copy()
+for ai in range(5):
+    t0,sig,r2,_ = _fit_one(f, self._bvt[ai], self._bmask[ai])
+```
+
+### 驗證 checklist
+
+- [ ] NO.65 muscovite 1100°C 單一 step：AutoPipeline 跑出年代回到 ~10.918 Ma（跟 CalcT0Page→MassRatio→AgeCalc 一致）
+- [ ] NO.65 完整 step heating：plateau 回到 9.77 ± 0.28 Ma
+- [ ] `Data/T0/pbs<...>.csv` 內容跟 CalcT0Page 直接 save 的 T0 一致（mask 沒被破壞）
+- [ ] 在 T0 頁面切換 blank ↔ signal step 多次後再 Next，blank T0 仍然正確
+
+### 檔案改動
+
+- `AutoPipeline.py` — `get_blank_csv()` 加上 `_cur == '__BLANK__'` 檢查
+- `.work/.app_info.txt` — 3.8.8 → 3.8.9
 
 ---
 
