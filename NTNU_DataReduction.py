@@ -455,18 +455,10 @@ class DiagramPlots_SH(QtWidgets.QMainWindow, UI.DiagramPlots_SH.Ui_MainWindow):
         self.infoLabel.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         self.infoLabel.setGeometry(QtCore.QRect(100, 148, 620, 32))
 
-        # v3.8.6: persistent regression-info label (only visible for DFN/DFI).
-        # Sits to the right of infoLabel; never overwritten by mouse hover.
-        self.regressionInfoLabel = QtWidgets.QLabel("", self.centralwidget)
-        self.regressionInfoLabel.setObjectName("regressionInfoLabel")
-        self.regressionInfoLabel.setStyleSheet(
-            "QLabel { background-color: #eef3f8; color: #1a3a6e; "
-            "padding: 4px 10px; border: 1px solid #6e8bb0; font-size: 13px; "
-            "font-weight: bold; }"
-        )
-        self.regressionInfoLabel.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        self.regressionInfoLabel.setGeometry(QtCore.QRect(725, 148, 400, 32))
-        self.regressionInfoLabel.setVisible(False)
+        # v3.8.6: regression info is appended onto infoLabel (single grey box)
+        # rather than a separate widget.  This string is set in SH_apply_axes
+        # and read/concatenated by on_mouse_move_SH and other infoLabel writers.
+        self._regression_info_str = ""
 
         # Plot Controls UI (redesigned, scrollable)
         self.ctrlBox = QtWidgets.QGroupBox("Plot Controls", self.centralwidget)
@@ -1553,7 +1545,9 @@ class App():
                 self.iso_pts_DFN = limits.get('DFN_pts', self.iso_pts_DFN)
                 self.iso_pts_DFI = limits.get('DFI_pts', self.iso_pts_DFI)
 
-                # v3.8.6: update persistent regression-info label (DFN/DFI only).
+                # v3.8.6: build regression info suffix and stash it on the page.
+                # on_mouse_move_SH + other infoLabel writers append this so
+                # method + regression MSWD always show in the grey strip.
                 try:
                     _reg_method = limits.get('regression_method', _iso_method)
                     _reg_mswd   = limits.get('regression_mswd', float('nan'))
@@ -1562,14 +1556,17 @@ class App():
                         _m_lbl = 'York 2004' if _reg_method == 'york' else 'OLS'
                         _m_str = (f'{_reg_mswd:.2f}'
                                   if _reg_mswd == _reg_mswd else '—')
-                        self.DiagramPlots_SHPage.regressionInfoLabel.setText(
-                            f'  Method: {_m_lbl}   |   '
+                        self.DiagramPlots_SHPage._regression_info_str = (
+                            f'Method: {_m_lbl}   |   '
                             f'Regression MSWD: {_m_str} (n={_reg_n})')
-                        self.DiagramPlots_SHPage.regressionInfoLabel.setVisible(True)
                     else:
-                        self.DiagramPlots_SHPage.regressionInfoLabel.setVisible(False)
+                        self.DiagramPlots_SHPage._regression_info_str = ""
+                    # show immediately (before user moves mouse over plot)
+                    if self.DiagramPlots_SHPage._regression_info_str:
+                        self.DiagramPlots_SHPage.infoLabel.setText(
+                            "  " + self.DiagramPlots_SHPage._regression_info_str)
                 except Exception:
-                    self.DiagramPlots_SHPage.regressionInfoLabel.setVisible(False)
+                    self.DiagramPlots_SHPage._regression_info_str = ""
                 
                 # Get actual limits for current diagram
                 if pname == "DFN" and "DFN" in limits:
@@ -1983,8 +1980,13 @@ class App():
                            f"T={T_val:.0f}°C | V={V_val:.3e} | "
                            f"{pct_str} of {comp} total")
 
+        # v3.8.6: append regression-info suffix so method + regression MSWD
+        # stay visible while user hovers over the diagram.
+        _suffix = getattr(self.DiagramPlots_SHPage, '_regression_info_str', '')
+        if _suffix:
+            info_text = info_text + "   |   " + _suffix
         self.DiagramPlots_SHPage.infoLabel.setText(info_text)
-    
+
     def _clear_groups(self):
         """Clear all group assignments and redraw."""
         self.step_groups.clear()
@@ -2145,6 +2147,10 @@ class App():
                                     f"{_gc_name}({n_sel}pts): ⁴⁰/³⁶={_4036:.1f} | slope={_b_reg:.4f} | MSWD={_mswd_g:.2f}")
                         except Exception:
                             pass
+                # v3.8.6: tack on the regression-info suffix
+                _suffix = getattr(self.DiagramPlots_SHPage, '_regression_info_str', '')
+                if _suffix:
+                    _info_parts.append(_suffix)
                 if _info_parts:
                     self.DiagramPlots_SHPage.infoLabel.setText("  " + "   |   ".join(_info_parts))
             except Exception:
