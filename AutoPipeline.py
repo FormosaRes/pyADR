@@ -79,18 +79,22 @@ def _ratio_sigma(num, snum, den, sden, rho=0.0):
 
 
 def york_regression(x, sx, y, sy, rho_xy=None, max_iter=50, tol=1e-12):
-    """York et al. (2004) unified equations for best-fit line with errors
-    in both x and y (and optional correlation).  Iterates slope b until
-    converged.
-    Inputs: x, sx, y, sy as 1-D numpy arrays of length N.
-            rho_xy: correlation ρ(σx, σy) per-point, default 0.
-    Returns: (slope, intercept, σ_slope, σ_intercept, MSWD)
-    Reference: York D., Evensen N.M., Martinez M.L., De Basabe Delgado J. (2004)
-    Am. J. Phys. 72, 367-375."""
+    """v3.8.5: delegate to Utilities.york_regression (single source of truth).
+    Kept here as a thin wrapper so existing callers in AutoPipeline work
+    unchanged."""
+    return Utilities.york_regression(x, sx, y, sy, rho_xy=rho_xy,
+                                     max_iter=max_iter, tol=tol)
+
+
+# Original local implementation preserved below for reference but no longer
+# called — kept temporarily in case Utilities import fails.  Will be removed
+# in a follow-up cleanup once Utilities.york_regression is verified.
+def _york_regression_legacy(x, sx, y, sy, rho_xy=None, max_iter=50, tol=1e-12):
+    """LEGACY: pre-v3.8.5 local copy.  Use Utilities.york_regression instead."""
     x = np.asarray(x, float); y = np.asarray(y, float)
     sx = np.asarray(sx, float); sy = np.asarray(sy, float)
     n = len(x)
-    if n < 2: return 0.0, 0.0, 0.0, 0.0, 0.0
+    if n < 2: return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     if rho_xy is None: rho_xy = np.zeros(n)
     else: rho_xy = np.asarray(rho_xy, float)
     # weights
@@ -121,13 +125,19 @@ def york_regression(x, sx, y, sy, rho_xy=None, max_iter=50, tol=1e-12):
     u = x_adj - x_adj_bar
     sb2 = 1.0 / np.sum(W*u*u)
     sa2 = 1.0/np.sum(W) + x_adj_bar*x_adj_bar*sb2
+    # v3.8.5 (A3): cov(intercept, slope).  Typically negative for inverse
+    # isochrons (when slope goes up, intercept goes down).  Required by σ_F
+    # propagation in _update_isochron_stats inverse path.
+    cov_ab = -x_adj_bar * sb2
     # MSWD
     if n > 2:
         chi2 = np.sum(W * (y - b*x - a)**2)
         mswd = chi2 / (n - 2)
     else:
         mswd = 0.0
-    return float(b), float(a), float(np.sqrt(max(sb2,0))), float(np.sqrt(max(sa2,0))), float(mswd)
+    return (float(b), float(a),
+            float(np.sqrt(max(sb2, 0))), float(np.sqrt(max(sa2, 0))),
+            float(mswd), float(cov_ab))
 
 
 def _sigma_from_fit(residuals, n, popt, pcov, t, method=None):
@@ -3789,12 +3799,35 @@ class AgeCalcPage(QtWidgets.QWidget):
         sf_hl.addWidget(w3)
         w4, self._stat_invIso = stat_cell('Inverse Isochron')
         sf_hl.addWidget(w4)
-        w5, self._stat_mswd = stat_cell('MSWD')
+        # v3.8.5 (B1): MSWD label clarified as Plateau MSWD (regression MSWD
+        # shown on the inverse isochron PNG itself via annotation).
+        w5, self._stat_mswd = stat_cell('Plateau MSWD')
         sf_hl.addWidget(w5)
         w6, self._stat_j = stat_cell('J value')
         sf_hl.addWidget(w6)
         w7, self._stat_steps = stat_cell('Steps')
         sf_hl.addWidget(w7)
+        # v3.8.5 (A2): isochron regression method toggle.  Default OLS for
+        # backward compatibility.  York 2004 uses both x,y errors per Schaen 2021.
+        _method_widget = QtWidgets.QWidget()
+        _method_vl = QtWidgets.QVBoxLayout(_method_widget)
+        _method_vl.setContentsMargins(0,0,0,0); _method_vl.setSpacing(1)
+        _method_lbl = QtWidgets.QLabel('Isochron method')
+        _method_lbl.setStyleSheet(f'font-size:10px;color:{TXT3};background:transparent;')
+        self._isochron_method_combo = QtWidgets.QComboBox()
+        self._isochron_method_combo.addItem('OLS',  'ols')
+        self._isochron_method_combo.addItem('York 2004', 'york')
+        self._isochron_method_combo.setCurrentIndex(0)
+        self._isochron_method_combo.setToolTip(
+            'OLS: scipy.curve_fit, assumes σ_x = 0 (older Ar/Ar convention).\n'
+            'York 2004: bivariate weighted regression with both σ_x and σ_y\n'
+            '(Schaen 2021 GSA Bull standard, IsoplotR default).')
+        self._isochron_method_combo.setStyleSheet(
+            'QComboBox{font-size:11px;padding:2px 4px;background:white;'
+            f'border:1px solid {BRD};border-radius:3px;}}')
+        _method_vl.addWidget(_method_lbl)
+        _method_vl.addWidget(self._isochron_method_combo)
+        sf_hl.addWidget(_method_widget)
         sf_hl.addStretch()
         sf_vl.addLayout(sf_hl)
         
@@ -3927,10 +3960,17 @@ class AgeCalcPage(QtWidgets.QWidget):
         splitter.setStretchFactor(1, 1)
         vb.addWidget(splitter, 1)
 
-    def populate(self, steps, datum_csv, work_dir):
+    def populate(self, steps, datum_csv, work_dir, consts=None):
         self._steps = steps
         self._work_dir = work_dir
         self._datum_csv = datum_csv
+        self._consts = consts
+        # v3.8.5 (A2): wire dropdown change → regen diagrams with new method
+        try:
+            self._isochron_method_combo.currentIndexChanged.disconnect()
+        except Exception:
+            pass
+        self._isochron_method_combo.currentIndexChanged.connect(self._on_isochron_method_changed)
         
         # Populate results table
         self.tbl.setRowCount(len(steps))
@@ -3999,6 +4039,31 @@ class AgeCalcPage(QtWidgets.QWidget):
                         QtCore.Qt.KeepAspectRatio,QtCore.Qt.SmoothTransformation))
                     lbl.setText('')
     
+    def _on_isochron_method_changed(self, idx):
+        """v3.8.5 (A2): user changed OLS / York dropdown. Regenerate DFI/DFN
+        PNGs by re-calling Utilities.getDFStatistics_sh with the new method,
+        then reload the diagram labels."""
+        if not getattr(self, '_datum_csv', None) or not getattr(self, '_consts', None):
+            return
+        method = self._isochron_method_combo.itemData(idx) or 'ols'
+        try:
+            mask_all = np.ones(len(self._steps))
+            Utilities.getDFStatistics_sh(self._datum_csv, mask_all, self._consts,
+                                         'b', 'o', isochron_method=method)
+            for key, lbl in self._dlbls.items():
+                src = os.path.join(self._work_dir, '.work', key + '.png')
+                if os.path.exists(src):
+                    pm = QtGui.QPixmap(src)
+                    if not pm.isNull():
+                        lbl.setPixmap(pm.scaled(
+                            lbl.size(),
+                            QtCore.Qt.KeepAspectRatio,
+                            QtCore.Qt.SmoothTransformation))
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(
+                self, 'Regen diagrams failed',
+                f'isochron_method={method}: {e}')
+
     def _update_isochron_stats(self, steps):
         """Compute plateau (Wendt-Carl 1991 √MSWD corrected), and both
         normal/inverse isochrons via York (2004) regression.
@@ -4079,11 +4144,11 @@ class AgeCalcPage(QtWidgets.QWidget):
                 ys_n  = np.array([d['40']/d['36'] for d in iso_data])
                 sxs_n = np.array([_ratio_sigma(d['39'],d['s39'],d['36'],d['s36']) for d in iso_data])
                 sys_n = np.array([_ratio_sigma(d['40'],d['s40'],d['36'],d['s36']) for d in iso_data])
-                m_n, b_n, sm_n, sb_n, mswd_n = york_regression(xs_n, sxs_n, ys_n, sys_n)
+                m_n, b_n, sm_n, sb_n, mswd_n, _cov_n = york_regression(xs_n, sxs_n, ys_n, sys_n)
                 # Normal isochron (Vermeesch 2024 Eq. 1, Y=a+bX convention):
                 #   slope b_York     = F = ⁴⁰Ar*/³⁹Ar_K   →  pyADR m_n
                 #   intercept a_York = (⁴⁰/³⁶)_trapped     →  pyADR b_n
-                F_n = m_n; sF_n = sm_n
+                F_n = m_n; sF_n = sm_n  # F is just slope → no cov term needed
                 Jv = iso_data[0]['J'] if iso_data[0]['J'] > 0 else 0.0
                 if F_n > 0 and Jv > 0:
                     # v3.8.4: λ from parameters via module LAMBDA_K (was hardcoded 5.543e-10)
@@ -4101,7 +4166,7 @@ class AgeCalcPage(QtWidgets.QWidget):
                 ys_i  = np.array([d['36']/d['40'] for d in iso_data])
                 sxs_i = np.array([_ratio_sigma(d['39'],d['s39'],d['40'],d['s40']) for d in iso_data])
                 sys_i = np.array([_ratio_sigma(d['36'],d['s36'],d['40'],d['s40']) for d in iso_data])
-                m_i, b_i, sm_i, sb_i, mswd_i = york_regression(xs_i, sxs_i, ys_i, sys_i)
+                m_i, b_i, sm_i, sb_i, mswd_i, cov_mb_i = york_regression(xs_i, sxs_i, ys_i, sys_i)
                 # Inverse isochron (Vermeesch 2024 Eq. 2, Li & Vermeesch 2021 Eq. 5):
                 #   intercept a_York = (³⁶/⁴⁰)_trapped     →  pyADR b_i (≈ 1/298.56 for atm)
                 #   slope b_York     = -a_York · (e^(λt)-1) →  pyADR m_i (negative)
@@ -4111,11 +4176,17 @@ class AgeCalcPage(QtWidgets.QWidget):
                 # formulation "[D/P]* = -b/a for inverse isochrons (Li and Vermeesch, 2021)".
                 if abs(m_i) > 1e-30 and abs(b_i) > 1e-30 and Jv > 0:
                     F_i = -m_i / b_i
-                    # σ_F propagation: F = -m/b
+                    # v3.8.5 (A3): σ_F propagation now includes cov(slope, intercept).
+                    # F = -m/b:
                     #   ∂F/∂m = -1/b
                     #   ∂F/∂b =  m/b²
-                    # σ_F² = (σ_m/b)² + (m·σ_b/b²)²   (no covariance term — York returns indep σ)
-                    sF_i = math.sqrt((sm_i/b_i)**2 + (m_i*sb_i/(b_i*b_i))**2)
+                    # σ_F² = (σ_m/b)² + (m·σ_b/b²)² - 2·(m/b³)·cov(m,b)
+                    # cov term typically negative for York fits → reduces σ_F (more confident).
+                    # Matches Utilities.py:1496-1498 (getDFStatistics_sh) formula.
+                    _varF = ((sm_i/b_i)**2
+                             + (m_i*sb_i/(b_i*b_i))**2
+                             - 2.0 * (m_i / (b_i**3)) * cov_mb_i)
+                    sF_i = math.sqrt(abs(_varF)) if _varF == _varF else 0.0
                     if F_i > 0:
                         # v3.8.4: λ from parameters via module LAMBDA_K (was hardcoded 5.543e-10)
                         age_i = (1/LAMBDA_K)*math.log(1+Jv*F_i)/1e6
@@ -4627,13 +4698,17 @@ class PipelineWorker(QtCore.QThread):
         mask_all=np.ones(len(steps))
         try: Utilities.getSHStatistics(datum_csv,mask_all,consts)
         except Exception as e: self.sig_warn.emit(f'getSHStatistics: {e}')
-        try: Utilities.getDFStatistics_sh(datum_csv,mask_all,consts,'b','o')
+        try: Utilities.getDFStatistics_sh(datum_csv,mask_all,consts,'b','o',
+                                          isochron_method='ols')
         except Exception as e: self.sig_warn.emit(f'getDFStatistics_sh: {e}')
         for key in ['DFW','DFA','DFN','DFI']:
             src=os.path.join(work_dir,'.work',key+'.png')
             if os.path.exists(src): shutil.copyfile(src,os.path.join(fig_d,str(sid)+'_'+key+'.png'))
         self.sig_prog.emit('Done')
-        self.sig_done.emit({'steps':steps,'datum_csv':datum_csv,'work_dir':work_dir})
+        # v3.8.5: include consts so AgeCalcPage can re-run getDFStatistics_sh
+        # when the isochron_method dropdown changes.
+        self.sig_done.emit({'steps':steps,'datum_csv':datum_csv,
+                            'work_dir':work_dir,'consts':consts})
 
 # ═══════════════════════════════════════════════════════════
 #  AutoPipelineWindow  — main window
@@ -4850,7 +4925,8 @@ class AutoPipelineWindow(QtWidgets.QMainWindow):
 
     def _on_done(self, res):
         self.mrPage.populate(res['steps'])
-        self.agePage.populate(res['steps'],res['datum_csv'],res['work_dir'])
+        self.agePage.populate(res['steps'],res['datum_csv'],res['work_dir'],
+                              consts=res.get('consts'))
         self.statusBar().showMessage('✓ Done — '+res['datum_csv'])
         self._go(1)
 

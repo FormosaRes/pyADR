@@ -134,6 +134,62 @@ def ratioSigma(mu_y, sigma_y, mu_x, sigma_x,ratio):
 def minusSigma(sigma_x, sigma_y):
     return np.sqrt(sigma_x**2 + sigma_y**2)
 
+
+# v3.8.5: York 2004 unified regression — used by getDFStatistics_sh when
+# isochron_method='york'.  Reference: York et al. (2004) Am.J.Phys. 72:367.
+# Cov formula from Mahon (1996) / Schaen et al. (2021) Eq.14b.
+def york_regression(x, sx, y, sy, rho_xy=None, max_iter=50, tol=1e-12):
+    """York 2004 unified equations for best-fit line with errors in both
+    x and y (and optional per-point correlation).  Iterates slope b until
+    converged.
+    Returns: (slope, intercept, sigma_slope, sigma_intercept, MSWD, cov_ab)"""
+    x = np.asarray(x, float); y = np.asarray(y, float)
+    sx = np.asarray(sx, float); sy = np.asarray(sy, float)
+    n = len(x)
+    if n < 2:
+        return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+    if rho_xy is None:
+        rho_xy = np.zeros(n)
+    else:
+        rho_xy = np.asarray(rho_xy, float)
+    wx = 1.0 / (sx**2 + 1e-300)
+    wy = 1.0 / (sy**2 + 1e-300)
+    b = np.polyfit(x, y, 1)[0]  # OLS seed for slope
+    X_bar = Y_bar = 0.0; beta = np.zeros(n); W = np.ones(n)
+    for _ in range(max_iter):
+        alpha = np.sqrt(wx * wy)
+        W = wx * wy / (wx + b*b * wy - 2*b*rho_xy*alpha + 1e-300)
+        X_bar = np.sum(W*x) / np.sum(W)
+        Y_bar = np.sum(W*y) / np.sum(W)
+        U = x - X_bar
+        V = y - Y_bar
+        beta = W * (U/wy + b*V/wx - (b*U + V)*rho_xy/alpha)
+        num = np.sum(W * beta * V)
+        den = np.sum(W * beta * U)
+        if abs(den) < 1e-300:
+            break
+        b_new = num / den
+        if abs(b_new - b) < tol * max(1.0, abs(b)):
+            b = b_new
+            break
+        b = b_new
+    a = Y_bar - b * X_bar
+    x_adj = X_bar + beta
+    x_adj_bar = np.sum(W*x_adj) / np.sum(W)
+    u = x_adj - x_adj_bar
+    sb2 = 1.0 / np.sum(W*u*u)
+    sa2 = 1.0/np.sum(W) + x_adj_bar*x_adj_bar*sb2
+    cov_ab = -x_adj_bar * sb2  # Mahon 1996
+    if n > 2:
+        chi2 = np.sum(W * (y - b*x - a)**2)
+        mswd = chi2 / (n - 2)
+    else:
+        mswd = 0.0
+    return (float(b), float(a),
+            float(np.sqrt(max(sb2, 0))), float(np.sqrt(max(sa2, 0))),
+            float(mswd), float(cov_ab))
+
+
 # T0 regression fitting functions
 # ===============================================================================
 def linear(x, a, b):
@@ -505,7 +561,8 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
                        pname=None, style='pyADR',
                        iso_groups=None, group_colors=None,
                        return_points=False, show_legend=True,
-                       show_group_fits=True, show_overall_fit=True):
+                       show_group_fits=True, show_overall_fit=True,
+                       isochron_method='ols'):
     """
     Generate isochron diagrams for step heating data.
     
@@ -954,17 +1011,22 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
     # Second fit: exclude outliers (skip main line when group mode active)
     _has_groups = bool(iso_groups)
     try:
-        popt, _ = curve_fit(linear, x, y)
+        # v3.8.5 FIX (A1): σ_intercept now comes from pcov[1,1] of the same OLS fit.
+        # Previous version fitted (x_std, y_std) as if they were data points —
+        # mathematically meaningless.  Use the y=a·x+b model's covariance matrix:
+        # pcov[0,0] = var(slope), pcov[1,1] = var(intercept), pcov[0,1] = cov(slope,intercept).
+        popt, pcov = curve_fit(linear, x, y)
         if show_overall_fit:
             ax_n.plot(x, linear(x, *popt), linestyle='--',
                      label="fitted line\n(exclude outliers)", color=Ncolor)
-        # Calculate intercept
+        # Intercept of normal isochron = (⁴⁰Ar/³⁶Ar)_trapped
         ax_n.plot(0, linear(0, *popt), marker=Nmaker, linestyle='None', color='r')
         n = linear(0, *popt)
-        # Calculate intercept uncertainty (from x_std, y_std fit)
-        popt_std, _ = curve_fit(linear, x_std, y_std)
-        n_std = linear(0, *popt_std)
-    except:
+        if pcov is not None and pcov.shape == (2, 2) and np.isfinite(pcov[1, 1]) and pcov[1, 1] >= 0:
+            n_std = float(np.sqrt(pcov[1, 1]))
+        else:
+            n_std = float('nan')
+    except Exception:
         pass
 
     # FIX#8: Group regression lines for normal isochron
@@ -1279,27 +1341,41 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
                    y_inv[i] + y_inv_std[i]*np.sin(t),
                    color='lightgray', linestyle='-', linewidth=1, zorder=1)
     
-    # Second fit (skip main line when group mode active)
+    # v3.8.5 (A2/B3): inverse isochron regression — method toggle.
+    # isochron_method='ols' (default) preserves backward compatibility.
+    # isochron_method='york' uses York 2004 with x and y errors.
     inv_slope = np.nan
     inv_slope_std = np.nan
+    pcov_inv = None
+    cov_si_method = 0.0       # cov(slope, intercept) for σ_F propagation
+    mswd_regression = np.nan  # regression-quality MSWD (B1: distinct from plateau MSWD)
     try:
-        popt_inv, pcov_inv = curve_fit(linear, x_inv, y_inv)
+        if isochron_method == 'york':
+            (inv_slope, inv_intercept,
+             inv_slope_std, iv_std,
+             mswd_regression, cov_si_method) = york_regression(
+                x_inv, x_inv_std, y_inv, y_inv_std)
+            popt_inv = np.array([inv_slope, inv_intercept])
+        else:
+            popt_inv, pcov_inv = curve_fit(linear, x_inv, y_inv)
+            inv_slope = float(popt_inv[0])
+            inv_intercept = float(popt_inv[1])
+            if pcov_inv is not None and pcov_inv.shape == (2, 2):
+                inv_slope_std = float(np.sqrt(pcov_inv[0, 0])) if pcov_inv[0, 0] >= 0 else np.nan
+                iv_std        = float(np.sqrt(pcov_inv[1, 1])) if pcov_inv[1, 1] >= 0 else np.nan
+                cov_si_method = float(pcov_inv[0, 1]) if np.isfinite(pcov_inv[0, 1]) else 0.0
+            # Regression MSWD for OLS path (weighted by σ_y² only — OLS convention).
+            if len(x_inv) > 2:
+                _resid = y_inv - linear(x_inv, *popt_inv)
+                _w_y2 = np.where(y_inv_std > 0, 1.0/(y_inv_std**2), 0.0)
+                mswd_regression = float(np.sum((_resid**2) * _w_y2) / (len(x_inv) - 2))
+
         if show_overall_fit:
             ax_iv.plot(x_inv, linear(x_inv, *popt_inv), linestyle='--',
                       label="fitted line (exclude outliers)", color=Ncolor)
-
-        inv_slope = float(popt_inv[0])
-        inv_intercept = float(popt_inv[1])
-
-        # Calculate x-intercept
         a = -inv_intercept / inv_slope if inv_slope != 0 else 0
         ax_iv.plot(a, 0, marker=Nmaker, linestyle='None', color='r')
-
         iv = inv_intercept
-
-        if pcov_inv is not None and pcov_inv.shape == (2, 2):
-            inv_slope_std = float(np.sqrt(pcov_inv[0, 0])) if pcov_inv[0, 0] >= 0 else np.nan
-            iv_std = float(np.sqrt(pcov_inv[1, 1])) if pcov_inv[1, 1] >= 0 else np.nan
     except Exception:
         pass
 
@@ -1456,6 +1532,25 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
         if i < len(original_indices_inv) and np.isfinite(x_inv[i]) and np.isfinite(y_inv[i])
     ]
 
+    # v3.8.5 (A2/B1): annotate regression method + regression MSWD on plot.
+    # The MSWD shown here is the REGRESSION MSWD (χ² of points to fit line),
+    # distinct from the PLATEAU MSWD (returned in result[4]) which is computed
+    # from step ages around WMA.  Both numbers are meaningful but represent
+    # different things — labelling them avoids ambiguity.
+    try:
+        _method_lbl = 'York 2004' if isochron_method == 'york' else 'OLS'
+        _mswd_reg_str = f'{mswd_regression:.2f}' if np.isfinite(mswd_regression) else '—'
+        _annot = (f'Regression: {_method_lbl}\n'
+                  f'Regression MSWD: {_mswd_reg_str} (n={len(x_inv)})')
+        ax_iv.text(0.98, 0.98, _annot,
+                   transform=ax_iv.transAxes,
+                   fontsize=8, ha='right', va='top',
+                   bbox=dict(facecolor='white', alpha=0.85,
+                             edgecolor='gray', boxstyle='round,pad=0.3'),
+                   zorder=20)
+    except Exception:
+        pass
+
     # Axes bbox for coordinate mapping
     _ax_pos_dfi = ax_iv.get_position()
     _axes_bbox_dfi = (_ax_pos_dfi.x0, _ax_pos_dfi.y0, _ax_pos_dfi.x1, _ax_pos_dfi.y1)
@@ -1485,17 +1580,13 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
                 and Lambda != 0):
             F = -inv_slope / iv
             # F = -b/a: dF/db = -1/a, dF/da = b/a^2
-            _cov_si = 0.0
-            try:
-                if pcov_inv is not None and pcov_inv.shape == (2, 2) and np.isfinite(pcov_inv[0, 1]):
-                    _cov_si = float(pcov_inv[0, 1])
-            except Exception:
-                _cov_si = 0.0
+            # v3.8.5 (A3): cov_si_method comes from either pcov (OLS) or
+            # york_regression (York), set during the regression branch above.
             varF = np.nan
             if np.isfinite(inv_slope_std) and np.isfinite(iv_std):
                 varF = (inv_slope_std / iv) ** 2 \
                      + (inv_slope * iv_std / iv ** 2) ** 2 \
-                     - 2.0 * (inv_slope / iv ** 3) * _cov_si
+                     - 2.0 * (inv_slope / iv ** 3) * cov_si_method
             F_std = float(np.sqrt(abs(varF))) if np.isfinite(varF) else np.nan
 
             if np.isfinite(F):

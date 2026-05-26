@@ -1,8 +1,118 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5
 最後整理日期：2026-05-26
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.5（2026-05-26）— isochron regression math 補丁 + 方法 toggle + MSWD label 釐清
+
+DiagramPlot SH 跟 AutoPipeline AgeCalcPage 兩條 isochron path 的數學審查發現幾個問題，這個版本一次處理。第二波（OLS → York 強制升級）需要老師確認，這邊暫時做成可切換。
+
+### A1：Normal isochron `n_std` 不再用 OLS-on-error-bars
+
+**位置**：`Utilities.py:965-966`（`getDFStatistics_sh` 內 normal isochron 第二次擬合處）
+
+**原寫法**：
+```python
+popt_std, _ = curve_fit(linear, x_std, y_std)
+n_std = linear(0, *popt_std)
+```
+把每點的 `(σ_x[i], σ_y[i])` 當成新資料點，再對這 N 個誤差棒做 OLS 線性擬合，然後取那條虛構直線在 x=0 處的 y 值當截距 σ。**數學上沒任何意義**：誤差棒不是資料點，σ_x 跟 σ_y 之間沒理由要符合線性關係。
+
+**新寫法**：
+```python
+popt, pcov = curve_fit(linear, x, y)
+n_std = float(np.sqrt(pcov[1, 1]))
+```
+直接從主擬合的 covariance 矩陣取截距方差。對線性模型 y = a·x + b，`pcov[1,1] = var(intercept)`。
+
+v3.8.0 已經在 inverse isochron 同款寫法 (L1300-1302) 改成 `pcov` 路徑，這次補上 normal isochron 漏修的部分。
+
+### A3：AutoPipeline 的 σ_F 加上 slope-intercept covariance
+
+**位置**：`AutoPipeline.py:_update_isochron_stats` 內 inverse isochron σ_F 計算
+
+**問題**：v3.8.4 加 York 回歸時，σ_F 公式只算對角線兩項：
+```python
+sF = sqrt((σ_m/b)² + (m·σ_b/b²)²)
+```
+沒包含 cov(m,b) 項。對 York 擬合來說 cov 一般為負，σ_F 系統性過大。`Utilities.py:getDFStatistics_sh` 的 σ_F 公式 (L1496-1498) 含 cov 項，兩條 path 不一致。
+
+**修法**：`york_regression` 加回傳 `cov_ab = -x_adj_bar · σ_b²`（Mahon 1996 / Schaen 2021 Eq.14b）。σ_F 公式改成：
+```python
+σ_F² = (σ_m/b)² + (m·σ_b/b²)² - 2·(m/b³)·cov(m,b)
+```
+
+兩條 path（Utilities.py getDFStatistics_sh, AutoPipeline _update_isochron_stats）的 σ_F 公式現在完全一致。
+
+### A2 + B3：isochron 回歸方法 toggle（不是強制升級，可切換）
+
+**背景**：
+
+| 方法 | 假設 | x error 處理 | Ar/Ar 採用時期 |
+|---|---|---|---|
+| **OLS** (curve_fit) | σ_x = 0，所有誤差在 y | 忽略 σ_x | 傳統（McDougall & Harrison 教科書）|
+| **York 2004** | σ_x, σ_y 兩軸都有誤差，可含相關性 | 完整考慮 σ_x + σ_y + 相關性 | 社群現代標準（Schaen 2021 GSA Bull, Vermeesch 2018 IsoplotR）|
+
+**為什麼做成 toggle 而不是強制升級**：York 算出的 slope/intercept 跟 OLS 不同，導致 age 中心值會變。NO.65 9.77 Ma 是 OLS 算的歷史值，換 York 會跑出略不一樣的數字。「換回歸方法」屬於方法論決策，需要老師確認。為避免單方面改動破壞歷史比對，做成可切換。
+
+**實作**：
+
+1. `Utilities.py` L131+ 新增 `york_regression(x, sx, y, sy, ...)` 函式，回傳 (slope, intercept, σ_slope, σ_intercept, MSWD, cov_ab)。AutoPipeline 原本的版本 (L81-130) 改為呼叫 Utilities 版（單一來源真相）
+2. `Utilities.py:getDFStatistics_sh` 加 `isochron_method='ols'` 參數。`'york'` 走 York 分支
+3. `AutoPipeline.py:AgeCalcPage` 加 "Isochron method" dropdown（OLS / York 2004），預設 OLS 維持向後相容
+4. dropdown 切換時，AgeCalcPage 自動重新呼叫 `getDFStatistics_sh` 用新方法，重新載入 DFI/DFN PNG
+
+### B1：MSWD label 釐清為 Plateau / Regression 兩種
+
+**問題**：原本 `getDFStatistics_sh` 回傳的 `mswd` 是 **plateau MSWD**（從 step ages 對 WMA 算的 χ²/(N-1)），但顯示時只標 "MSWD"。看 inverse isochron diagram 的人通常預期看到 **regression MSWD**（χ² of points to fit line / (N-2)），兩種混淆。
+
+**修法**：
+
+1. **DFI.png 上加文字標註**：右上角顯示 "Regression: OLS/York 2004" + "Regression MSWD: X.XX (n=N)"，標清楚是 regression-quality MSWD
+2. **AutoPipeline AgeCalcPage stat labels**：原本 "MSWD" 改為 "Plateau MSWD"（B1 的另一面），明確指這是 step ages 的 plateau quality
+
+兩種 MSWD 並存：plateau MSWD 顯示在 stat labels（左上 summary 區），regression MSWD 顯示在 diagram annotation 上。各自有不同物理意義，不再混為一談。
+
+### B2：撤回，axis-aligned ellipse 維持
+
+審查時提到「inverse isochron error ellipse 應該畫傾斜（含 σ_x, σ_y 相關性）」，查文獻後確認這是 IsoplotR 風格、不是 Ar/Ar 主流。McDougall & Harrison 教科書 + ArArCALC + 原 NTNU code 都用 axis-aligned 或 error cross。傾斜橢圓的長軸方向跟 inverse isochron 負斜率方向相反，視覺上反而誤導。維持現狀（axis-aligned）。
+
+### 已知未在這版動的議題
+
+- **AutoPipeline `_update_isochron_stats` 的 stat labels 仍走 York**（不受 dropdown 影響）。dropdown 只切換 DFI/DFN PNG 內的回歸方法。完整對齊需要把 stat labels 也做成可切換，留待 v3.8.6
+- **`getDFStatistics_sh` group fit MSWD 仍是 OLS-style**（B3 範圍內）。需要 York-style effective σ 公式，跟 A2 一起做。dropdown 切到 York 主要影響整體擬合，group fits 維持舊算法
+- **NTNU_DataReduction.py DiagramPlot SH page 還沒加 dropdown**。手動呼叫 path 仍走預設 OLS。需要在 NTNU GUI 加同款 dropdown
+
+### 檔案改動
+
+- `Utilities.py`：
+  - L131+ 新增 `york_regression()` 函式（從 AutoPipeline 搬過來，加 `cov_ab` 回傳）
+  - `getDFStatistics_sh` signature 加 `isochron_method='ols'`
+  - inverse isochron 第二次擬合改為 method-aware 分支（L1344-1380 附近）
+  - σ_F propagation 改用統一 `cov_si_method` 變數（OLS 從 pcov、York 從 york_regression）
+  - DFI.png 加 "Regression: <method>" + "Regression MSWD: X.XX" 文字標註
+  - **A1**：normal isochron `n_std` 從 OLS-on-σ 改為 `sqrt(pcov[1,1])`（L957-968）
+- `AutoPipeline.py`：
+  - `york_regression()` 改為呼叫 `Utilities.york_regression`（單一真相）
+  - `_update_isochron_stats` inverse σ_F 加 cov 項（A3）
+  - `AgeCalcPage` 加 "Isochron method" dropdown + `_on_isochron_method_changed` regen handler
+  - "MSWD" label 改 "Plateau MSWD"（B1）
+  - worker `sig_done` payload 加 `consts`，方便 regen 時重新呼叫
+- `.work/.app_info.txt`：`3.8.4` → `3.8.5`
+
+### 驗證 checklist
+
+- [ ] NO.65 muscovite 跑 AutoPipeline 全流程，AgeCalcPage 右下 stats 區：
+  - [ ] Plateau MSWD 標籤正確（不是混淆的 "MSWD"）
+  - [ ] Inverse Isochron stats 跟 Plateau age 一致（in 1σ）
+- [ ] 點 "Isochron method" dropdown 切到 York 2004，DFI/DFN PNG 重新生成
+  - [ ] DFI.png 右上角文字標註出現 "Regression: York 2004"
+  - [ ] regression MSWD 數字跟 OLS 版略不同（York 含 σ_x 後 σ 變化）
+- [ ] 切回 OLS，annotation 變回 "Regression: OLS"
+- [ ] SYL31 LS 玄武岩比對 ~115 Ma（規模較大的測試）
 
 ---
 
