@@ -1005,15 +1005,17 @@ class MvCanvas(QtWidgets.QWidget):
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         vb.addWidget(self.cv_mv, 3)
 
-        # cycle buttons: single row 1-10. v3.8.11: shrunk 32→26 px so 10 buttons
-        # + spacing fit inside the narrower canvas min width.
+        # cycle buttons: single row 1-10. v3.8.12: 22×22 (was 26) so the row
+        # fits inside cv_mv's 240-pixel min width even when the 5th canvas is
+        # squeezed by the 4 others sharing horizontal space.
+        # 10 buttons × 22 + 9 gaps × 2 = 238 px (< 240).
         self._btns = []
         cg = QtWidgets.QWidget()
         gl = QtWidgets.QHBoxLayout(cg)
         gl.setContentsMargins(0, 0, 0, 0); gl.setSpacing(2)
         for i in range(10):
             b = QtWidgets.QPushButton(str(i + 1))
-            b.setFixedSize(26, 26); b.setCheckable(True); b.setChecked(True)
+            b.setFixedSize(22, 22); b.setCheckable(True); b.setChecked(True)
             b.setStyleSheet(self._cs(True))
             b.clicked.connect(lambda _, idx=i: self._toggle(idx))
             gl.addWidget(b)
@@ -1028,9 +1030,18 @@ class MvCanvas(QtWidgets.QWidget):
         # T0 vs 2σ — interactive FigureCanvas
         sc_hdr = QtWidgets.QLabel('T\u2080 vs 2\u03c3  (Manual: click to select)')
         sc_hdr.setStyleSheet(
-            f'font-size:17px;font-weight:bold;color:{TXT2};'
+            f'font-size:14px;font-weight:bold;color:{TXT2};'
             f'border-top:1px solid {BRD};padding-top:2px;')
         vb.addWidget(sc_hdr)
+
+        # v3.8.12: \u03c3 values shown as a Qt label above the scatter (was an
+        # in-axes text annotation that overlapped data on Ar39/Ar40).
+        self.scInfoLbl = QtWidgets.QLabel('')
+        self.scInfoLbl.setStyleSheet(
+            f'font-size:10px;font-family:"Courier New",monospace;color:{TXT2};'
+            f'background:transparent;padding:1px 4px;')
+        self.scInfoLbl.setTextFormat(QtCore.Qt.RichText)
+        vb.addWidget(self.scInfoLbl)
 
         # n-filter toggle row: All + n=10..4 (移到 scatter plot 上方，透明背景)
         self._n_filter = set(range(4, 11))
@@ -1082,7 +1093,7 @@ class MvCanvas(QtWidgets.QWidget):
         self._best_gl.setContentsMargins(0,0,0,0); self._best_gl.setSpacing(2)
         self._best_btns = {}   # n_used → QPushButton
         for n in range(10, 3, -1):
-            b = QtWidgets.QPushButton(f'n={n}')
+            b = QtWidgets.QPushButton(str(n))   # v3.8.12: drop "n=" prefix
             b.setFixedHeight(32)
             b.setStyleSheet(
                 f'QPushButton{{background:#eeede8;color:{TXT2};'
@@ -1341,9 +1352,11 @@ class MvCanvas(QtWidgets.QWidget):
         t0_inc, sig_inc, r2_inc, popt_inc = _fit_one(f, vt_i, mask)
 
         dpi = 96
-        # Enforce 3:4 (w:h) aspect for the rendered figure
-        fig_w = W / dpi
-        fig_h = fig_w * 4 / 3
+        # v3.8.12: render figure to actual cv_mv (W,H) dimensions instead of
+        # forcing a 3:4 aspect. The fixed 3:4 ratio left large empty bands
+        # above/below the chart whenever the QLabel was wider than tall.
+        fig_w = max(W / dpi, 1.0)
+        fig_h = max(H / dpi, 1.0)
         fig, ax = _plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
         fig.patch.set_facecolor('white'); ax.set_facecolor('white')
 
@@ -1513,23 +1526,10 @@ class MvCanvas(QtWidgets.QWidget):
         ax.yaxis.set_major_formatter(_ticker.ScalarFormatter(useMathText=True))
         ax.ticklabel_format(style='sci', axis='both', scilimits=(0,0))
 
-        # ── dual-σ annotation (upper-left, both formulas shown) ──
-        # Highlight whichever matches global SIGMA_METHOD
-        active = SIGMA_METHOD
-        line1 = f'$T_0$ = {t0_cur:.3e}'
-        line2a = f'σ (SE)    = {sig_std:.2e}'
-        line2b = f'σ (Calc T₀) = {sig_calc:.2e}'
-        if active == 'standard':
-            line2a = '▶ ' + line2a
-            line2b = '   ' + line2b
-        else:
-            line2a = '   ' + line2a
-            line2b = '▶ ' + line2b
-        ax.text(0.02, 0.97, line1 + '\n' + line2a + '\n' + line2b,
-                transform=ax.transAxes, fontsize=9, fontfamily='monospace',
-                color='#222', va='top', ha='left',
-                bbox=dict(facecolor='white', alpha=0.8, edgecolor='#cccccc',
-                          boxstyle='round,pad=0.3'))
+        # v3.8.12: σ annotation moved out of axes (was top-left text box,
+        # blocked data on Ar39/Ar40 where points cluster top-left). Now
+        # rendered as a Qt label above the scatter via _update_sc_info().
+        self._update_sc_info(t0_cur, sig_std, sig_calc)
 
         # No per-canvas legend: shared legend shown below Row 2
         # No per-canvas legend (shared widget below)
@@ -1539,6 +1539,19 @@ class MvCanvas(QtWidgets.QWidget):
 
         self._sc_fig.tight_layout(pad=0.3)
         self.cv_sc.draw()
+
+    def _update_sc_info(self, t0, sig_std, sig_calc):
+        """Render T₀ / σ(SE) / σ(Calc T₀) into the Qt label above the scatter,
+        marking which method is currently active with a ▶."""
+        if not hasattr(self, 'scInfoLbl'): return
+        active = SIGMA_METHOD
+        m_std  = '▶' if active == 'standard' else ' '
+        m_calc = '▶' if active != 'standard' else ' '
+        # Single-line label; small enough to fit narrow canvases
+        txt = (f'<span>T₀={t0:.3e}</span> &nbsp; '
+               f'<span>{m_std}σ(SE)={sig_std:.2e}</span> &nbsp; '
+               f'<span>{m_calc}σ(Calc T₀)={sig_calc:.2e}</span>')
+        self.scInfoLbl.setText(txt)
 
     # ── scatter click → select nearest combo (real data coords) ──
     def _sc_click(self, event):
@@ -1642,20 +1655,22 @@ class CalcT0Page(QtWidgets.QWidget):
         hl = QtWidgets.QHBoxLayout()
         hl.setContentsMargins(0, 0, 0, 0); hl.setSpacing(0)
 
-        # v3.8.11: Sidebar redesigned to match DiagramPlots_SH default Qt button
-        # style — no per-button stylesheets, fixed 90×40 size, vertical stack.
-        sb  = QtWidgets.QWidget(); sb.setFixedWidth(100)
+        # v3.8.12: Sidebar copied 1:1 from DiagramPlots_SH layout —
+        # buttons setFixedSize(91, 51), spacing=0 so they touch like Qt
+        # Designer's absolute setGeometry produced. Two ComboBox dropdowns
+        # at top (parity with DiagramPlots_SH's color + marker pickers),
+        # here repurposed as σ method + fit type. No setStyleSheet anywhere
+        # → buttons render with OS-native Qt look.
+        sb  = QtWidgets.QWidget(); sb.setFixedWidth(95)
         sbl = QtWidgets.QVBoxLayout(sb)
-        sbl.setContentsMargins(4, 6, 4, 6); sbl.setSpacing(4)
+        sbl.setContentsMargins(2, 4, 2, 4); sbl.setSpacing(0)
 
         def sb_btn(txt, col='default'):
-            """Plain Qt-default push button, fixed 90×40 (mirrors DiagramPlots_SH
-            91×51 sidebar buttons)."""
             b = QtWidgets.QPushButton(txt)
-            b.setFixedSize(90, 40)
+            b.setFixedSize(91, 51)
             return b
 
-        # σ method dropdown at top (parity with DiagramPlots_SH 'red'/'o' pickers)
+        # Dropdown 1: σ method (slot ≈ DiagramPlots_SH 'red' color picker)
         self.sigmaCombo = QtWidgets.QComboBox()
         self.sigmaCombo.addItem('Standard SE', 'standard')
         self.sigmaCombo.addItem('Calc T₀',     'calc_t0')
@@ -1665,34 +1680,46 @@ class CalcT0Page(QtWidgets.QWidget):
         idx = 0 if SIGMA_METHOD == 'standard' else 1
         self.sigmaCombo.setCurrentIndex(idx)
         self.sigmaCombo.currentIndexChanged.connect(self._on_sigma_method_changed)
-        self.sigmaCombo.setFixedSize(90, 26)
+        self.sigmaCombo.setFixedSize(91, 30)
         sbl.addWidget(self.sigmaCombo)
 
-        # Δt (auto, read-only) — second slot at top
+        # Dropdown 2: fit type (slot ≈ DiagramPlots_SH 'o' marker picker)
+        # Replaces the separate Linear / Average buttons.
+        self.fitCombo = QtWidgets.QComboBox()
+        self.fitCombo.addItem('Linear',  0)
+        self.fitCombo.addItem('Average', 1)
+        self.fitCombo.setCurrentIndex(0)
+        self.fitCombo.currentIndexChanged.connect(
+            lambda i: self._set_fit(self.fitCombo.itemData(i)))
+        self.fitCombo.setFixedSize(91, 30)
+        sbl.addWidget(self.fitCombo)
+
+        # Buttons — 91×51, default Qt look, no stylesheets.
+        self.returnBtn  = sb_btn('Return')
+        self.saveBtn    = sb_btn('Save T₀')
+        self.btnLdBlank = sb_btn('Load Blank')
+        self.btnLdSig   = sb_btn('Load Sample')
+        self.btnAB      = sb_btn('Auto Blank')
+        self.btnAS      = sb_btn('Auto Signal')
+        self.btnABest   = sb_btn('Bi-Dir All')
+        self.btnM       = sb_btn('Manual')
+        # Back-compat aliases so existing code referring to btnL/btnA still works
+        # (they no longer have a UI surface; fit type is now via fitCombo).
+        self.btnL = QtWidgets.QPushButton(); self.btnL.hide()
+        self.btnA = QtWidgets.QPushButton(); self.btnA.hide()
+
+        for b in (self.returnBtn, self.saveBtn, self.btnLdBlank, self.btnLdSig,
+                  self.btnAB, self.btnAS, self.btnABest, self.btnM):
+            sbl.addWidget(b)
+
+        # Δt label at bottom (small, no fancy styling)
         self.deltaTLbl = QtWidgets.QLabel(f'Δt: {DELTA_T_DAYS:.0f} d')
         self.deltaTLbl.setToolTip(
             'Auto-computed: OGD (from parameters) → SPD (from .dat Project#).\n'
             'Used for ³⁷Ar decay (t½=35.011 d) and ³⁹Ar decay (t½=269 yr).')
         self.deltaTLbl.setAlignment(QtCore.Qt.AlignCenter)
-        self.deltaTLbl.setFixedHeight(26)
+        self.deltaTLbl.setFixedHeight(20)
         sbl.addWidget(self.deltaTLbl)
-
-        # Buttons — Qt default look, fixed 90×40, no stylesheets.
-        self.returnBtn  = sb_btn('Return')
-        self.saveBtn    = sb_btn('Save T₀')
-        self.btnLdBlank = sb_btn('Load Blank')
-        self.btnLdSig   = sb_btn('Load Sample')
-        self.btnL       = sb_btn('Linear')
-        self.btnA       = sb_btn('Average')
-        self.btnAB      = sb_btn('Auto Blank')
-        self.btnAS      = sb_btn('Auto Signal')
-        self.btnABest   = sb_btn('Bi-Dir All')
-        self.btnM       = sb_btn('Manual')
-
-        for b in (self.returnBtn, self.saveBtn, self.btnLdBlank, self.btnLdSig,
-                  self.btnL, self.btnA, self.btnAB, self.btnAS, self.btnABest,
-                  self.btnM):
-            sbl.addWidget(b)
 
         sbl.addStretch()
 
@@ -1815,6 +1842,9 @@ class CalcT0Page(QtWidgets.QWidget):
         guide_vl.setSpacing(6)
 
         # ── Degassing Pattern Overview (single panel; ⑥⑦⑧ removed in v3.8.10) ──
+        # v3.8.12: Degassing canvas at fixed 4:3 ratio (~480×280) and centered
+        # horizontally — the previous full-width version was elongated and
+        # cramped the aspect ratio.
         p5 = QtWidgets.QWidget()
         p5l = QtWidgets.QVBoxLayout(p5); p5l.setContentsMargins(0,0,0,0); p5l.setSpacing(1)
         self._degas_fig = _mfig.Figure(facecolor='white')
@@ -1822,17 +1852,16 @@ class CalcT0Page(QtWidgets.QWidget):
         self._degas_ax2 = self._degas_fig.add_subplot(212)
         QtWidgets.QApplication.processEvents()
         self.cv_degas   = _FigCanvas(self._degas_fig)
-        self.cv_degas.setMinimumSize(1,1)
-        self.cv_degas.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-        p5l.addWidget(self.cv_degas, 1)
-        guide_vl.addWidget(p5, 1)
+        self.cv_degas.setFixedSize(480, 280)
+        p5l.addWidget(self.cv_degas)
 
-        # v3.8.11: FIX guide_container height to 280 (was minHeight=300, was
-        # expanding indefinitely and competing with the canvas row for viewport
-        # space). Now canvas_w (mV + T0vs2σ) gets all stretch and fills the
-        # visible area; Degassing sits at a fixed 280 px below, requiring a
-        # vertical scroll to see — which is what the user wants.
-        guide_container.setFixedHeight(280)
+        degas_center = QtWidgets.QHBoxLayout()
+        degas_center.addStretch()
+        degas_center.addWidget(p5)
+        degas_center.addStretch()
+        guide_vl.addLayout(degas_center)
+
+        guide_container.setFixedHeight(300)
         left_vb.addWidget(guide_container)
         
         # Hidden tables used by _refresh_sum / _refresh_prev (no UI surface)

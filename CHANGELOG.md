@@ -1,8 +1,85 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12
 最後整理日期：2026-05-27
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.12（2026-05-27）— AutoPipeline T0 頁面 UI 第三輪精修
+
+### 改動清單
+
+**1. mV chart 填滿 cv_mv，去掉留白**
+
+`_paint_mv` 原本 `fig_h = fig_w × 4/3`（強制 3:4 縱長比例）。當 QLabel 寬度大於高度時，畫出來的 pixmap 比 QLabel 短，QLabel 上下留白。改成：
+
+```python
+fig_w = max(W / dpi, 1.0)
+fig_h = max(H / dpi, 1.0)   # was: fig_w * 4 / 3
+```
+
+直接用 QLabel 實際 (W,H) 算 figure 大小，畫面完全填滿。
+
+**2. Ar40 cycle 10 不再被切**
+
+cycle button 從 26×26 → 22×22 px。10 buttons × 22 + 9 gaps × 2 = 238 px，落在 cv_mv 240 px min width 內，第 5 個 canvas 被擠時 cycle row 也不會溢位。
+
+**3. T₀ vs 2σ scatter 內的 σ 標註移出 chart**
+
+原本在 `_paint_sc` 用 `ax.text(0.02, 0.97, ..., bbox=...)` 在 axes 左上角畫 σ 資訊白框，Ar39/Ar40 因為資料點集中在左上，框會擋住資料。改成：
+
+- 在 sc_hdr 下方新增 `self.scInfoLbl`（QLabel）
+- 每次 `_paint_sc` 結尾呼叫 `self._update_sc_info(t0, sig_std, sig_calc)` 把資訊寫到 label
+- 用 ▶ 標當前 active 的 σ method
+
+Chart 內完全沒文字遮擋，三個數字（T₀ / σ(SE) / σ(Calc T₀)）在 chart 上方單行顯示。
+
+**4. Best per cycle count buttons 文字 `n=10` → `10`**
+
+`QPushButton(f'n={n}')` → `QPushButton(str(n))`。Tooltip 還保留 `n=X: T₀=... err=...` 完整資訊。
+
+**5. Degassing Pattern 改成置中 4:3 (~480×280)**
+
+原本佔滿整個 left_vb 寬度，比例被拉得很扁。改成：
+
+```python
+self.cv_degas.setFixedSize(480, 280)
+degas_center = QHBoxLayout()
+degas_center.addStretch()
+degas_center.addWidget(p5)
+degas_center.addStretch()
+```
+
+固定 4:3，左右用 addStretch 置中。
+
+**6. Sidebar 1:1 對齊 DiagramPlots_SH**
+
+按鈕 setFixedSize(91, 51)、`spacing=0`、無任何 setStyleSheet，跟 DiagramPlots_SH 的 setGeometry(0, y, 91, 51) 視覺一致。
+
+兩個 dropdown 在最上面（對應 DiagramPlots_SH 的 'red' / 'o'）：
+- σ method (Standard SE / Calc T₀)
+- Fit type (Linear / Average)
+
+8 個 button 取代原本 10 個（Linear/Average 改成 dropdown，btnL/btnA 留 hidden 給 back-compat）：Return / Save T₀ / Load Blank / Load Sample / Auto Blank / Auto Signal / Bi-Dir All / Manual。
+
+Δt label 放最底端，小字無 box style。
+
+### 驗證 checklist
+
+- [ ] mV vs time chart 沒有上下大片留白
+- [ ] Ar40 第 10 cycle button 完整顯示
+- [ ] T₀ vs 2σ scatter 上面有一行 `T₀=... ▶σ(SE)=... σ(Calc T₀)=...`，scatter 上沒文字框
+- [ ] best-n button 顯示 `10` `9` `8`...（不是 `n=10`）
+- [ ] Degassing 4:3 比例，置中
+- [ ] sidebar 按鈕全部 91×51、相連（無間隔）、Qt OS 預設外觀
+- [ ] Fit type 變成 dropdown（不是 Linear / Average 兩個 button）
+- [ ] NO.65 1100°C 重跑：10.918 ± 0.866 Ma
+
+### 檔案改動
+
+- `AutoPipeline.py` — MvCanvas (mV/scatter/cycle button/best-n) + CalcT0Page (sidebar/Degassing layout)
+- `.work/.app_info.txt` — 3.8.11 → 3.8.12
 
 ---
 
