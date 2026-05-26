@@ -1,5 +1,5 @@
 ![logo](.work/logo.png)
-# pyADR — NTNU modified fork (v3.8.4)
+# pyADR — NTNU modified fork (v3.8.6)
 
 40Ar/39Ar data reduction tool with GUI. Modified fork of [pyADR](https://github.com/AndrewLiu0725/pyADR) (original by **An-Jun (Andrew) Liu**), now maintained by **PANG Chi-Hsiu (NTNU)**.
 
@@ -125,6 +125,32 @@ python NTNU_DataReduction.py
 ---
 
 ## Changelog 摘要
+
+### v3.8.6 (2026-05-26)
+
+**DiagramPlot UX 重整 + Main/Help 選單 + PlaneFit3D 數學文件 + σ_40 fix**。
+
+DiagramPlot SH：DFN/DFI 拿掉視覺干擾的「pre-outlier-removal」第一條 fit line；regression annotation 從圖上搬到上方灰色 infoLabel（跟滑鼠座標合併），切到 non-isochron panel 時自動清空；NTNU 主 GUI 加上 OLS / York 2004 dropdown（之前只有 AutoPipeline 有）。
+
+Main / Help 選單：DiagramPlots_SH 跟 AutoPipelineWindow 都補上 menubar，Help 開 7-tab 對話框（Plateau/WMA, Isochron, MSWD, Age, Ar components, 3D Plane Fit, References），共用單一來源。
+
+PlaneFit3D：審查 Kent (1990) + Wu (2007) NTU 碩論 → `PlaneFit3D.py` 本體沒 bug。但 caller-side `s40 = np.hypot(σ_40r, σ_40a)` 雙重計算 σ_40a（40Ar(r) 跟 40Ar(a) 透過 40r = 40m − 40a − 40K 負相關，跟 v3.8.1 修的 σ_36m/σ_39m 同 pattern）。修為 `sqrt(max(σ²_40r − σ²_40a, 0))`。σ_36 / σ_39 inputs 驗證乾淨。FORMULAS.md 新增 §11 完整數學推導。
+
+Splash：3 秒最短顯示時間、版本/日期改 runtime QPainter overlay 不 baked-in、credits 改 NTNU Ar/Ar Lab + Prof. Meng Wan (Mary) Yeh。pyADR.bat 改 `if errorlevel 1 pause` 正常關閉時 cmd 自動收掉。
+
+### v3.8.5 (2026-05-26)
+
+**isochron regression math 補丁 + 方法 toggle + MSWD label 釐清**。
+
+A1 補對稱漏修：Normal isochron `n_std` 從 v3.7 留下的 OLS-on-error-bars 寫法（數學上沒意義）改用 `sqrt(pcov[1,1])`，跟 v3.8.0 已修的 inverse isochron 同步。
+
+A3 跨 path 統一：AutoPipeline `_update_isochron_stats` 的 σ_F propagation 加入 slope-intercept covariance 項 `-2(m/b³)·cov(m,b)`，跟 Utilities.getDFStatistics_sh 一致。York regression 加回傳 `cov_ab`。
+
+A2 + B3 部分實作：isochron 回歸方法做成 toggle（OLS / York 2004，預設 OLS 維持向後相容）。York 算 slope/intercept 跟 OLS 不同會影響 age 中心值，所以做成可切換不強制。AgeCalcPage 加 dropdown，切換自動重生 DFI/DFN PNG。
+
+B1 MSWD label 釐清：原本 stat 區只標「MSWD」混淆 plateau 跟 regression 兩種。現在 stat 區明確標「Plateau MSWD」，inverse isochron 圖上額外標註 regression MSWD + 用什麼方法。
+
+B2 撤回：審查時建議的傾斜 error ellipse 經 Schaen 2021 / 文獻盤查確認不是 Ar/Ar 主流（IsoplotR 風格 vs McDougall & Harrison + ArArCALC + NTNU code 慣例不同），維持 axis-aligned。
 
 ### v3.8.4 (2026-05-25)
 

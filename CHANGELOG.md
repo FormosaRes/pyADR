@@ -1,8 +1,83 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6
 最後整理日期：2026-05-26
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.6（2026-05-26）— DiagramPlot UX 重整 + Main/Help 選單 + PlaneFit3D 數學文件 + σ_40 fix
+
+集中處理 v3.8.5 釋出後使用者回饋發現的 UX / 文件 / 邊角 bug，沒動主數學 path。
+
+### DiagramPlot SH 介面
+
+- DFN/DFI 移除「pre-outlier-removal」第一條 fit line。原本同時畫兩條（一條 OLS 全資料、一條 method-toggle 後去掉 outlier）視覺干擾，現在只剩最終那條
+- DFI annotation「Regression: OLS/York 2004 | Regression MSWD: X.XX (n=N)」從圖上拿掉，改放到 diagram 上方既有的灰色 infoLabel 內，跟滑鼠座標訊息合併
+- 切到非 isochron panel（DFW age spectrum / DFA Ca/K / DFC Cl/K / DFM summary）會自動清空 regression suffix，不再殘留誤導
+- NTNU 主 GUI 的 DiagramPlots_SH page 加上 `Isochron method` dropdown（之前只在 AutoPipeline AgeCalcPage 有），方法切換時自動 re-render
+
+### Main / Help 選單
+
+- DiagramPlots_SH 跟 AutoPipelineWindow 都加上 menubar（之前是空的 / 缺）：
+  - **Main** → Return to pyADR Home
+  - **Help** → Formulas & References（共用 `_show_diagram_plot_help` 對話框，單一來源真相）
+- Help 對話框 6 個 tab 涵蓋 Plateau/WMA、Isochron、MSWD、Age formula、Ar components、3D Plane Fit、References。HTML 渲染含表格、上下標、外部連結
+
+### PlaneFit3D 數學文件 + caller-side bug fix
+
+審查 Kent et al. (1990) + Wu (2007) NTU 碩論 (R94224113) vs `PlaneFit3D.py`：
+
+**`PlaneFit3D.py` 本體：沒 bug**。連 Wu 2007 eq 3-27 的正負號 typo 都有註記並修正（pyADR 用 `cov(δ̂) = τ²·(-∂²L_p)⁻¹` 而非 Wu 原寫法）。
+
+**Caller-side bug**（NTNU_DataReduction.py L4003 + L4596）：
+
+```python
+x40 = (df["40Ar(r)"] + df["40Ar(a)"]).values[mask]
+s40 = np.hypot(σ_40r, σ_40a)   # ← 錯
+```
+
+`40Ar(r)` 跟 `40Ar(a)` 透過分解 `40r = 40m - 40a - 40K` **負相關**，`cov(40r, 40a) = -σ²_40a`。所以：
+
+```
+var(40r + 40a) = σ²_40r + σ²_40a + 2·cov = σ²_40r - σ²_40a
+              = σ²_40m + σ²_40K
+```
+
+`np.hypot` 給的是 `σ²_40r + σ²_40a`，double-counts σ_40a。**跟 v3.8.1 修的 σ_36(m)/σ_39(m) 雙重計算同 pattern**。
+
+修法：`s40 = sqrt(max(σ²_40r - σ²_40a, 0))`。效果：σ_40 不再 inflated → MSWD 略升（更誠實）、σ_α/σ_β 略降、α/β/age 微移（<1%）。
+
+**σ_36 / σ_39 input 都直接從 CSV column 讀，沒做相加，沒類似 bug**。
+
+### Splash / 啟動體驗（從 v3.8.5 延伸）
+
+- Splash 至少顯示 3 秒（`QEventLoop + QTimer.singleShot` 不會凍結 splash 渲染）
+- Splash 版本/日期改 runtime QPainter overlay，不再 baked-in；改 `.app_info.txt` 自動套用，不用重生 splash.png
+- Splash credits 改 NTNU Ar/Ar Lab + Prof. Meng Wan (Mary) Yeh，移除個人姓名
+- pyADR.bat 改成 `if errorlevel 1 pause`，正常關 GUI 時 cmd 視窗自動收掉，Python 崩潰才停下來顯示錯誤
+
+### 文件
+
+- `FORMULAS.md` 新增 §11「3D Plane Fit」完整數學推導（10 小節 11.1-11.10），含 Kent 1990 + Wu 2007 引文跟驗證樣品（SYL31）
+- Help dialog 新增 "3D Plane Fit" tab
+- References tab 加 Kent 1990, Wu 2007, Titterington & Halliday 1979 等引文
+
+### 檔案改動
+
+- `Utilities.py` — `getDFStatistics_sh` 移除兩個 DFI/DFN 第一條 fit line drawing；regression annotation 改透過 `return_limits` dict 回傳
+- `NTNU_DataReduction.py` — DiagramPlots_SH 加 isochron_method dropdown + Main/Help menu；`_show_diagram_plot_help` 新增（7-tab 對話框）；`SH_apply_axes` 清 suffix；σ_40 input fix ×2
+- `AutoPipeline.py` — `AutoPipelineWindow` 加 Main/Help menu，Help action 委派 NTNU 共用 dialog
+- `FORMULAS.md` — 新增 §11
+- `.work/.app_info.txt` — `3.8.5` → `3.8.6`
+
+### 驗證 checklist
+
+- [ ] NO.65 muscovite 跑全 pipeline，比對 plateau 9.77 ± 0.28 Ma 維持不變
+- [ ] DiagramPlot SH 切 OLS / York 2004，infoLabel 顯示對應方法 + regression MSWD
+- [ ] DFW / DFA / DFC / DFM 切換時 infoLabel 不殘留 regression info
+- [ ] Help dialog 開得起來，3D Plane Fit tab 顯示正常
+- [ ] SYL31（Sylhet Trap basalt 115.4 ± 3.9 Ma）跑 PlaneFit3D，MSWD / α / β 略偏離 v3.8.5 數值（σ_40 fix 影響）
 
 ---
 
