@@ -995,22 +995,25 @@ class MvCanvas(QtWidgets.QWidget):
         vb.addWidget(self.titleLbl)
 
         # mV canvas — 3:4 aspect (width:height)
+        # v3.8.11: reduced min width 320→240 so 5 canvases fit a 1440px wide
+        # window without horizontal scroll.
         self.cv_mv = QtWidgets.QLabel()
-        self.cv_mv.setMinimumSize(320, 1)  # 增加最小寬度確保五個能並排
+        self.cv_mv.setMinimumSize(240, 1)
         self.cv_mv.setAlignment(QtCore.Qt.AlignCenter)
         self.cv_mv.setStyleSheet(f'background:white;border:1px solid {BRD};')
         self.cv_mv.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         vb.addWidget(self.cv_mv, 3)
 
-        # cycle buttons: single row 1-10
+        # cycle buttons: single row 1-10. v3.8.11: shrunk 32→26 px so 10 buttons
+        # + spacing fit inside the narrower canvas min width.
         self._btns = []
         cg = QtWidgets.QWidget()
         gl = QtWidgets.QHBoxLayout(cg)
         gl.setContentsMargins(0, 0, 0, 0); gl.setSpacing(2)
         for i in range(10):
             b = QtWidgets.QPushButton(str(i + 1))
-            b.setFixedSize(32, 32); b.setCheckable(True); b.setChecked(True)
+            b.setFixedSize(26, 26); b.setCheckable(True); b.setChecked(True)
             b.setStyleSheet(self._cs(True))
             b.clicked.connect(lambda _, idx=i: self._toggle(idx))
             gl.addWidget(b)
@@ -1639,92 +1642,57 @@ class CalcT0Page(QtWidgets.QWidget):
         hl = QtWidgets.QHBoxLayout()
         hl.setContentsMargins(0, 0, 0, 0); hl.setSpacing(0)
 
-        # Sidebar with grouped sections
-        sb  = QtWidgets.QWidget(); sb.setFixedWidth(105)
-        sb.setStyleSheet(f'background:#f0f0f0;border-right:1px solid #cccccc;')
+        # v3.8.11: Sidebar redesigned to match DiagramPlots_SH default Qt button
+        # style — no per-button stylesheets, fixed 90×40 size, vertical stack.
+        sb  = QtWidgets.QWidget(); sb.setFixedWidth(100)
         sbl = QtWidgets.QVBoxLayout(sb)
-        sbl.setContentsMargins(5, 6, 5, 6); sbl.setSpacing(3)
+        sbl.setContentsMargins(4, 6, 4, 6); sbl.setSpacing(4)
 
         def sb_btn(txt, col='default'):
-            # v3.8.10: uniform neutral grey to match other sub-pages
-            # (AgeCalculation / MassRatio / JCalculation etc.). The col argument
-            # is kept for back-compat with existing call sites but is ignored.
+            """Plain Qt-default push button, fixed 90×40 (mirrors DiagramPlots_SH
+            91×51 sidebar buttons)."""
             b = QtWidgets.QPushButton(txt)
-            b.setStyleSheet(_btn_style(PNL, TXT, BRD))
+            b.setFixedSize(90, 40)
             return b
 
-        def group_hdr(txt):
-            """Section header for sidebar groups"""
-            w = QtWidgets.QLabel(txt)
-            w.setStyleSheet(
-                f'font-size:9px;font-weight:bold;color:{TXT3};'
-                f'background:transparent;padding:2px 0 1px 2px;'
-                f'border-bottom:1px solid {BRD};')
-            return w
-
-        self.returnBtn  = sb_btn('Return')
-        self.saveBtn    = sb_btn('Save T₀',     'green')
-        self.btnLdBlank = sb_btn('Load\nBlank', 'blue')
-        self.btnLdSig   = sb_btn('Load\nSample','blue')
-        self.btnL       = sb_btn('Linear',      'blue')
-        self.btnA       = sb_btn('Average')
-        self.btnAB      = sb_btn('Auto\nBlank', 'green')
-        self.btnAS      = sb_btn('Auto\nSignal','green')
-        self.btnABest   = sb_btn('Bi-Dir\nAll', 'green')
-        self.btnM       = sb_btn('Manual')
-
-        # Grouped sidebar layout
-        sbl.addWidget(group_hdr('NAV'))
-        sbl.addWidget(self.returnBtn)
-        sbl.addWidget(self.saveBtn)
-        
-        sbl.addWidget(group_hdr('FILE'))
-        sbl.addWidget(self.btnLdBlank)
-        sbl.addWidget(self.btnLdSig)
-        
-        sbl.addWidget(group_hdr('FIT'))
-        sbl.addWidget(self.btnL)
-        sbl.addWidget(self.btnA)
-        
-        sbl.addWidget(group_hdr('AUTO'))
-        sbl.addWidget(self.btnAB)
-        sbl.addWidget(self.btnAS)
-        sbl.addWidget(self.btnABest)
-        sbl.addWidget(self.btnM)
-
-        # ── Stats / decay params group ────────────────────────────────
-        sbl.addWidget(group_hdr('STATS'))
-        # σ method dropdown
-        sigma_lbl = QtWidgets.QLabel('σ method')
-        sigma_lbl.setStyleSheet(f'font-size:9px;color:{TXT3};padding-left:2px;')
-        sbl.addWidget(sigma_lbl)
+        # σ method dropdown at top (parity with DiagramPlots_SH 'red'/'o' pickers)
         self.sigmaCombo = QtWidgets.QComboBox()
         self.sigmaCombo.addItem('Standard SE', 'standard')
         self.sigmaCombo.addItem('Calc T₀',     'calc_t0')
         self.sigmaCombo.setToolTip(
             'Standard SE: σ via pcov[-1,-1] (Li et al. 2019 Eq.1).\n'
-            'Calc T₀: σ via std(|residuals|)/√n (matches Calculate T₀ page).')
-        self.sigmaCombo.setStyleSheet(
-            'QComboBox{font-size:10px;padding:2px 4px;'
-            'background:white;border:1px solid #b0b0b0;border-radius:3px;}')
+            'Calc T₀: σ via std(|residuals|)/√n (matches CalcT0Page).')
         idx = 0 if SIGMA_METHOD == 'standard' else 1
         self.sigmaCombo.setCurrentIndex(idx)
         self.sigmaCombo.currentIndexChanged.connect(self._on_sigma_method_changed)
+        self.sigmaCombo.setFixedSize(90, 26)
         sbl.addWidget(self.sigmaCombo)
 
-        # Δt (auto, read-only — computed from OGD param + SPD from .dat)
-        dt_lbl = QtWidgets.QLabel('Δt (auto)')
-        dt_lbl.setStyleSheet(f'font-size:9px;color:{TXT3};padding-left:2px;padding-top:4px;')
-        sbl.addWidget(dt_lbl)
-        self.deltaTLbl = QtWidgets.QLabel(f'{DELTA_T_DAYS:.0f} d')
+        # Δt (auto, read-only) — second slot at top
+        self.deltaTLbl = QtWidgets.QLabel(f'Δt: {DELTA_T_DAYS:.0f} d')
         self.deltaTLbl.setToolTip(
             'Auto-computed: OGD (from parameters) → SPD (from .dat Project#).\n'
             'Used for ³⁷Ar decay (t½=35.011 d) and ³⁹Ar decay (t½=269 yr).')
-        self.deltaTLbl.setStyleSheet(
-            'QLabel{font-size:11px;padding:3px 4px;background:#eeede8;'
-            f'border:1px solid {BRD};border-radius:3px;color:{TXT2};}}')
         self.deltaTLbl.setAlignment(QtCore.Qt.AlignCenter)
+        self.deltaTLbl.setFixedHeight(26)
         sbl.addWidget(self.deltaTLbl)
+
+        # Buttons — Qt default look, fixed 90×40, no stylesheets.
+        self.returnBtn  = sb_btn('Return')
+        self.saveBtn    = sb_btn('Save T₀')
+        self.btnLdBlank = sb_btn('Load Blank')
+        self.btnLdSig   = sb_btn('Load Sample')
+        self.btnL       = sb_btn('Linear')
+        self.btnA       = sb_btn('Average')
+        self.btnAB      = sb_btn('Auto Blank')
+        self.btnAS      = sb_btn('Auto Signal')
+        self.btnABest   = sb_btn('Bi-Dir All')
+        self.btnM       = sb_btn('Manual')
+
+        for b in (self.returnBtn, self.saveBtn, self.btnLdBlank, self.btnLdSig,
+                  self.btnL, self.btnA, self.btnAB, self.btnAS, self.btnABest,
+                  self.btnM):
+            sbl.addWidget(b)
 
         sbl.addStretch()
 
@@ -1791,22 +1759,17 @@ class CalcT0Page(QtWidgets.QWidget):
         cvl.addWidget(self._lbl_title)
         
         # 5 canvases in a horizontal row (shared by Blank and Signal).
-        # v3.8.10: wrap in horizontal scroll so the 5th canvas (⁴⁰Ar) + its cycle-10
-        # button stay reachable on narrower windows instead of being clipped.
+        # v3.8.11: removed horizontal scroll wrapper. Canvases now share available
+        # horizontal space evenly via stretch=1, letting the 5th (⁴⁰Ar) stay
+        # visible on full-screen without needing to scroll sideways.
         crow = QtWidgets.QHBoxLayout(); crow.setSpacing(2)
         self._cv = [MvCanvas(i) for i in range(5)]
         for cv in self._cv:
             cv.maskChanged.connect(self._mask_changed)
-            crow.addWidget(cv)
+            crow.addWidget(cv, 1)
         crow_w = QtWidgets.QWidget(); crow_w.setLayout(crow)
-        crow_w.setMinimumHeight(680)
-        crow_scroll = QtWidgets.QScrollArea()
-        crow_scroll.setWidgetResizable(True)
-        crow_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-        crow_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        crow_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
-        crow_scroll.setWidget(crow_w)
-        cvl.addWidget(crow_scroll, 1)
+        crow_w.setMinimumHeight(620)
+        cvl.addWidget(crow_w, 1)
         
         # ── Shared legend for Row 1 (mV vs time) ────────────────
         mv_legend = QtWidgets.QLabel(
@@ -1864,7 +1827,12 @@ class CalcT0Page(QtWidgets.QWidget):
         p5l.addWidget(self.cv_degas, 1)
         guide_vl.addWidget(p5, 1)
 
-        guide_container.setMinimumHeight(300)
+        # v3.8.11: FIX guide_container height to 280 (was minHeight=300, was
+        # expanding indefinitely and competing with the canvas row for viewport
+        # space). Now canvas_w (mV + T0vs2σ) gets all stretch and fills the
+        # visible area; Degassing sits at a fixed 280 px below, requiring a
+        # vertical scroll to see — which is what the user wants.
+        guide_container.setFixedHeight(280)
         left_vb.addWidget(guide_container)
         
         # Hidden tables used by _refresh_sum / _refresh_prev (no UI surface)
@@ -1885,9 +1853,9 @@ class CalcT0Page(QtWidgets.QWidget):
         self._chips['Mode'].setText('Auto')
         self._chips['Fit'].setText('Linear')
         # nextBtn will be set by AutoPipelineWindow
-        # Set minimum size so QScrollArea knows content height
-        # diagrams row + guide row + footer ≈ 900px minimum
-        mn.setMinimumHeight(900)
+        # v3.8.11: minimum height driven by inner layout (crow_w 620 + guide
+        # 280 + chrome ≈ 950). Don't hardcode 900 here — that was forcing the
+        # outer QScrollArea to ALWAYS show vertical scroll even on tall screens.
         # Defer scroll.setWidget to avoid FigCanvas sizeHint deadlock on Py3.13
         self._deferred_mn = mn
         self._deferred_scroll = scroll
@@ -1969,34 +1937,33 @@ class CalcT0Page(QtWidgets.QWidget):
         self.footMsg.setText('Files loaded')
 
     def _auto_update_delta_t(self):
-        """Read OGD from parent's params; combine with first sample date → Δt."""
+        """Read OGD from AutoPipelineWindow's _params; combine with first sample
+        date → Δt. Update the sidebar label and DELTA_T_DAYS global."""
         global DELTA_T_DAYS
+        # v3.8.11 fix: AutoPipelineWindow stores params as self._params (underscore)
+        # via set_context(), but this function used to look for `parent.params`
+        # without underscore — search always failed, label stuck at "0 d".
         try:
             parent = self.parent()
-            while parent is not None and not hasattr(parent, 'params'):
+            while parent is not None and not hasattr(parent, '_params'):
                 parent = parent.parent()
-            if parent is None or not hasattr(parent, 'params'):
+            if parent is None or getattr(parent, '_params', None) is None:
                 return
-            ogd = parent.params[parent.pnames.index('OG Date')]
+            ogd = parent._params[parent._pnames.index('OG Date')]
         except (AttributeError, ValueError, IndexError):
             return
         if not self._step_dates:
             return
-        spd = list(self._step_dates.values())[0]   # first step
+        spd = list(self._step_dates.values())[0]
         dt = compute_delta_t_days(ogd, spd)
         DELTA_T_DAYS = float(dt)
-        # update sidebar display if exists
-        ap = parent
-        # v3.8.10 fix: deltaTLbl lives on self (CalcT0Page), not on AutoPipelineWindow.
-        # Previously this hasattr check always failed → Δt UI never updated, even
-        # though DELTA_T_DAYS global was being set correctly.
         if hasattr(self, 'deltaTLbl'):
-            self.deltaTLbl.setText(f'{dt} d')
+            self.deltaTLbl.setText(f'Δt: {dt} d')
             self.deltaTLbl.setToolTip(
                 f'OGD: {ogd}\nSPD: {spd}\nΔt = SPD − OGD = {dt} days')
-        if hasattr(ap, 'statusBar'):
+        if hasattr(parent, 'statusBar'):
             try:
-                ap.statusBar().showMessage(
+                parent.statusBar().showMessage(
                     f'Auto Δt = {dt} d  (OGD {ogd} → SPD {spd})', 5000)
             except Exception:
                 pass

@@ -1,8 +1,80 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11
 最後整理日期：2026-05-27
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.11（2026-05-27）— AutoPipeline T0 頁面 layout 調整 + Δt bug fix
+
+### 問題
+
+v3.8.10 把 Panel ⑥⑦⑧ 砍掉後，剩下的 ⑤ Degassing Pattern 用 stretch=1 + minHeight=300 → 佔據過多版面，使用者要滾才能看到每個 isotope canvas 下方的 T₀ vs 2σ scatter。其他問題：
+
+- 5 canvases 在 v3.8.10 包了 horizontal scroll，使用者全螢幕也看到左右 scrollbar
+- 左側 sidebar 仍有 group header + 各種 padding，跟 DiagramPlots_SH 風格不一致
+- Δt (auto) 在 sidebar 永遠顯示 `0 d` — v3.8.10 改過但仍沒生效
+
+### 修法
+
+**1. Layout：固定 Degassing 高度 280 px，canvas section 填滿視窗剩餘空間**
+
+- `guide_container.setMinimumHeight(300)` → `setFixedHeight(280)`
+- `crow_w.setMinimumHeight(680)` → `setMinimumHeight(620)`
+- 拿掉強制的 `mn.setMinimumHeight(900)` — 讓內層 layout 自然計算
+
+結果：mV vs time + T₀ vs 2σ scatter 一定在初始視窗可見，往下滾才看 Degassing。
+
+**2. 拿掉 v3.8.10 的橫向 QScrollArea**
+
+5 個 MvCanvas 直接放 `QHBoxLayout` 並用 stretch=1 平均分配寬度。配合：
+
+- `cv_mv.setMinimumSize(320, 1)` → `setMinimumSize(240, 1)`
+- Cycle button 從 32×32 → 26×26
+
+5 canvases 總最小寬度從 ~1820 px 降到 ~1430 px，1440p 螢幕也能塞、不再出現橫向 scrollbar。
+
+**3. Sidebar 比照 DiagramPlots_SH 預設 Qt 按鈕**
+
+```python
+def sb_btn(txt, col='default'):
+    b = QtWidgets.QPushButton(txt)
+    b.setFixedSize(90, 40)   # 比照 DiagramPlots_SH 91×51
+    return b                  # 無 setStyleSheet → 用 Qt 預設外觀
+```
+
+拿掉：group header (NAV/FILE/FIT/AUTO/STATS)、`sb.setStyleSheet`、每個按鈕的 `_btn_style(...)`、deltaTLbl 的 box style。
+
+新版佈局：σ method dropdown → Δt label → 10 個按鈕（Return / Save T₀ / Load Blank / Load Sample / Linear / Average / Auto Blank / Auto Signal / Bi-Dir All / Manual）
+
+**4. Δt = 0 d 一直不更新的 bug**
+
+`_auto_update_delta_t()` 沿著 parent chain 找 `hasattr(parent, 'params')`，但 `AutoPipelineWindow.set_context()` 存的是 `self._params`（底線）。所以 `parent.params` 永遠不存在，function 還沒讀到 OGD 就 return，label 維持初始值。
+
+v3.8.10 改過 `self.deltaTLbl`（label 位置）但沒改 `parent.params` → `parent._params` — 兩個 bug 接續。本版補上後者：
+
+```python
+while parent is not None and not hasattr(parent, '_params'):
+    parent = parent.parent()
+ogd = parent._params[parent._pnames.index('OG Date')]
+```
+
+Label 格式從 `'{dt} d'` 改成 `'Δt: {dt} d'` 比較容易辨識。
+
+### 驗證 checklist
+
+- [ ] 全螢幕（≥1440p）載入 blank+signal：5 canvases 平均分配、無橫向 scrollbar
+- [ ] mV vs time + T₀ vs 2σ 在初始視窗都可見（不用滾）
+- [ ] 滾輪往下能看到 Degassing Pattern Overview
+- [ ] sidebar 按鈕全部同樣大小、用 OS 預設 Qt 風格、無自訂顏色
+- [ ] 載完 blank+signal 後 sidebar 顯示 `Δt: 83 d`（NO.65 的話）而非 `Δt: 0 d`
+- [ ] NO.65 1100°C 重跑驗證：10.918 ± 0.866 Ma（科學結果不能因為這些 UI 改動變）
+
+### 檔案改動
+
+- `AutoPipeline.py` — CalcT0Page sidebar / canvas layout / `_auto_update_delta_t` parent.params bug
+- `.work/.app_info.txt` — 3.8.10 → 3.8.11
 
 ---
 
