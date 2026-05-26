@@ -767,14 +767,51 @@ class App():
         except Exception:
             pass  # icon is cosmetic; never block startup
 
-        # v3.8.4: splash screen during startup. Version + date + URL are
-        # baked into splash.png at build time; showMessage only writes the
-        # runtime "Loading…" status in the bottom-right corner.
+        # v3.8.4: splash screen during startup.  splash.png is a static
+        # template (logo, title, lab, PI, URL all baked).  Version + date
+        # are drawn here at runtime from .work/.app_info.txt so they
+        # update automatically when .app_info.txt changes — no need to
+        # regenerate splash.png on each release.
         self._splash = None
         try:
             _splash_path = os.path.join(self.work_dir, '.work', 'splash.png')
             if os.path.exists(_splash_path):
                 _pix = QtGui.QPixmap(_splash_path)
+
+                # Read version + date from .app_info.txt
+                _ver = '?'; _date = '?'
+                try:
+                    with open(os.path.join(self.work_dir, '.work', '.app_info.txt'),
+                              encoding='utf-8') as _f:
+                        _lines = [ln.strip() for ln in _f.readlines()]
+                    if len(_lines) > 1: _ver = _lines[1]
+                    if len(_lines) > 4: _date = _lines[4]
+                except Exception:
+                    pass
+
+                # Paint v{ver} and "updated {date}" onto pixmap.
+                # Position anchors must match the empty slot left by the
+                # splash generator (y ~348 for version, y ~376 for date).
+                _painter = QtGui.QPainter(_pix)
+                _painter.setRenderHint(QtGui.QPainter.Antialiasing)
+                _painter.setRenderHint(QtGui.QPainter.TextAntialiasing)
+                _W = _pix.width()
+
+                _font_v = QtGui.QFont('Georgia', 16, QtGui.QFont.Bold)
+                _painter.setFont(_font_v)
+                _painter.setPen(QtGui.QColor(30, 50, 110))
+                _painter.drawText(QtCore.QRect(0, 346, _W, 30),
+                                  QtCore.Qt.AlignHCenter,
+                                  f'v{_ver}')
+
+                _font_d = QtGui.QFont('Arial', 10)
+                _painter.setFont(_font_d)
+                _painter.setPen(QtGui.QColor(70, 70, 70))
+                _painter.drawText(QtCore.QRect(0, 374, _W, 22),
+                                  QtCore.Qt.AlignHCenter,
+                                  f'updated {_date}')
+                _painter.end()
+
                 self._splash = QtWidgets.QSplashScreen(
                     _pix, QtCore.Qt.WindowStaysOnTopHint)
                 self._splash.setMask(_pix.mask())
