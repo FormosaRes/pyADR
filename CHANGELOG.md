@@ -1,8 +1,49 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0
-最後整理日期：2026-05-11
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3
+最後整理日期：2026-05-25
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.3（2026-05-25）— σ_J 括號 bug fix
+
+### 問題
+
+`Utilities.py` 中 `getJVolumeStatistics` 的 σ_J 計算（L2864）有 operator precedence 造成的括號錯誤：
+
+```python
+# 錯（Python parse 後實際是 e^(λt) − 1/F_r²）：
+v3 = F_std**2 * ((np.exp(l*t)) - 1 / Ar_39_K_40_r_ratio**2) ** 2
+
+# 正（(e^(λt) − 1) / F_r²）：
+v3 = F_std**2 * ((np.exp(l*t) - 1) / Ar_39_K_40_r_ratio**2) ** 2
+```
+
+由 J = (e^(λt) − 1) / F_r 的偏導 ∂J/∂F_r = (e^(λt) − 1)/F_r² 推得正確分子應為 `(np.exp(l*t) - 1)`。
+
+### 影響
+
+- typical λt ≈ 1.5e-10（t ~ 100 day, λ_K = 5.531e-10/yr） → e^(λt) − 1 ≈ 1.5e-10（極小）
+- 錯誤公式算 e^(λt) − 1/F_r² ≈ 1 − 1/F_r²（量級 ~ O(1)）
+- 結果：**σ_J 系統性高估數個數量級**
+- J 出現在 age 公式 `T = ln(1 + J·F)/λ` 中，σ_J 透過 ∂T/∂J = F/(λ(1+JF)) 傳到所有 step 的 σ_age → 整條 σ_age pipeline 過去都是嚴重高估
+- **age 中心值不變**（J 中心值未動），改的只有 σ_age
+
+### 文獻支持
+
+`pyADR_全module數學式審查_v5.docx` §3「J Volume σ_J」（Critical, P1）；Bevington & Robinson (1992) 標準 Gaussian error propagation。
+
+### 驗證 checklist
+
+- [ ] NO.65 muscovite（irradiation 0621-01C, 600–1500 °C）跑完，weighted mean age 中心值應仍在 9.77 ± 0.28 Ma 內
+- [ ] σ_age 個別 step 跟舊版比應**變小**（高估部分消掉）
+- [ ] 過去報過的 J value σ 都需重算
+
+### 檔案改動
+
+- `Utilities.py` L2864 — 一對括號 + 兩行 comment 註記
+- `.work/.app_info.txt` — `3.8.1` → `3.8.3`（補上跳過的 `3.8.2` AutoPipeline σ_T0 SE-from-covariance fix）
 
 ---
 

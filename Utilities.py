@@ -2861,7 +2861,9 @@ def getJVolumeStatistics(file, t,t_std,constants):
     J = (np.exp(l*t)-1)/(Ar_40_radioactive/Ar_39_K) 
     v1 = l_std**2*(t*np.exp(l*t)/Ar_39_K_40_r_ratio)**2
     v2 = t_std ** 2 * (l * np.exp(l * t) / Ar_39_K_40_r_ratio) ** 2
-    v3 = F_std ** 2 * ((np.exp(l * t)) - 1 / Ar_39_K_40_r_ratio ** 2) ** 2
+    # v3.8.3 fix: 補上括號使分子是 (e^(λt) − 1)，否則 operator precedence
+    # 會解析成 (e^(λt) − 1/F_r²)，造成 σ_J 嚴重高估 (∂J/∂F_r 應為 (e^(λt)−1)/F_r²)
+    v3 = F_std ** 2 * ((np.exp(l * t) - 1) / Ar_39_K_40_r_ratio ** 2) ** 2
     J_std = pow(v1 + v2 + v3, 0.5)
     J_int = pow(v3, 0.5)
     # FIX: Ca/K = 37Ar_ca × R / 39Ar_k  (R=0.52, lab calibration factor)
