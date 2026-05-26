@@ -1482,6 +1482,12 @@ class App():
 
         self._save_SH_config(pname, xlim, ylim, legend)
 
+        # v3.8.6: default-clear regression info every time a new panel is drawn.
+        # Only the DFN/DFI branch below repopulates it.  Without this reset,
+        # switching from DFI to DFW (etc.) leaves the previous suffix dangling
+        # and appended to the unrelated panel's infoLabel.
+        self.DiagramPlots_SHPage._regression_info_str = ""
+
         # BUG FIX: B2 - Initialize actual_xlim/actual_ylim to avoid NameError
         actual_xlim = xlim if xlim is not None else (0, 100)
         actual_ylim = ylim if ylim is not None else (0, 10)
