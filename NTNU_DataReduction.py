@@ -221,6 +221,19 @@ class DiagramPlots_SH(QtWidgets.QMainWindow, UI.DiagramPlots_SH.Ui_MainWindow):
         self.infoLabel.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         self.infoLabel.setGeometry(QtCore.QRect(100, 148, 620, 32))
 
+        # v3.8.6: persistent regression-info label (only visible for DFN/DFI).
+        # Sits to the right of infoLabel; never overwritten by mouse hover.
+        self.regressionInfoLabel = QtWidgets.QLabel("", self.centralwidget)
+        self.regressionInfoLabel.setObjectName("regressionInfoLabel")
+        self.regressionInfoLabel.setStyleSheet(
+            "QLabel { background-color: #eef3f8; color: #1a3a6e; "
+            "padding: 4px 10px; border: 1px solid #6e8bb0; font-size: 13px; "
+            "font-weight: bold; }"
+        )
+        self.regressionInfoLabel.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        self.regressionInfoLabel.setGeometry(QtCore.QRect(725, 148, 400, 32))
+        self.regressionInfoLabel.setVisible(False)
+
         # Plot Controls UI (redesigned, scrollable)
         self.ctrlBox = QtWidgets.QGroupBox("Plot Controls", self.centralwidget)
         self.ctrlBox.setObjectName("ctrlBox")
@@ -1305,6 +1318,24 @@ class App():
                 # FIX#8: store point data for isochron click detection
                 self.iso_pts_DFN = limits.get('DFN_pts', self.iso_pts_DFN)
                 self.iso_pts_DFI = limits.get('DFI_pts', self.iso_pts_DFI)
+
+                # v3.8.6: update persistent regression-info label (DFN/DFI only).
+                try:
+                    _reg_method = limits.get('regression_method', _iso_method)
+                    _reg_mswd   = limits.get('regression_mswd', float('nan'))
+                    _reg_n      = limits.get('regression_n', 0)
+                    if pname in ('DFN', 'DFI'):
+                        _m_lbl = 'York 2004' if _reg_method == 'york' else 'OLS'
+                        _m_str = (f'{_reg_mswd:.2f}'
+                                  if _reg_mswd == _reg_mswd else '—')
+                        self.DiagramPlots_SHPage.regressionInfoLabel.setText(
+                            f'  Method: {_m_lbl}   |   '
+                            f'Regression MSWD: {_m_str} (n={_reg_n})')
+                        self.DiagramPlots_SHPage.regressionInfoLabel.setVisible(True)
+                    else:
+                        self.DiagramPlots_SHPage.regressionInfoLabel.setVisible(False)
+                except Exception:
+                    self.DiagramPlots_SHPage.regressionInfoLabel.setVisible(False)
                 
                 # Get actual limits for current diagram
                 if pname == "DFN" and "DFN" in limits:

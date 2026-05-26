@@ -1535,27 +1535,10 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
         if i < len(original_indices_inv) and np.isfinite(x_inv[i]) and np.isfinite(y_inv[i])
     ]
 
-    # v3.8.5/v3.8.6 (A2/B1): annotate regression method + regression MSWD.
-    # The MSWD shown here is the REGRESSION MSWD (χ² of points to fit line),
-    # distinct from the PLATEAU MSWD (returned in result[4]) which is computed
-    # from step ages around WMA.  Both numbers are meaningful but represent
-    # different things — labelling them avoids ambiguity.
-    # v3.8.6 position: lower-left corner (legend is upper-left, group info
-    # boxes are usually upper-right / by data clusters, atm X marker is left-
-    # axis at y≈0.003 well above lower-left).
-    try:
-        _method_lbl = 'York 2004' if isochron_method == 'york' else 'OLS'
-        _mswd_reg_str = f'{mswd_regression:.2f}' if np.isfinite(mswd_regression) else '—'
-        _annot = (f'Regression: {_method_lbl}\n'
-                  f'Regression MSWD: {_mswd_reg_str} (n={len(x_inv)})')
-        ax_iv.text(0.02, 0.02, _annot,
-                   transform=ax_iv.transAxes,
-                   fontsize=8, ha='left', va='bottom',
-                   bbox=dict(facecolor='white', alpha=0.85,
-                             edgecolor='gray', boxstyle='round,pad=0.3'),
-                   zorder=20)
-    except Exception:
-        pass
+    # v3.8.6: regression method + regression MSWD no longer annotated on plot.
+    # Caller reads `regression_method` and `mswd_regression` from return dict
+    # (when return_limits=True) and displays them in the GUI's info strip
+    # instead, so the diagram itself stays clean.
 
     # Axes bbox for coordinate mapping
     _ax_pos_dfi = ax_iv.get_position()
@@ -1643,6 +1626,11 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
             _limits["DFI_pts"] = _dfi_pts if '_dfi_pts' in dir() else []
         _limits["DFN_bbox"] = _axes_bbox_dfn if '_axes_bbox_dfn' in dir() else (0.125, 0.11, 0.9, 0.9)
         _limits["DFI_bbox"] = _axes_bbox_dfi if '_axes_bbox_dfi' in dir() else (0.125, 0.11, 0.9, 0.9)
+        # v3.8.6: pass regression method + regression MSWD to caller so the GUI
+        # can display them outside the plot (no longer annotated on diagram).
+        _limits["regression_method"]   = isochron_method
+        _limits["regression_mswd"]     = float(mswd_regression) if np.isfinite(mswd_regression) else float('nan')
+        _limits["regression_n"]        = int(len(x_inv))
         return result, _limits
 
     return result
