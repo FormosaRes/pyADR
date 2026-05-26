@@ -1,5 +1,5 @@
 ![logo](.work/logo.png)
-# pyADR — NTNU modified fork (v3.8.6)
+# pyADR — NTNU modified fork (v3.8.7)
 
 40Ar/39Ar data reduction tool with GUI. Modified fork of [pyADR](https://github.com/AndrewLiu0725/pyADR) (original by **An-Jun (Andrew) Liu**), now maintained by **PANG Chi-Hsiu (NTNU)**.
 
@@ -125,6 +125,10 @@ python NTNU_DataReduction.py
 ---
 
 ## Changelog 摘要
+
+### v3.8.7 (2026-05-26)
+
+**Select-style sub-window 按鈕響應式置中**。`DiagramSelect`、`TypeSelect`、`StatSelect`、`JSelect`、`SaltSelect`、`SaltStatSelect`、`DatumSelect` 七個分支選擇子視窗原本用絕對 `QRect(210, y, 421, 51)` 設計給 800px 寬視窗，視窗放大時按鈕卡左邊。新增 `_make_select_page_responsive` helper 攔 `resizeEvent` 動態置中，wrapper class 各加一行呼叫。HomePage 已用 layout-based 不受影響；UI/*.py 檔保持原樣不動（auto-generated 容易被覆蓋）。
 
 ### v3.8.6 (2026-05-26)
 

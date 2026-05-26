@@ -49,6 +49,47 @@ import PlaneFit3D
 import ExcelChartExporter  # V3.4.1: Excel native chart export
 
 
+# v3.8.7: helper to keep buttons / title-label horizontally centered when the
+# user resizes a select-style sub-window (TypeSelect, StatSelect, JSelect,
+# SaltSelect, DiagramSelect, DatumSelect).  These UI files use absolute
+# QRect positioning (x=210, button width 421, designed for an 800-px-wide
+# window) so the buttons drift left when the window is resized larger.
+# HomePage UI uses QHBoxLayout/addStretch already → this helper skips it.
+def _make_select_page_responsive(window):
+    """For each big QPushButton / QLabel in centralwidget, recompute its x
+    so it stays horizontally centered when the window resizes.  No-op if
+    centralwidget already has a layout (assume that layout handles it)."""
+    cw = window.centralWidget()
+    if cw is None or cw.layout() is not None:
+        return
+
+    def _targets():
+        ts = []
+        for w in cw.findChildren(QtWidgets.QPushButton):
+            if w.geometry().width() > 100:
+                ts.append(w)
+        for w in cw.findChildren(QtWidgets.QLabel):
+            if w.geometry().width() > 100:
+                ts.append(w)
+        return ts
+
+    def _recenter():
+        w_total = cw.width()
+        if w_total <= 0:
+            return
+        for widget in _targets():
+            geo = widget.geometry()
+            widget.move((w_total - geo.width()) // 2, geo.y())
+
+    _orig_resize = window.resizeEvent
+    def _on_resize(event):
+        _orig_resize(event)
+        _recenter()
+    window.resizeEvent = _on_resize
+    # Deferred initial recenter — runs after Qt has done its first layout pass
+    QtCore.QTimer.singleShot(0, _recenter)
+
+
 # v3.8.6: shared help dialog used by DiagramPlot SH page + AutoPipeline window.
 # Content focuses on what each displayed number means and which formula / paper
 # it comes from — so users can defend the numbers in a paper / meeting.
@@ -388,6 +429,7 @@ class TypeSelect(QtWidgets.QMainWindow, UI.TypeSelect.Ui_MainWindow):
     def __init__(self, parent=None):
         QtWidgets.QMainWindow.__init__(self, parent)
         self.setupUi(self)
+        _make_select_page_responsive(self)
 
 class LinearRegressionPage(QtWidgets.QMainWindow, UI.LinearRegression.Ui_MainWindow):
     def __init__(self, parent=None):
@@ -404,6 +446,7 @@ class StatSelect(QtWidgets.QMainWindow, UI.StatSelect.Ui_MainWindow):
     def __init__(self, parent=None):
         QtWidgets.QMainWindow.__init__(self, parent)
         self.setupUi(self)
+        _make_select_page_responsive(self)
 
 class JStatistics(QtWidgets.QMainWindow, UI.JStatistics.Ui_MainWindow):
     def __init__(self, parent=None):
@@ -452,6 +495,7 @@ class JSelect(QtWidgets.QMainWindow, UI.JSelect.Ui_MainWindow):
     def __init__(self, parent=None):
         QtWidgets.QMainWindow.__init__(self, parent)
         self.setupUi(self)
+        _make_select_page_responsive(self)
 
 class ReselectTable(QtWidgets.QDialog, UI.ReselectDialog.Ui_Dialog):
     def __init__(self, parent=None):
@@ -487,7 +531,8 @@ class SaltSelect(QtWidgets.QMainWindow, UI.SaltSelect.Ui_MainWindow):
     def __init__(self, parent=None):
         QtWidgets.QMainWindow.__init__(self, parent)
         self.setupUi(self)
-        
+        _make_select_page_responsive(self)
+
 class SaltStat(QtWidgets.QMainWindow, UI.SaltStat.Ui_MainWindow):
     def __init__(self, parent=None):
         QtWidgets.QMainWindow.__init__(self, parent)
@@ -501,7 +546,8 @@ class SaltStatSelect(QtWidgets.QMainWindow, UI.SaltStatSelect.Ui_MainWindow):
     def __init__(self, parent=None):
         QtWidgets.QMainWindow.__init__(self, parent)
         self.setupUi(self)
-        
+        _make_select_page_responsive(self)
+
 class SmartSpinBox(QtWidgets.QDoubleSpinBox):
     """QDoubleSpinBox that strips trailing zeros from display."""
     def textFromValue(self, val):
@@ -1097,11 +1143,13 @@ class DiagramSelect(QtWidgets.QMainWindow, UI.DiagramSelect.Ui_MainWindow):
     def __init__(self, parent=None):
         QtWidgets.QMainWindow.__init__(self, parent)
         self.setupUi(self)
-        
+        _make_select_page_responsive(self)
+
 class DatumSelect(QtWidgets.QMainWindow, UI.DatumSelect.Ui_MainWindow):
     def __init__(self, parent=None):
         QtWidgets.QMainWindow.__init__(self, parent)
         self.setupUi(self)
+        _make_select_page_responsive(self)
         
 # main app
 # ===============================================================================

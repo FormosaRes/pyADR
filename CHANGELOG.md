@@ -1,8 +1,78 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7
 最後整理日期：2026-05-26
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.7（2026-05-26）— select-style sub-window 按鈕響應式置中
+
+七個「分支選擇」型子視窗的按鈕跟標題標籤改成隨視窗縮放保持水平置中。
+
+### 問題
+
+`UI/DiagramSelect.py`、`UI/TypeSelect.py`、`UI/StatSelect.py`、`UI/JSelect.py`、`UI/SaltSelect.py`、`UI/SaltStatSelect.py`、`UI/DatumSelect.py` 全部用絕對 `setGeometry(QtCore.QRect(210, y, 421, 51))`，設計給 800px 寬視窗（中心 = 400，button 中心 = 210 + 421/2 ≈ 420）。視窗放大時 button 卡在 x=210，整列往左偏。
+
+### 修法
+
+新增 module-level helper `_make_select_page_responsive(window)`（NTNU_DataReduction.py 開頭）：
+
+```python
+def _make_select_page_responsive(window):
+    cw = window.centralWidget()
+    if cw is None or cw.layout() is not None:
+        return  # HomePage 已用 QHBoxLayout，跳過
+    def _recenter():
+        w_total = cw.width()
+        for widget in cw.findChildren(QtWidgets.QPushButton):
+            if widget.geometry().width() > 100:
+                widget.move((w_total - widget.geometry().width()) // 2,
+                            widget.geometry().y())
+        # 同樣處理大 QLabel（title）
+    _orig = window.resizeEvent
+    def _on_resize(event):
+        _orig(event)
+        _recenter()
+    window.resizeEvent = _on_resize
+    QtCore.QTimer.singleShot(0, _recenter)  # 初次延遲到 Qt layout pass 之後
+```
+
+每個 select wrapper 的 `__init__` 加一行：
+
+```python
+class DiagramSelect(QtWidgets.QMainWindow, UI.DiagramSelect.Ui_MainWindow):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setupUi(self)
+        _make_select_page_responsive(self)   # ← 新加
+```
+
+### 適用範圍
+
+| Class | UI 檔 | 按鈕 |
+|---|---|---|
+| `TypeSelect` | UI/TypeSelect.py | MB / PBa / AS / PBs / SP / TP / ST |
+| `StatSelect` | UI/StatSelect.py | J / T0 / ARS / Salt |
+| `JSelect` | UI/JSelect.py | FSC / LP6 / MMHB |
+| `SaltSelect` | UI/SaltSelect.py | Ca / K |
+| `SaltStatSelect` | UI/SaltStatSelect.py | (similar pattern) |
+| `DiagramSelect` | UI/DiagramSelect.py | SH (Step Heating) / LS (LaserOB) |
+| `DatumSelect` | UI/DatumSelect.py | TT / isor |
+
+### 不受影響
+
+- `HomePage` 已經用 `QHBoxLayout(self.centralwidget) + addStretch()` layout-based 置中，helper 偵測到 `cw.layout() is not None` 自動跳過
+- Diagram / Statistics / 主資料表頁面（DiagramPlots_SH、JStatistics、T0Statistics 等）有自己的 `resizeEvent` 處理特殊 widget，未碰
+
+### 沒動 UI/*.py 檔的原因
+
+`UI/*.py` 是 PyQt5 uic 自動產生的，檔首有「WARNING! All changes made in this file will be lost!」。修改 .py 容易被未來重 generate 蓋掉。所以 fix 寫在 wrapper class 那邊，UI 檔保持原樣。
+
+### 檔案改動
+
+- `NTNU_DataReduction.py`：新增 helper `_make_select_page_responsive`；7 個 select wrapper class 各加一行呼叫
+- `.work/.app_info.txt`：`3.8.6` → `3.8.7`
 
 ---
 
