@@ -1,8 +1,86 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18
 最後整理日期：2026-05-27
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.18（2026-05-27）— 5 修：Help 擴充、Bi-Dir 移除、mV 留白、Δt 上移、σ 預設改
+
+### 問題
+
+使用者回饋 v3.8.17 後幾項：
+
+1. mV chart 上下白邊太多（1.2:1 強制 aspect 不匹配 cv_mv 自然高度比）
+2. **Bi-Dir All 按鈕應該在 v3.8.10 panel 清理時就移除**，但 sidebar 還留著
+3. **Auto Blank / Auto Signal 邏輯** 應該寫進 Help（之前 Cycle Selection Guide 只說顏色挑選）
+4. **Δt: N d** 在 sidebar 底部位置不顯眼 → 移到頂部 nav bar，作為 'Current step' 右邊的 chip
+5. **T₀ error 預設 σ method** 從 'standard'（SE-from-pcov）改回 'calc_t0'（std(|r|)/√n），跟 standalone CalcT0Page 預設一致
+
+### 修法
+
+#### 1. SIGMA_METHOD 預設 'standard' → 'calc_t0'
+
+`AutoPipeline.py:65` 全域 `SIGMA_METHOD = 'calc_t0'`，啟動時 sigmaCombo dropdown 預設指到 "Calc T₀"。Standalone CalcT0Page 一直用 std(|r|)/√n，這樣 AutoPipeline 預設行為跟它一致。User 仍可用 dropdown 切到 'standard' (SE-from-pcov, Li 2019 Eq.1)。
+
+**注意**：'standard' 統計上比較正確（covariance-based），'calc_t0' 會 ~4× 低估 σ（v3.8.2 CHANGELOG 已記錄）。預設改回 'calc_t0' 是 reproducibility 取向，不是「正確性」改動。
+
+#### 2. Bi-Dir All 按鈕徹底移除
+
+v3.8.10 panel 清理時保留了 sidebar `Bi-Dir All` 按鈕當「core 功能 fallback」。v3.8.18 移除：
+
+- `self.btnABest = sb_btn('Bi-Dir All')` 改成 hidden placeholder（`QPushButton().hide()`）保 back-compat
+- sidebar `addWidget` 迴圈把 btnABest 拿掉
+- `btnABest.clicked.connect(self._auto_best_all)` 拿掉
+- `_auto_best_all` method 保留（不刪除，未來如要 reintroduce），但沒有 UI 入口
+
+#### 3. mV chart 上下白邊消除
+
+v3.8.17 在 `_paint_mv` 強制 1.2:1 W:H aspect 的 figure，但 cv_mv 在 Qt vertical layout 下天生比 1.2:1 還高（~1.1:1），所以 1.2:1 pixmap 被 KeepAspectRatio 寬度限縮 → 上下產生白邊。
+
+**改動**：拿掉 1.2:1 enforcement，`fig_w = W/dpi, fig_h = H/dpi` 直接填滿 cv_mv。pixmap 跟 cv_mv 同 aspect → KeepAspectRatio 不會 leave padding。Y 軸資料範圍不變。
+
+#### 4. Δt 從 sidebar 移到頂部 nav bar
+
+舊：sidebar 底部 `self.deltaTLbl = QLabel('Δt: N d')`。
+新：
+- sidebar `deltaTLbl` 改 `.hide()`（保留 widget 當 back-compat，所有 `deltaTLbl.setText(...)` 呼叫不會 crash）
+- 頂部 nav bar chip 列表加入 `'Δt'` key，跟 Mode/Fit/Blank/Signal/Current step 同款 chip 樣式（小灰標 + 大字 Courier）
+- `CalcT0Page._auto_update_delta_t` 同時更新 `deltaTLbl`（hidden）和 `_chips['Δt']`（visible chip）
+- `CalcT0Page.__init__` 的 `_chips` placeholder dict 也加 `'Δt'` key 避免 KeyError 在 wire 完成前
+
+#### 5. Cycle Selection Guide dialog 擴充 Auto Blank / Auto Signal 邏輯
+
+`_show_cycle_guide` html 增加新 section：
+
+- Auto Blank 流程：linear fit → R² &lt; 0.8 啟動 outlier removal → 殘差 &gt; σ 排除 → 最多排 4 個
+- Auto Signal 流程：先鎖 blank T₀ → 對每個 step 獨立跑相同邏輯
+- 強調 Auto 的 outlier threshold (|r| &gt; σ) 比手動 cycle button z-score MAD (1.8/3.0 σ) 寬鬆，所以 Auto 跑完仍可能留下偏黃色但 sub-threshold 的點，可手動再 fine-tune
+- 「什麼時候用 Auto vs Manual」實戰建議
+- 一句話 SOP 改寫：`Auto Blank → Auto Signal → 紅色全排 → ...`
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - L65 `SIGMA_METHOD` default 改 'calc_t0'
+  - `CalcT0Page._build` sidebar Bi-Dir 按鈕移除 + `deltaTLbl.hide()`
+  - `AutoPipelineWindow._build` 頂部 chip 迴圈加 'Δt'
+  - `CalcT0Page._auto_update_delta_t` 加 `_chips['Δt']` 同步寫入
+  - `CalcT0Page.__init__` `_chips` placeholder 加 'Δt' key
+  - `MvCanvas._paint_mv` 拿掉 1.2:1 figsize enforcement
+  - `AutoPipelineWindow._show_cycle_guide` html 增加 Auto Blank/Signal section + SOP 改寫
+- `.work/.app_info.txt`：3.8.17 → 3.8.18
+
+### 驗證 checklist
+
+- [ ] 啟動後 sidebar σ method dropdown 預設顯示 "Calc T₀"（不是 Standard SE）
+- [ ] sidebar 不再有 Bi-Dir All 按鈕
+- [ ] 載入 sample 後 mV chart 上下白邊明顯減少，chart 幾乎填滿 cv_mv
+- [ ] 載入 sample 後，頂部 nav bar 'Current step' 右邊出現 'Δt' chip 顯示數字
+- [ ] sidebar 底部不再有獨立的 'Δt: N d' label
+- [ ] Help menu → Cycle Selection Guide 開啟後可看到新 "Auto Blank / Auto Signal 邏輯" section
+- [ ] dialog 開到底有更新的「Auto Blank → Auto Signal → ...」一句話 SOP
 
 ---
 
