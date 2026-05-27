@@ -985,14 +985,11 @@ class MvCanvas(QtWidgets.QWidget):
         vb = QtWidgets.QVBoxLayout(self)
         vb.setContentsMargins(2, 2, 2, 2); vb.setSpacing(2)
 
-        # Ar title above diagram
-        sup_map = {'36':'³⁶','37':'³⁷','38':'³⁸','39':'³⁹','40':'⁴⁰'}
-        self.titleLbl = QtWidgets.QLabel(f'Ar{sup_map.get(self.nm,self.nm)}')
-        self.titleLbl.setStyleSheet(
-            f'font-size:24px;font-weight:bold;color:{AR_COLS[self.ai]};'
-            f'padding-bottom:0px;margin-bottom:0px;')
-        self.titleLbl.setAlignment(QtCore.Qt.AlignLeft)
-        vb.addWidget(self.titleLbl)
+        # v3.8.15: Ar title now lives inside the chart (ax.set_title in _paint_mv).
+        # titleLbl kept as a hidden Qt widget for back-compat with any external
+        # code that might still reference it.
+        self.titleLbl = QtWidgets.QLabel('')
+        self.titleLbl.hide()
 
         # mV canvas. v3.8.14: min width 240 → 220 so 5 canvases + sidebar + margins
         # fit ~1280 px viewports (after Windows DPI scaling 125% etc.).
@@ -1371,13 +1368,13 @@ class MvCanvas(QtWidgets.QWidget):
         t0_inc, sig_inc, r2_inc, popt_inc = _fit_one(f, vt_i, mask)
 
         dpi = 96
-        # v3.8.12: render figure to actual cv_mv (W,H) dimensions instead of
-        # forcing a 3:4 aspect. The fixed 3:4 ratio left large empty bands
-        # above/below the chart whenever the QLabel was wider than tall.
         fig_w = max(W / dpi, 1.0)
         fig_h = max(H / dpi, 1.0)
+        # v3.8.15: drop the explicit white facecolor override so seaborn's
+        # default 'darkgrid' style (light blue-grey axes + white grid)
+        # propagates from Utilities.sns.set(). Matches the CalcT0Page sub-
+        # program look (NTNU_DataReduction.py + Utilities.calculateT0).
         fig, ax = _plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
-        fig.patch.set_facecolor('white'); ax.set_facecolor('white')
 
         # Y-axis: based on DATA only (never expand for blank T0 line)
         vspan = max(vs) - min(vs)
@@ -1407,32 +1404,29 @@ class MvCanvas(QtWidgets.QWidget):
             ax.plot(t_range, f(t_range, *popt_inc),
                     color='#1c7a3a', linestyle='--', linewidth=1.2)
 
-        ok    = (self._bt is None) or (t0_inc > self._bt)
-        col_hex = self.col if ok else '#b41a1a'
+        # v3.8.15: external Qt titleLbl deprecated — info moved into ax.set_title
+        # above. Keep the label hidden so layout doesn't reserve space for it
+        # (rather than removing it entirely, which would break other widget
+        # references). _refresh() no longer needs to update titleLbl text.
 
-        # Update external title label: Ar³⁶  T₀=...  err=...  R²=...
-        if hasattr(self, 'titleLbl'):
-            sup_map2 = {'36':'³⁶','37':'³⁷','38':'³⁸','39':'³⁹','40':'⁴⁰'}
-            sup2 = sup_map2.get(self.nm, self.nm)
-            # 警示判斷：signal T0 < blank T0
-            is_warning = (self._bt is not None) and (t0_inc <= self._bt)
-            warn_icon = '⚠ ' if is_warning else ''
-            txt_col = '#b41a1a' if is_warning else col_hex
-            self.titleLbl.setText(
-                f'<span style="font-size:24px;font-weight:bold;color:{self.col};">'
-                f'Ar{sup2}</span>'
-                f'&nbsp;<span style="font-size:13px;font-family:Courier New;color:{txt_col};">'
-                f'{warn_icon}T₀={t0_inc:.3e}&nbsp;&nbsp;err={sig_inc:.3e}&nbsp;&nbsp;'
-                f'R²={r2_inc:.3f}</span>'
-            )
-
-        ax.set_xlabel('t (sec)', fontsize=15)
-        # v3.8.13: only Ar36 shows the y-axis 'mV' label; the other four share
-        # implicit context, saving horizontal space inside each canvas.
+        ax.set_xlabel('t (sec)', fontsize=11)
+        # v3.8.13: only Ar36 shows the y-axis 'mV' label
         if self.ai == 0:
-            ax.set_ylabel('mV', fontsize=15)
+            ax.set_ylabel('mV', fontsize=11)
         else:
             ax.set_ylabel('')
+        ax.tick_params(labelsize=9)
+        ax.ticklabel_format(axis='y', style='sci', scilimits=(0, 0))
+
+        # v3.8.15: header info inside chart top-left (CalcT0Page convention).
+        # Title turns red if blank T₀ ≥ signal T₀ (a physics-constraint failure
+        # that previously surfaced as a ⚠ icon on the external Qt label).
+        is_warn = (self._bt is not None) and (t0_inc <= self._bt)
+        ax.set_title(
+            'Ar {}\n$T_0$ = {:.5e}\nerror = {:.5e}\n$R^2$ = {:.5e}'.format(
+                self.ai + 36, t0_inc, sig_inc, r2_inc),
+            loc='left', fontsize=9,
+            color='#b41a1a' if is_warn else '#222')
         ax.tick_params(labelsize=14)
         ax.yaxis.set_major_formatter(
             _ticker.ScalarFormatter(useMathText=True))
@@ -2672,36 +2666,60 @@ class CalcT0Page(QtWidgets.QWidget):
 
     # ── Save ─────────────────────────────────────────────────
     def _save(self):
-        # v3.8.10: always show explicit feedback with the absolute output path.
-        # Previously only updated the tiny status label, which users often missed
-        # → reported as "Save T₀ button doesn't work" even though files were written.
+        """v3.8.15: rewritten to mirror NTNU_DataReduction.CalcT0Page.LRP_save:
+        - blank CSV → <work_dir>/Data/T0/PBs/<blank_name>.csv
+        - sample step CSVs → <work_dir>/Data/T0/Sample/<sample_set>/<step>.csv
+        - folder dialog lets user pick / create the sample-set folder
+        - (PNG screenshots skipped for now; AutoPipeline canvases render to
+          per-isotope QPixmaps not a single LR.png, so a direct shutil.copy
+          doesn't apply here)."""
         if self._bvt is None:
             QtWidgets.QMessageBox.warning(self, 'Save T₀',
                 'No blank loaded — load Blank + Sample first.')
             return
-        # Output dir: 'Data/T0/' relative to current working directory.
-        # When launched via pyADR.bat from C:\pyADR-main\ this writes to
-        # C:\pyADR-main\Data\T0\, matching what the pipeline does on Next.
-        t0_dir = os.path.abspath(os.path.join('Data', 'T0'))
-        os.makedirs(t0_dir, exist_ok=True)
+
+        work_dir = os.path.dirname(os.path.abspath(__file__))
+        sample_root = os.path.join(work_dir, 'Data', 'T0', 'Sample')
+        pbs_root    = os.path.join(work_dir, 'Data', 'T0', 'PBs')
+        os.makedirs(sample_root, exist_ok=True)
+        os.makedirs(pbs_root,    exist_ok=True)
+
+        # Ask user for a target sample folder (created if missing). Default
+        # location is Data/T0/Sample/ so the dialog opens at the right place.
+        target = QtWidgets.QFileDialog.getExistingDirectory(
+            self, 'Choose sample folder for T₀ output (under Data/T0/Sample/)',
+            sample_root)
+        if not target:
+            return
+        os.makedirs(target, exist_ok=True)
 
         written = []
-        nm = self._chips['Blank file'].text().replace('.dat','') or 'blank'
-        bp = os.path.join(t0_dir, nm + '.csv')
-        write_t0_csv(bp, self._binfo, self._bT0, self._bSIG, np.zeros(5))
-        written.append(bp)
+        # Blank: write to Data/T0/PBs/<blank_name>.csv  AND  a copy inside the
+        # sample folder for easy lookup with the matching sample step files.
+        blank_name = self._chips['Blank file'].text().replace('.dat','') or 'blank'
+        bp_pbs    = os.path.join(pbs_root, blank_name + '.csv')
+        bp_sample = os.path.join(target,    blank_name + '.csv')
+        write_t0_csv(bp_pbs,    self._binfo, self._bT0, self._bSIG, np.zeros(5))
+        write_t0_csv(bp_sample, self._binfo, self._bT0, self._bSIG, np.zeros(5))
+        written.extend([bp_pbs, bp_sample])
+
+        # Each signal step: re-fit with its saved mask and write to target folder
         for sn, vt in self._svt.items():
-            f  = Utilities.fit_func_list[self._fit]
-            T0 = np.zeros(5); SIG = np.zeros(5); R = np.zeros(5)
+            ff = Utilities.fit_func_list[self._fit]
+            T0  = np.zeros(5); SIG = np.zeros(5); R = np.zeros(5)
             for ai in range(5):
-                t0, sig, r2, _ = _fit_one(f, vt[ai], self._smask[sn][ai])
-                T0[ai]=t0; SIG[ai]=sig; R[ai]=r2
-            sp = os.path.join(t0_dir, sn + '.csv')
+                t0, sig, r2, _ = _fit_one(ff, vt[ai], self._smask[sn][ai])
+                T0[ai] = t0; SIG[ai] = sig; R[ai] = r2
+            sp = os.path.join(target, sn + '.csv')
             write_t0_csv(sp, self._sinfo[sn], T0, SIG, R)
             written.append(sp)
+
         self.statusLbl.setText(f'✓ Saved {len(written)} files')
         QtWidgets.QMessageBox.information(self, 'Save T₀ — Done',
-            f'Saved {len(written)} T₀ CSV(s) to:\n{t0_dir}')
+            'Saved:\n'
+            f'  • Blank → Data/T0/PBs/{blank_name}.csv\n'
+            f'  • Blank + {len(self._svt)} step(s) → {target}\n\n'
+            f'Total: {len(written)} CSV files')
 
     # ── Public getters ────────────────────────────────────────
     def get_blank_csv(self, out_dir):

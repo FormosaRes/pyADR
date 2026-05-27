@@ -1,8 +1,56 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15
 最後整理日期：2026-05-27
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.15（2026-05-27）— SaveT0 路徑邏輯重寫 + mV plot 對齊 CalcT0Page
+
+### 1. SaveT0 路徑邏輯改成跟 NTNU_DataReduction.CalcT0Page.LRP_save 一致
+
+原本 v3.8.14 寫到 `os.path.abspath('Data/T0/')` 一個資料夾，blank 跟所有 step 都堆在那邊，沒分 PBs / Sample 分類，跟既有 `pyADR-main\Data\T0\Sample\NO.65\` 結構不一致。
+
+重寫流程比照 `LRP_save`：
+
+```
+work_dir = os.path.dirname(__file__)
+sample_root = work_dir + 'Data/T0/Sample/'
+pbs_root    = work_dir + 'Data/T0/PBs/'
+
+target = QFileDialog.getExistingDirectory(at sample_root)
+                                       # 使用者選 / 建 sample-set 資料夾
+                                       # 如 Data/T0/Sample/NO.65
+
+write blank   → pbs_root/<blank_name>.csv
+write blank   → target/<blank_name>.csv     # 同步一份在 sample 資料夾方便對照
+write step_i  → target/<step_name>.csv      for each signal step
+```
+
+完成後 popup 顯示完整存檔清單。PNG 截圖暫不存（AutoPipeline 每個 isotope 是獨立 QPixmap，沒有單一 LR.png 可以 `shutil.copyfile`，要存 PNG 還需要再寫一輪 grab pixmap → 合成 → save 的邏輯，先省略）。
+
+### 2. mV vs time plot style 對齊 Utilities.calculateT0
+
+原本 AutoPipeline `_paint_mv` 強制 `fig.patch.set_facecolor('white'); ax.set_facecolor('white')`，蓋掉了 `Utilities.py:15` 的 `seaborn.set()` 全域 darkgrid 設定，看起來跟 CalcT0Page 子程式（用 `Utilities.calculateT0` 畫的圖）完全不同調性。
+
+改動：
+
+- 拿掉 white facecolor override → 自動繼承 seaborn darkgrid（淺藍灰 `#EAEAF2` 底 + 白格線 + 隱藏 spines）
+- header 資訊 `Ar 36 / T₀ = ... / error = ... / R² = ...` 從外部 Qt label 改成 `ax.set_title(loc='left', fontsize=9)`，畫在 chart 左上角，跟 CalcT0Page 一致
+- blank ≥ signal 警示從 Qt 紅字 ⚠ icon 改成 chart title 字體變紅（不需 emoji）
+- 字體大小：xlabel/ylabel 15 → 11，ticks → 9（跟標準 matplotlib + seaborn 比例對齊）
+- `ticklabel_format(axis='y', style='sci', scilimits=(0,0))` 對齊 standalone
+
+連帶：
+
+- `titleLbl` Qt widget 隱藏（資訊已搬進 chart）。建構時 `setText('')` + `hide()`，留著當 back-compat 占位。
+- `_paint_mv` 內部不再 setText titleLbl，相關 ⚠ icon / warning color HTML 邏輯整段刪除。
+
+### 檔案改動
+
+- `AutoPipeline.py` — CalcT0Page._save 重寫；MvCanvas._paint_mv style + 移除 titleLbl 邏輯
+- `.work/.app_info.txt` — 3.8.14 → 3.8.15
 
 ---
 
