@@ -999,10 +999,10 @@ class MvCanvas(QtWidgets.QWidget):
         self.titleLbl.setMinimumWidth(1)
         vb.addWidget(self.titleLbl)
 
-        # mV canvas. v3.8.14: min width 240 → 220 so 5 canvases + sidebar + margins
-        # fit ~1280 px viewports (after Windows DPI scaling 125% etc.).
+        # mV canvas. v3.8.17: min width 220 → 260 so enlarged button rows
+        # (n-filter, best-per-n) still fit inside the chart's horizontal extent.
         self.cv_mv = QtWidgets.QLabel()
-        self.cv_mv.setMinimumSize(220, 1)
+        self.cv_mv.setMinimumSize(260, 1)
         self.cv_mv.setAlignment(QtCore.Qt.AlignCenter)
         self.cv_mv.setStyleSheet(f'background:white;border:1px solid {BRD};')
         self.cv_mv.setSizePolicy(
@@ -1012,6 +1012,7 @@ class MvCanvas(QtWidgets.QWidget):
         # cycle buttons 1-10. v3.8.16: stretch on BOTH sides → row centred,
         # roughly aligning with the chart's x-axis data range (which is itself
         # centred within cv_mv after matplotlib's internal margins).
+        # v3.8.17: size 22×22 → 26×24 for better readability under enlarged charts.
         self._btns = []
         cg = QtWidgets.QWidget()
         gl = QtWidgets.QHBoxLayout(cg)
@@ -1019,7 +1020,7 @@ class MvCanvas(QtWidgets.QWidget):
         gl.addStretch()
         for i in range(10):
             b = QtWidgets.QPushButton(str(i + 1))
-            b.setFixedSize(22, 22); b.setCheckable(True); b.setChecked(True)
+            b.setFixedSize(26, 24); b.setCheckable(True); b.setChecked(True)
             b.setStyleSheet(self._cs(True))
             b.clicked.connect(lambda _, idx=i: self._toggle(idx))
             gl.addWidget(b)
@@ -1034,12 +1035,17 @@ class MvCanvas(QtWidgets.QWidget):
         vb.addWidget(self.usedLbl)
 
         # T0 vs 2σ — interactive FigureCanvas
-        sc_hdr = QtWidgets.QLabel('T\u2080 vs 2\u03c3')
+        # v3.8.17: title text shown only on Ar36 (ai==0); other canvases get an
+        # empty label of same style so the border-top line continues across all
+        # 5 columns, visually acting as one shared "T\u2080 vs 2\u03c3" header.
+        sc_hdr_text = 'T\u2080 vs 2\u03c3' if self.ai == 0 else ''
+        sc_hdr = QtWidgets.QLabel(sc_hdr_text)
         sc_hdr.setStyleSheet(
             f'font-size:14px;font-weight:bold;color:{TXT2};'
             f'border-top:1px solid {BRD};padding-top:2px;')
         sc_hdr.setToolTip('Manual mode: click any dot to select that cycle combo.')
         sc_hdr.setMinimumWidth(1)
+        sc_hdr.setFixedHeight(22)  # same height across all 5 \u2192 divider aligns
         vb.addWidget(sc_hdr)
 
         # v3.8.12: \u03c3 values shown as a Qt label above the scatter (was an
@@ -1063,23 +1069,26 @@ class MvCanvas(QtWidgets.QWidget):
         nf_gl.setContentsMargins(0,0,0,0); nf_gl.setSpacing(0)
         self._nf_btns = {}
         # v3.8.16: stretch on BOTH sides → row centred under the scatter chart.
+        # v3.8.17: button sizes ~1.4× larger (All 28→40, n=10 24→32, n=9..4 20→28),
+        # font 12→14 px. Row total ≈ 40+32+6×28 = 240 px → fits inside the
+        # 260 px cv_mv min width.
         nf_gl.addStretch()
         btn_all = QtWidgets.QPushButton('All')
-        btn_all.setFixedSize(28, 24); btn_all.setCheckable(True); btn_all.setChecked(True)
+        btn_all.setFixedSize(40, 30); btn_all.setCheckable(True); btn_all.setChecked(True)
         btn_all.setStyleSheet(
             f'QPushButton{{background:{BLUE_BG};color:#000;border:1px solid #1a5fb4;'
-            f'border-radius:3px;font-size:12px;font-weight:bold;}}'
+            f'border-radius:3px;font-size:14px;font-weight:bold;}}'
             f'QPushButton:!checked{{background:#eeede8;color:#000;border:1px solid {BRD};}}')
         btn_all.clicked.connect(self._nf_toggle_all)
         nf_gl.addWidget(btn_all)
         self._nf_all_btn = btn_all
         for n in range(10, 3, -1):
             b = QtWidgets.QPushButton(f'{n}')
-            w = 24 if n == 10 else 20
-            b.setFixedSize(w, 24); b.setCheckable(True); b.setChecked(True)
+            w = 32 if n == 10 else 28
+            b.setFixedSize(w, 30); b.setCheckable(True); b.setChecked(True)
             b.setStyleSheet(
                 f'QPushButton{{background:{BLUE_BG};color:#000;border:1px solid #1a5fb4;'
-                f'border-radius:3px;font-size:12px;font-weight:bold;}}'
+                f'border-radius:3px;font-size:14px;font-weight:bold;}}'
                 f'QPushButton:!checked{{background:#eeede8;color:#000;border:1px solid {BRD};}}')
             b.clicked.connect(lambda _, nv=n: self._nf_toggle(nv))
             nf_gl.addWidget(b)
@@ -1099,28 +1108,33 @@ class MvCanvas(QtWidgets.QWidget):
         vb.addWidget(self.cv_sc, 1)   # v3.8.16: 1:1 with cv_mv; scatter near 1:1 W:H
 
         # Best-n buttons: one per n_used (10→4), shows min-error for that n
-        best_hdr = QtWidgets.QLabel('Best per n')
+        # v3.8.17: header text on Ar36 only (matches sc_hdr dedupe pattern).
+        best_hdr_text = 'Best per n' if self.ai == 0 else ''
+        best_hdr = QtWidgets.QLabel(best_hdr_text)
         best_hdr.setStyleSheet(
             f'font-size:14px;font-weight:bold;color:{TXT2};padding-top:2px;')
         best_hdr.setToolTip('Cycle count with the minimum residual error '
                             '(click to apply that mask).')
         best_hdr.setMinimumWidth(1)
+        best_hdr.setFixedHeight(22)
         vb.addWidget(best_hdr)
 
         self._best_row = QtWidgets.QWidget()
         self._best_gl  = QtWidgets.QHBoxLayout(self._best_row)
         self._best_gl.setContentsMargins(0,0,0,0); self._best_gl.setSpacing(0)
         # v3.8.16: leading stretch + trailing stretch (added below) → centred
+        # v3.8.17: button sizes ~1.4× larger (28×28 → 40×34, 24×28 → 32×34),
+        # font set in _update_best_btns bumped 9→13. Row total ≈ 40+6×32 = 232 px.
         self._best_gl.addStretch()
         self._best_btns = {}   # n_used → QPushButton
         for n in range(10, 3, -1):
             b = QtWidgets.QPushButton(str(n))   # v3.8.12: drop "n=" prefix
             # v3.8.14: fixed width so the row min stays compact (was variable
             # width with Qt's ~75 px default → blew up MvCanvas min size).
-            b.setFixedSize(28 if n == 10 else 24, 28)
+            b.setFixedSize(40 if n == 10 else 32, 34)
             b.setStyleSheet(
                 f'QPushButton{{background:#eeede8;color:{TXT2};'
-                f'border:1px solid {BRD};border-radius:3px;font-size:12px;'
+                f'border:1px solid {BRD};border-radius:3px;font-size:13px;'
                 f'font-weight:bold;}}'
                 f'QPushButton:hover{{background:{BLUE_BG};}}')
             b.clicked.connect(lambda _, nv=n: self._apply_best(nv))
@@ -1299,7 +1313,7 @@ class MvCanvas(QtWidgets.QWidget):
                 b.setEnabled(False)
                 b.setStyleSheet(
                     f'QPushButton{{background:#f0f0f0;color:#ccc;'
-                    f'border:1px solid {BRD};border-radius:3px;font-size:9px;}}')
+                    f'border:1px solid {BRD};border-radius:3px;font-size:13px;}}')
                 b.setToolTip('No valid combo')
                 continue
             t0v, sigv, _ = self._best_n[n]
@@ -1313,7 +1327,7 @@ class MvCanvas(QtWidgets.QWidget):
                 bg = '#eeede8'; fc = TXT2; brd = BRD
             b.setStyleSheet(
                 f'QPushButton{{background:{bg};color:{fc};'
-                f'border:1px solid {brd};border-radius:3px;font-size:9px;font-weight:bold;}}'
+                f'border:1px solid {brd};border-radius:3px;font-size:13px;font-weight:bold;}}'
                 f'QPushButton:hover{{background:{BLUE_BG};}}')
             b.setToolTip(f'n={n}: T0={t0v:.3e}  err={sigv:.3e}')
         # bestLbl 已移除
@@ -1377,8 +1391,18 @@ class MvCanvas(QtWidgets.QWidget):
         t0_inc, sig_inc, r2_inc, popt_inc = _fit_one(f, vt_i, mask)
 
         dpi = 96
-        fig_w = max(W / dpi, 1.0)
-        fig_h = max(H / dpi, 1.0)
+        # v3.8.17: enforce 1.2:1 W:H aspect (wider than tall) — pick the largest
+        # 1.2:1 figure that fits in the available QLabel size. KeepAspectRatio
+        # scaling at the bottom of this method then centres the pixmap within
+        # cv_mv with a small margin on the limiting axis.
+        avail_w = max(W / dpi, 1.0)
+        avail_h = max(H / dpi, 1.0)
+        if avail_w / avail_h > 1.2:
+            fig_h = avail_h
+            fig_w = fig_h * 1.2
+        else:
+            fig_w = avail_w
+            fig_h = fig_w / 1.2
         # v3.8.15: drop the explicit white facecolor override so seaborn's
         # default 'darkgrid' style (light blue-grey axes + white grid)
         # propagates from Utilities.sns.set(). Matches the CalcT0Page sub-
@@ -1422,10 +1446,12 @@ class MvCanvas(QtWidgets.QWidget):
             is_warning = (self._bt is not None) and (t0_inc <= self._bt)
             warn = '⚠ ' if is_warning else ''
             txt_col = '#b41a1a' if is_warning else self.col
+            # v3.8.17: T₀/err/R² font 11 → 13 px (user feedback: slightly bigger
+            # so values are readable, while staying within the titleLbl width).
             self.titleLbl.setText(
                 f'<span style="font-size:18px;font-weight:bold;color:{self.col};">'
                 f'Ar{sup2}</span>'
-                f'&nbsp;<span style="font-size:11px;font-family:Courier New;color:{txt_col};">'
+                f'&nbsp;<span style="font-size:13px;font-family:Courier New;color:{txt_col};">'
                 f'{warn}T₀={t0_inc:.3e}&nbsp;&nbsp;err={sig_inc:.3e}&nbsp;&nbsp;'
                 f'R²={r2_inc:.3f}</span>'
             )
@@ -1557,6 +1583,10 @@ class MvCanvas(QtWidgets.QWidget):
         ax.xaxis.set_major_formatter(_ticker.ScalarFormatter(useMathText=True))
         ax.yaxis.set_major_formatter(_ticker.ScalarFormatter(useMathText=True))
         ax.ticklabel_format(style='sci', axis='both', scilimits=(0,0))
+        # v3.8.17: enforce 1:1.2 H:W aspect on the axes box — user feedback that
+        # the previous 1:1 scatter (v3.8.16) was too tall. set_box_aspect takes
+        # H/W ratio, so 1/1.2 → width is 1.2× the box height.
+        ax.set_box_aspect(1.0 / 1.2)
 
         # v3.8.12: σ annotation moved out of axes (was top-left text box,
         # blocked data on Ar39/Ar40 where points cluster top-left). Now

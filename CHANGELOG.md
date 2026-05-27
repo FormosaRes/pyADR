@@ -1,8 +1,87 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17
 最後整理日期：2026-05-27
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.17（2026-05-27）— 1:1.2 aspect、統一 T₀σ 標題、按鈕放大 1.4×、titleLbl 字體加大
+
+### 問題
+
+v3.8.16 用後使用者回饋：
+1. **mV 與 scatter 都太高**，希望高寬比 1:1.2（寬 > 高）。
+2. **titleLbl 上 T₀/err/R² 字體偏小**，希望加大但不超出 diagram 寬度。
+3. **"T₀ vs 2σ" 在 5 column 各印一次**，希望像 "mV vs time (sec)" 只放一次、用線條隔開上下兩 row。
+4. **scatter 下的藍色 [All][10][9]...[4] 和 [Best per n] 灰色方框按鈕太小**，希望放大約 1.5×，但不超出 diagram 寬。
+5. 順便問：cycle 1-10 按鈕顏色（藍/黃/紅）代表什麼？
+
+### 修法
+
+`AutoPipeline.py` MvCanvas：
+
+**1. 圖表 1:1.2 W:H aspect（寬比高 1.2 倍）**
+
+- `_paint_mv`: 算出可用的 W/H 後，挑「最大的 1.2:1 矩形」放進去（`if avail_w/avail_h > 1.2: fig_h=avail_h, fig_w=fig_h*1.2`），剩餘空間靠 KeepAspectRatio 留白。
+- `_paint_sc`: 用 `ax.set_box_aspect(1.0/1.2)` 把 axes box 強制成 H/W=1/1.2（先前 v3.8.16 是 set_box_aspect None → 跟著 canvas 變化）。
+
+**2. titleLbl T₀/err/R² 字體 11 → 13 px**
+
+`Ar³⁶` 部分仍 18px bold；後面的 `T₀=... err=... R²=...` Courier New monospace 從 11px 提升到 13px。寬度測試過 `Ar³⁶ T₀=2.856e-04 err=7.821e-05 R²=0.000` 仍在 260px min canvas 寬內。
+
+**3. "T₀ vs 2σ" 與 "Best per n" 標題只放在 Ar36（ai=0）column**
+
+其他 4 個 column 的 sc_hdr / best_hdr 用空字串建構，但 stylesheet 保留 `border-top:1px solid` → 5 column 的線條串成一條（中間有 2-4px gap 是 crow spacing + MvCanvas margin，視覺上仍讀作一條 divider）。`setFixedHeight(22)` 確保 5 個 label 同高 → 線條對齊。
+
+**4. n-filter + best-per-n 按鈕放大 ~1.4×**
+
+| 按鈕 | v3.8.16 | v3.8.17 |
+|---|---|---|
+| n-filter All | 28×24, font 12 | 40×30, font 14 |
+| n-filter n=10 | 24×24, font 12 | 32×30, font 14 |
+| n-filter n=9..4 | 20×24, font 12 | 28×30, font 14 |
+| Best-per-n n=10 | 28×28, font 12 | 40×34, font 13 |
+| Best-per-n n=9..4 | 24×28, font 12 | 32×34, font 13 |
+| cycle 1-10 | 22×22, font 12 | 26×24, font 12 |
+
+`_update_best_btns` 內 stylesheet 的 font-size 也從 9 → 13 px 跟著更新（先前那段 override 蓋掉 _build 設定）。
+
+**5. cv_mv min width 220 → 260**
+
+放大按鈕後 n-filter row 總寬 ≈ 40+32+6×28 = 240px、best-per-n row ≈ 40+6×32 = 232px。提升 cv_mv min width 到 260px 確保 row 不會超出 chart 寬。
+
+### 顏色說明（給使用者）
+
+cycle 1-10 按鈕配色 = `MvCanvas._cs(sel, z)` 計算結果，z 是該 cycle 殘差的 MAD-based z-score（vs 當前 mask 的 linear fit）：
+
+- **藍底藍框** = 健康（z < 1.8）
+- **黃底深黃框** = 可疑（1.8 ≤ z < 3.0），殘差偏大但未到 outlier 程度
+- **淡紅底紅框** = outlier（z ≥ 3.0），殘差大到通常該排除
+- **灰底紅字** = 已被使用者排除（mask=0），不參與 fit
+
+z-score 用 MAD（median absolute deviation）算，比 std 更 robust 對單一極端值不會被「拉開」。
+
+### 影響
+
+純 UI polish，**無數學/物理邏輯改動**。年代計算結果跟 v3.8.16 完全一致。
+
+### 驗證 checklist
+
+- [ ] mV chart 5 column 在全螢幕下 W > H（1.2:1 比例），左右留小白邊
+- [ ] scatter 5 column 在全螢幕下 W > H（1.2:1 比例），不再「拉高拉瘦」
+- [ ] Ar36 column 顯示 `T₀ vs 2σ` 標題；Ar37-40 column 沒有文字但 border 線條延續
+- [ ] Ar36 column 顯示 `Best per n` 標題；Ar37-40 column 沒有文字
+- [ ] titleLbl 的 T₀/err/R² 文字可清楚讀（13px）但不會超出 chart 寬
+- [ ] n-filter [All][10]...[4] 按鈕明顯比 v3.8.16 大、文字清楚
+- [ ] Best per n [10][9]...[4] 按鈕明顯比 v3.8.16 大、文字清楚
+- [ ] 全螢幕 + Windows 125% scaling 下 5 column buttons 都不會被切到
+- [ ] cycle 1-10 button hover tooltip 顯示 z-score + healthy/suspicious/outlier 標記
+
+### 檔案改動
+
+- `AutoPipeline.py` — MvCanvas `_build`（cv_mv min width、cycle/nf/best btn sizes、sc_hdr/best_hdr 文字 dedupe）、`_update_best_btns`（font 9→13）、`_paint_mv`（aspect 1.2:1、titleLbl 字體 11→13）、`_paint_sc`（set_box_aspect 1/1.2）
+- `.work/.app_info.txt` — 3.8.16 → 3.8.17
 
 ---
 
