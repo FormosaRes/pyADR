@@ -1,5 +1,5 @@
 Version:
-3.8.23
+3.8.24
 
 Last updated date:
 27/05/2026

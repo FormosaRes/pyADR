@@ -1855,6 +1855,9 @@ class CalcT0Page(QtWidgets.QWidget):
         crow_w = QtWidgets.QWidget(); crow_w.setLayout(crow)
         crow_w.setMinimumHeight(620)
         cvl.addWidget(crow_w, 1)
+        # v3.8.24: keep handle so _save can grab().save() this for PNG export
+        # (5 mV row + 5 scatter row combined as user sees them)
+        self._crow_w = crow_w
         
         # ── Shared legend for Row 1 (mV vs time) ────────────────
         mv_legend = QtWidgets.QLabel(
@@ -2904,12 +2907,34 @@ class CalcT0Page(QtWidgets.QWidget):
             write_t0_csv(sp, self._sinfo[sn], T0, SIG, R)
             written.append(sp)
 
+        # v3.8.24: PNG screenshot of current step's combined 5 mV + 5 scatter view.
+        # Mirrors NTNU_DataReduction.LRP_save's LR.png export — but since
+        # AutoPipeline renders to live Qt widgets (not a single LR.png on disk),
+        # we use QWidget.grab() on the crow_w container that holds all 10 sub-plots.
+        # Only the currently-shown step gets a PNG; switch step + Save again to
+        # capture another step's view.
+        png_written = None
+        if hasattr(self, '_crow_w') and self._crow_w is not None:
+            step_label = (self._cur if self._cur and self._cur != '__BLANK__'
+                          else 'blank' if self._cur == '__BLANK__'
+                          else 'current')
+            png_path = os.path.join(target, step_label + '.png')
+            try:
+                self._crow_w.grab().save(png_path, 'PNG')
+                written.append(png_path)
+                png_written = step_label
+            except Exception as e:
+                # PNG failure should not block CSV save
+                self.statusLbl.setText(f'PNG export failed: {e}')
+
         self.statusLbl.setText(f'✓ Saved {len(written)} files')
+        png_msg = f'\n  • PNG (step={png_written}) → {png_written}.png' if png_written else ''
         QtWidgets.QMessageBox.information(self, 'Save T₀ — Done',
             'Saved:\n'
             f'  • Blank → Data/T0/PBs/{blank_name}.csv\n'
-            f'  • Blank + {len(self._svt)} step(s) → {target}\n\n'
-            f'Total: {len(written)} CSV files')
+            f'  • Blank + {len(self._svt)} step(s) → {target}'
+            f'{png_msg}\n\n'
+            f'Total: {len(written)} files')
 
     # ── Public getters ────────────────────────────────────────
     def get_blank_csv(self, out_dir):
@@ -3190,8 +3215,15 @@ class MassRatioPage(QtWidgets.QWidget):
                     
                     with open(filepath, 'w', newline='', encoding='utf-8') as f:
                         w = csv.writer(f)
-                        # Header (原始格式)
-                        w.writerow(["Samp#,t,Min,iradiation PK 90%,Mass,Raw,Measurment,Measurement's Sigma,Ratio,Value,Ratio's Sigma"])
+                        # v3.8.24: header was previously a single-element list whose
+                        # string contained commas → csv.writer wrapped the whole
+                        # header in quotes, collapsing it to one cell. Split into
+                        # per-column entries to match PipelineWorker's f.write
+                        # header (line 4140) exactly.
+                        w.writerow(["Samp#", "t", "Min", "iradiation PK 90%",
+                                    "Mass", "Raw", "Measurment",
+                                    "Measurement's Sigma", "Ratio",
+                                    "Value", "Ratio's Sigma"])
                         
                         # 取得資料
                         raw = step.get('raw', [0]*5)
@@ -3965,8 +3997,10 @@ _DATUM_HEADER=[
     "39Ar/37Ar(k)","39Ar/37Ar(k)_std","36Ar/38Ar(cl)","36Ar/38Ar(cl)_std",
     "40Ar/36Ar(a)","40Ar/36Ar(a)_std","38Ar/36Ar(a)","38Ar/36Ar(a)_std",
     "Lambda","numCycle",
-    "normal isochron","40Ar(m)/36Ar(m)","40Ar(m)/36Ar(m)_std","39Ar(m)/36Ar(m)","39Ar(m)/36Ar(m)_std",
-    "inverse isochron","36Ar(m)/40Ar(m)","36Ar(m)/40Ar(m)_std","39Ar(m)/40Ar(m)","39Ar(m)/40Ar(m)_std",
+    # v3.8.24: removed normal/inverse isochron columns (10 cols total) to
+    # match NTNU_DataReduction DatumPublication header exactly. Isochron
+    # ratios are still recoverable from the raw Ar40(m)/Ar39(m)/Ar36(m)
+    # in the Degassing Patterns section above.
 ]
 
 def _build_datum_row(ar, info, temperature, params, pnames, ar39pct, ar40pct):
@@ -4005,7 +4039,9 @@ def _build_datum_row(ar, info, temperature, params, pnames, ar39pct, ar40pct):
     Ts=_sf(ar[46]);Tss=_sf(ar[47]);Ti=_sf(ar[49])
     age=Ts/1e6; ages=Tss/1e6
     CaK=(a39k*pr)/a37ca if a37ca!=0 else 1.0; CaKs=CaK*0.01
-    row=['0']*98
+    # v3.8.24: row sized to 88 (was 98) — last 10 isochron columns removed to
+    # align with NTNU_DataReduction DatumPublication output exactly.
+    row=['0']*88
     row[0]=samp;row[1]=mineral;row[2]=irr;row[3]=str(temperature)
     row[4]=_fe(J);row[5]=_fe(Js);row[6]=_fe(Ji)
     row[7]=_fe(a36a);row[8]=_fe(a36as);row[9]=_fe(a37ca);row[10]=_fe(a37cas)
@@ -4046,27 +4082,8 @@ def _build_datum_row(ar, info, temperature, params, pnames, ar39pct, ar40pct):
     except: row[86]='5.49e-10'
     try: row[87]=params[pnames.index("numCycle")]
     except: row[87]='10'
-    row[88]='normal isochron'
-    try:
-        if a36m!=0:
-            # BUG FIX B1: Quadrature error propagation for isochron ratios
-            v=a40m/a36m
-            rel_err_a40m = (a40ms/a40m) if a40m!=0 else 0
-            rel_err_a36m = (a36ms/a36m)
-            row[89]=_fe(v);row[90]=_fe(abs(v)*math.sqrt(rel_err_a40m**2 + rel_err_a36m**2))
-
-            v=a39m/a36m
-            rel_err_a39m = (a39ms/a39m) if a39m!=0 else 0
-            row[91]=_fe(v);row[92]=_fe(abs(v)*math.sqrt(rel_err_a39m**2 + rel_err_a36m**2))
-        else: row[89]=row[90]=row[91]=row[92]='0'
-    except: row[89]=row[90]=row[91]=row[92]='0'
-    row[93]='inverse isochron'
-    try:
-        if a40m!=0:
-            v=a36m/a40m;row[94]=_fe(v);row[95]=_fe(abs(v)*((a36ms/a36m if a36m!=0 else 0)+(a40ms/a40m)))
-            v=a39m/a40m;row[96]=_fe(v);row[97]=_fe(abs(v)*((a39ms/a39m if a39m!=0 else 0)+(a40ms/a40m)))
-        else: row[94]=row[95]=row[96]=row[97]='0'
-    except: row[94]=row[95]=row[96]=row[97]='0'
+    # v3.8.24: isochron columns (row[88]..row[97]) removed to match
+    # NTNU_DataReduction DatumPublication format.
     return row
 
 
@@ -4164,10 +4181,17 @@ class PipelineWorker(QtCore.QThread):
             if _sf(ar[2]) <0: neg.append(f'36Ar(air)={_sf(ar[2]):.3e}')
             step['neg_datum']=neg
             if neg: self.sig_warn.emit(f'Negative datum at {step["name"]}:\n'+', '.join(neg))
-            temperature=step['name']
+            # v3.8.24: also pull Min (mineral name) from mr_csv col 2 so the
+            # downstream Datum row gets 'Muscovite' / 'Mus' instead of the step
+            # temperature.  Mirrors NTNU_DataReduction line 5347:
+            #     row[1] = lines[1].split(',')[2]  # Min
+            temperature=step['name']; mineral_from_csv=''
             try:
                 with open(step['mr_csv']) as f: lines=f.readlines()
-                if len(lines)>1: temperature=lines[1].split(',')[1]
+                if len(lines)>1:
+                    _parts=lines[1].split(',')
+                    if len(_parts)>1: temperature=_parts[1]
+                    if len(_parts)>2: mineral_from_csv=_parts[2].strip()
             except: pass
             ac_csv=os.path.join(ac_d,step['name']+'.csv')
             vnm=['Ar_36_m','Ar_36_m_std','Ar_36_Air','Ar_36_Air_std','Ar_36_Ca','Ar_36_Ca_std',
@@ -4185,7 +4209,11 @@ class PipelineWorker(QtCore.QThread):
                  'J','J_std','T','T_std','J_int','T_int','Ar_40_r_ratio',
                  'C1_40/36(a)','C2_36/37(ca)','C3_40/39(k)','C4_39/37(ca)']
             sid=ar[-4] if len(ar)>57 else step['name']
-            mn=ar[-3] if len(ar)>57 else ''
+            # v3.8.24: prefer mr_csv col 2 (mineral name) over ar[-3] — calcAge
+            # was returning the step temperature in ar[-3] instead of mineral,
+            # so the Datum 'Min' column was getting '1150' / '1200' instead of
+            # 'Muscovite'.
+            mn=mineral_from_csv if mineral_from_csv else (ar[-3] if len(ar)>57 else '')
             irr=ar[-1] if len(ar)>57 else ''
             with open(ac_csv,'w',newline='',encoding='utf-8') as f:
                 w=csv.writer(f,lineterminator='\n')

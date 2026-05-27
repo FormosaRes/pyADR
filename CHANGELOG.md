@@ -1,8 +1,104 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23
-最後整理日期：2026-05-27
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24
+最後整理日期：2026-05-28
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.24（2026-05-28）— 輸出格式對齊 NTNU 子程式（T0 PNG / MassRatio header / Datum Min + isochron 欄）
+
+### 問題
+
+使用者對比 AutoPipeline 三階段輸出 vs NTNU_DataReduction 子程式輸出，發現格式不一致：
+
+1. **Calculate T₀ 階段**：AutoPipeline `CalcT0Page._save` 只存 T₀ csv，缺 PNG 截圖；子程式 `LRP_save`（line 3736）有 LR.png 存圖
+2. **Mass Ratio 階段**：`MassRatioPage._save` 寫 header 用 `w.writerow([single_string_with_commas])` → csv.writer 把整段 header 加 quote 變單一 cell。但 PipelineWorker 直接 `f.write(...)` 寫出來不會 quote。兩個寫 csv 入口輸出格式不一致
+3. **Datum Publication 階段**：對比 `NO.65 table-2.csv`（子程式）vs `0621-01C_datum.csv`（AutoPipeline）三個明確差異：
+   - **`Min` 欄位**：子程式 `Muscovite` / `Mus`，AutoPipeline 變成溫度 `1150` `1200` `1250`（`Utilities.calcAge` 回傳的 `ar[-3]` 是溫度不是 mineral）
+   - **多 10 欄 isochron columns**：AutoPipeline `_DATUM_HEADER` 結尾多 `normal isochron / 40Ar(m)/36Ar(m)±std / 39Ar(m)/36Ar(m)±std / inverse isochron / 36Ar(m)/40Ar(m)±std / 39Ar(m)/40Ar(m)±std`；子程式結尾只到 `Lambda, numCycle`
+   - **J_int 欄位**：子程式 NO.65 各 step 不同（5.65e-05 / 1e-06），AutoPipeline 全部相同。已確認子程式 line 2862 `J_int = float(self.parameters[...'J int'...])` 邏輯與 AutoPipeline 一致，皆從單一全域 params 讀；NO.65 NaN 跨 step 不同應為 user manual edit。**不修**
+
+### 修法
+
+#### 1. Calculate T₀ — 加 PNG 截圖（`CalcT0Page._save`）
+
+- `_build` 內留 `self._crow_w = crow_w` 引用（包 5 個 MvCanvas 的 row container，每個 MvCanvas 含 mV + scatter）
+- `_save` 結尾用 `self._crow_w.grab().save(png_path, 'PNG')` 抓 Qt widget pixel snapshot
+- 路徑 `{target}/{step}.png`，step=當前 step name（或 `blank` / `current`）
+- 只存當前 step 的 PNG（user 切到別的 step 再 Save 才能多存）
+- 失敗不阻塞 CSV save（try-except）
+
+#### 2. Mass Ratio — header 拆 list（`MassRatioPage._save`）
+
+`csv.writer.writerow([...])` 入參改成 11 個獨立字串：
+
+```python
+w.writerow(["Samp#", "t", "Min", "iradiation PK 90%", "Mass", "Raw",
+            "Measurment", "Measurement's Sigma", "Ratio", "Value",
+            "Ratio's Sigma"])
+```
+
+對齊 PipelineWorker line 4140 `f.write("Samp#,t,Min,..."" + "\n")` 的格式。
+
+#### 3. Datum CSV — Min 欄位修正 + 砍 10 欄 isochron
+
+**Min 欄位（PipelineWorker `_run`）**：
+
+```python
+# was: mn = ar[-3] if len(ar)>57 else ''   # gave temperature
+# now: read from mr_csv col 2 first (mirrors NTNU line 5347)
+mineral_from_csv = ''
+try:
+    with open(step['mr_csv']) as f: lines = f.readlines()
+    if len(lines) > 1:
+        _parts = lines[1].split(',')
+        if len(_parts) > 2: mineral_from_csv = _parts[2].strip()
+except: pass
+mn = mineral_from_csv if mineral_from_csv else (ar[-3] if len(ar)>57 else '')
+```
+
+**isochron 欄位移除**：
+
+- `_DATUM_HEADER`：line 3968-3969 整段 `normal isochron`/`inverse isochron` 共 10 個 entry 刪除
+- `_build_datum_row`：`row=['0']*98` → `row=['0']*88`，row[88]..row[97] 寫入區段（line 4049-4069）整塊刪除
+
+### 影響
+
+- **age 中心值 / σ_age 完全不變** — 只改輸出格式跟 metadata 欄位，沒動公式
+- 既有讀 datum csv 的下游程式（York regression, isochron 視覺化）如果依賴 row[89..97] 的 isochron columns，會壞 — 但 AutoPipeline 自己 `getDFStatistics_sh` (line 4210) 是直接用 raw component 算 isochron，**不讀** datum csv 的 isochron 欄位，所以 safe
+
+### 驗證 checklist
+
+- [ ] 啟動 AutoPipeline → 載 NO.65 muscovite blank+signal → 進 Calculate T₀
+- [ ] 點 Save T₀ → 確認目標資料夾有 `{step}.png` 跟所有 step CSV
+- [ ] 開 PNG 看是不是包含 5 mV chart + 5 scatter chart（橫向排）
+- [ ] 跑完整 pipeline → 開 `Publish/0621-01C_datum.csv` → 第 2 欄 `Min` 應該是 `Muscovite` 而不是 `1150`
+- [ ] header 結尾應該是 `Lambda,numCycle`，不再有 `normal isochron` 等 10 欄
+- [ ] 手動 Save Mass Ratio → 開 CSV → 11 欄 header 正確分開（Excel 開不會塞在一格）
+- [ ] AgeCalcPage 仍能正常重算 York / Inverse Isochron（不依賴 datum csv isochron 欄）
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - `CalcT0Page._build`：`self._crow_w = crow_w` 引用
+  - `CalcT0Page._save`：加 PNG screenshot 區段
+  - `MassRatioPage._save`：header 拆 11 欄獨立字串
+  - `PipelineWorker._run`：mr_csv col 2 讀 mineral，覆寫 `mn`
+  - `_DATUM_HEADER`：移除 10 欄 isochron columns
+  - `_build_datum_row`：row size 98→88，移除 row[88..97] isochron 計算
+- `.work/.app_info.txt`：3.8.23 → 3.8.24
+- `CHANGELOG.md`：本段
+
+### J_int 為何不改
+
+NTNU_DataReduction line 2862：
+```python
+J_int = float(self.parameters[self.parameters_name.index('J int')])
+self.AgeCalculation_result = Utilities.calcAge(measurement, J, J_std, J_int, ...)
+```
+
+與 AutoPipeline line 4098 邏輯**完全相同** — 都從單一全域 `parameters['J int']` 讀。NO.65 table-2.csv 不同 step J_int 不同（5.65e-05 vs 1e-06），是 user 跑子程式時對每個 step 手動改 metadata 的結果，非演算法輸出差異。AutoPipeline batch mode 用單一 J_int 跑全部 step 邏輯上正確。
 
 ---
 
