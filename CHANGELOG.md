@@ -1,8 +1,74 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21
 最後整理日期：2026-05-27
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.21（2026-05-27）— Pipeline 搬回 top_bar + 藍灰二色 + Calculate T₀ 標題移除
+
+### 問題
+
+使用者回饋 v3.8.20 三項：
+
+1. **Pipeline 不該佔獨立一行** — v3.8.20 拆成 78 px 高 dedicated strip 在 top_bar 下方，使用者覺得不該獨立佔一行，要搬回 top_bar 內（chips 右邊、Run Pipeline 按鈕左邊的空白區）。
+2. **設計沒美感** — 綠色 ✓ + 大狀態 badge (DONE/ACTIVE/PENDING) + 三條彩色線太花，要簡化：
+   - 圈圈跟線條**統一藍色**
+   - 完成的步驟用**藍色實心圈圈**（不用 ✓ checkmark）
+   - 未完成用**灰色圈圈**
+   - 移除 DONE/ACTIVE/PENDING 三排狀態文字
+3. **CalcT0Page 上面 "Calculate T₀" 大標題** 佔了 ~50 px 還重複（pipeline 已經顯示當前頁面），要拿掉，charts 往上補。
+
+### 修法
+
+#### 1. Pipeline 移回 top_bar 內
+
+- top_bar `setFixedHeight(65)` → **80** 才容得下 chip + 圈圈 + step name
+- 之前 v3.8.20 的 `pipe_strip = QtWidgets.QWidget()` independent row 整段刪掉
+- 新 `pipe_container = QtWidgets.QWidget()` `setFixedSize(450, 68)` 用 absolute geometry 放在 `tbl` HBoxLayout 中間（chips 右側 stretch 之後 → pipe_container → stretch → Run Pipeline 按鈕）
+
+#### 2. 視覺簡化：藍灰二色
+
+新 `_refresh_pipe_visuals(current_idx)` 規則：
+
+```python
+is_blue[i] = self._state_done[i] or (i == current_idx)
+# 圈圈一律 "●"，font-size 24px
+# 顏色：藍 #1a5fb4（done/active）/ 灰 #bbbbbb（pending）
+# 連接線：藍 if 兩端都藍，否則灰
+```
+
+- 圈圈 22 px 框 + 24 px font，永遠是 `●`（實心），不再切換 ○ ✓ ◉ 三符號
+- 沒有 DONE/ACTIVE/PENDING 文字 badge，只剩 step name 12 px bold
+- 連接線 2 px 高，藍/灰純色，不再用 3 px green
+- `self._pipe_status = []` 留空 list（back-compat 給之後可能引用）
+
+#### 3. CalcT0Page "Calculate T₀" 標題移除
+
+`CalcT0Page._build` 開頭的 `hdr_w` widget block 整段刪掉：
+
+- `<b>Calculate T₀</b>` QLabel 20 px font + `hdr_w.setFixedHeight(50)` 全部沒了
+- 釋放 50 px 給下方 charts，QVBoxLayout 自動 reflow
+- `self._hdr_subtitle = QLabel('').hide()` 留個 hidden placeholder 防範既存 code 還在寫它
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - `AutoPipelineWindow._build`：top_bar 高度 65→80；pipe_strip block 刪除；新 pipe_container 用 absolute geometry 放回 tbl 中間
+  - `_refresh_pipe_visuals` 重寫：藍/灰二色規則
+  - `CalcT0Page._build`：刪除 hdr_w block，只保留 hidden `_hdr_subtitle` placeholder
+- `.work/.app_info.txt`：3.8.20 → 3.8.21
+
+### 驗證 checklist
+
+- [ ] top_bar 高 80 px，pipeline 在 chips 跟 Run Pipeline 按鈕中間，獨立的下方 strip row 消失
+- [ ] 圈圈都是 `●`（實心），沒 ✓ / ○ / ◉ 等其他符號出現
+- [ ] 完成的步驟圈圈跟 step name 都藍 `#1a5fb4`
+- [ ] 未完成圈圈灰 `#bbbbbb`，step name 灰 `#666`
+- [ ] 連接線 2 px 細線，藍/灰跟兩端顏色一致
+- [ ] CalcT0Page 上方不再有 "Calculate T₀" 標題大字
+- [ ] mV chart row 比 v3.8.20 往上移 ~50 px
 
 ---
 

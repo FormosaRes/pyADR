@@ -1689,29 +1689,16 @@ class CalcT0Page(QtWidgets.QWidget):
     def _build(self):
         main_vl = QtWidgets.QVBoxLayout(self)
         main_vl.setContentsMargins(0, 0, 0, 0); main_vl.setSpacing(0)
-        
-        # ═══ Unified Page Header ═══
-        hdr_w = QtWidgets.QWidget()
-        hdr_w.setStyleSheet(f'background:{BG};border-bottom:1px solid {BRD};')
-        hdr_w.setFixedHeight(50)
-        hdr_hl = QtWidgets.QHBoxLayout(hdr_w)
-        hdr_hl.setContentsMargins(12, 6, 12, 6)
-        
-        # Page title centered
-        hdr_hl.addStretch()
-        title_lbl = QtWidgets.QLabel('<b>Calculate T₀</b>')
-        title_lbl.setStyleSheet(f'font-size:20px;color:{TXT};background:transparent;')
-        title_lbl.setAlignment(QtCore.Qt.AlignCenter)
-        hdr_hl.addWidget(title_lbl)
-        
-        # Subtitle on the right of title (context info)
+
+        # v3.8.21: "Calculate T₀" page header removed per user request — the
+        # pipeline strip in top_bar already shows which page is active, so the
+        # in-page title is redundant and wasted ~50 px of vertical room. Charts
+        # below now fill the freed space automatically (QVBoxLayout reflow).
+        # _hdr_subtitle kept as a hidden placeholder so any code that still
+        # writes to it doesn't AttributeError.
         self._hdr_subtitle = QtWidgets.QLabel('')
-        self._hdr_subtitle.setStyleSheet(f'font-size:11px;color:{TXT3};background:transparent;margin-left:10px;')
-        hdr_hl.addWidget(self._hdr_subtitle)
-        hdr_hl.addStretch()
-        
-        main_vl.addWidget(hdr_w)
-        
+        self._hdr_subtitle.hide()
+
         # ═══ Main content ═══
         hl = QtWidgets.QHBoxLayout()
         hl.setContentsMargins(0, 0, 0, 0); hl.setSpacing(0)
@@ -4361,10 +4348,13 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
         _menu_help.addAction(_act_cycle_guide)
         _act_cycle_guide.triggered.connect(self._show_cycle_guide)
 
-        # Top bar: Mode/Fit/Blank/Signal chips + Pipeline progress + Output
+        # Top bar: Mode/Fit/Blank/Signal chips + Pipeline progress + Run button
+        # v3.8.21: pipeline moved BACK inside top_bar (was a separate strip in
+        # v3.8.20), occupying the space between Δt chip and Run Pipeline button.
+        # top_bar height 65 → 80 to fit the larger pipeline visuals.
         top_bar = QtWidgets.QWidget()
         top_bar.setStyleSheet(f'background:{PNL};border-bottom:2px solid {BRD};')
-        top_bar.setFixedHeight(65)
+        top_bar.setFixedHeight(80)
         tbl = QtWidgets.QHBoxLayout(top_bar)
         tbl.setContentsMargins(12,6,12,6); tbl.setSpacing(10)
         
@@ -4390,8 +4380,77 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
         
         tbl.addStretch()
 
-        # v3.8.20: Next button stays in top bar (right side) but pipeline moves
-        # to its own dedicated row below — much bigger, cleaner, dashboard-style.
+        # ═══ Inline pipeline (v3.8.21) ═══════════════════════════════════════
+        # Lives inside top_bar between the chips and the Run Pipeline button.
+        # Design:
+        #   • Circle 22 px (filled blue if done/active, grey ring if pending)
+        #   • Step name 12 px bold beneath circle (no DONE/ACTIVE/PENDING badge)
+        #   • Thin 2 px connector lines, blue if both endpoints are blue
+        #   • No checkmark icons — just solid blue / grey circles
+        # Click anywhere on a step card → _pipe_click(idx): idx 0 = navigate to
+        # T₀ page; idx 1 / 2 = run pipeline then land on that page.
+        pipe_container = QtWidgets.QWidget()
+        pipe_container.setFixedSize(450, 68)
+        self._pipe_circles = []
+        self._pipe_labels  = []
+        self._pipe_lines   = []
+        # Status labels removed in v3.8.21 — keep an empty list for back-compat
+        # so _refresh_pipe_visuals iteration logic doesn't need conditionals.
+        self._pipe_status  = []
+        self._state_done = {0: False, 1: False, 2: False}
+
+        BLUE = '#1a5fb4'
+        GREY = '#bbbbbb'
+
+        step_names = ['Calculate T₀', 'Mass Ratio', 'Age Calc + Datum']
+        circle_y    = 6
+        circle_size = 22
+        line_y      = circle_y + circle_size // 2 - 1   # center of circle, 2 px line
+        # Card x positions: 3 evenly spaced over 450 px container.
+        card_w   = 130
+        card_gap = (450 - 3 * card_w) // 2   # ≈ 30 px between cards
+        for i, name in enumerate(step_names):
+            x = i * (card_w + card_gap)
+
+            # ── Connector line to NEXT step (draw before circles so circles overlap) ──
+            if i < 2:
+                ln = QtWidgets.QLabel('', pipe_container)
+                ln.setGeometry(
+                    x + card_w // 2 + circle_size // 2,
+                    line_y,
+                    (card_w + card_gap) - circle_size,
+                    2,
+                )
+                ln.setStyleSheet(f'background:{GREY};')
+                self._pipe_lines.append(ln)
+
+            # ── Circle indicator ──
+            circle = QtWidgets.QLabel('●', pipe_container)
+            circle.setGeometry(x + card_w // 2 - circle_size // 2, circle_y,
+                               circle_size, circle_size + 4)
+            circle.setAlignment(QtCore.Qt.AlignCenter)
+            circle.setStyleSheet(
+                f'color:{GREY};font-size:24px;font-weight:bold;'
+                f'background:transparent;')
+            circle.setCursor(QtCore.Qt.PointingHandCursor)
+            circle.mousePressEvent = lambda e, idx=i: self._pipe_click(idx)
+            self._pipe_circles.append(circle)
+
+            # ── Step name below circle ──
+            name_lbl = QtWidgets.QLabel(name, pipe_container)
+            name_lbl.setAlignment(QtCore.Qt.AlignCenter)
+            name_lbl.setGeometry(x, circle_y + circle_size + 6, card_w, 18)
+            name_lbl.setStyleSheet(
+                f'color:#666;font-size:12px;font-weight:bold;'
+                f'background:transparent;')
+            name_lbl.setCursor(QtCore.Qt.PointingHandCursor)
+            name_lbl.mousePressEvent = lambda e, idx=i: self._pipe_click(idx)
+            self._pipe_labels.append(name_lbl)
+
+        tbl.addWidget(pipe_container)
+        tbl.addStretch()
+
+        # v3.8.21: Next button stays in top bar on the right.
         self.nextBtn = QtWidgets.QPushButton('Run Pipeline →')
         self.nextBtn.setStyleSheet(
             f'QPushButton{{background:#1a5fb4;color:white;border:1px solid #1a5fb4;'
@@ -4406,86 +4465,6 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
         # v3.8.10: removed Output dir picker (Out: [Data/] 📁). Pipeline writes
         # to './Data/' relative to cwd (same as previous default).
         vb.addWidget(top_bar)
-
-        # ═══ Pipeline strip (v3.8.20: dedicated row, dashboard-style) ═══
-        # Replaces the cramped 480×50 widget that was wedged between chips and
-        # Next button. New design:
-        #   • 64 px tall, full width
-        #   • 3 step "cards" with large 38 px circle indicators
-        #   • Circles change icon + colour per state (✓ done / ● active / ○ pending)
-        #   • Step name in 14 px bold, status badge in 10 px below circle
-        #   • Click any circle → navigate AND recompute (circles 1 & 2 trigger
-        #     _run_pipeline; circle 0 just navigates to T₀ page which is
-        #     interactive anyway).
-        pipe_strip = QtWidgets.QWidget()
-        pipe_strip.setStyleSheet(f'background:#fafafa;border-bottom:1px solid {BRD};')
-        pipe_strip.setFixedHeight(78)
-        ps_hl = QtWidgets.QHBoxLayout(pipe_strip)
-        ps_hl.setContentsMargins(40, 6, 40, 6); ps_hl.setSpacing(0)
-
-        self._pipe_circles = []
-        self._pipe_labels = []
-        self._pipe_status = []
-        self._pipe_lines  = []
-        # Tracks per-step completion (set when navigating away from / completing a step).
-        self._state_done = {0: False, 1: False, 2: False}
-
-        step_names = ['Calculate T₀', 'Mass Ratio', 'Age Calc + Datum']
-        for i, name in enumerate(step_names):
-            # ── Step card (circle + name + status) ──
-            card = QtWidgets.QWidget()
-            card.setFixedWidth(180)
-            card.setCursor(QtCore.Qt.PointingHandCursor)
-            cv = QtWidgets.QVBoxLayout(card)
-            cv.setContentsMargins(0, 0, 0, 0); cv.setSpacing(2)
-
-            circle = QtWidgets.QLabel('○')
-            circle.setAlignment(QtCore.Qt.AlignCenter)
-            circle.setFixedHeight(40)
-            circle.setStyleSheet(
-                'color:#bbb;font-size:34px;font-weight:bold;'
-                'background:transparent;')
-            cv.addWidget(circle)
-            self._pipe_circles.append(circle)
-
-            name_lbl = QtWidgets.QLabel(name)
-            name_lbl.setAlignment(QtCore.Qt.AlignCenter)
-            name_lbl.setStyleSheet(
-                'color:#666;font-size:14px;font-weight:bold;background:transparent;')
-            cv.addWidget(name_lbl)
-            self._pipe_labels.append(name_lbl)
-
-            status_lbl = QtWidgets.QLabel('PENDING')
-            status_lbl.setAlignment(QtCore.Qt.AlignCenter)
-            status_lbl.setStyleSheet(
-                'color:#999;font-size:10px;font-weight:bold;'
-                'letter-spacing:1px;background:transparent;')
-            cv.addWidget(status_lbl)
-            self._pipe_status.append(status_lbl)
-
-            # Click anywhere on the card → navigate + recompute
-            card.mousePressEvent = lambda e, idx=i: self._pipe_click(idx)
-
-            ps_hl.addWidget(card)
-
-            # ── Connector line to next card ──
-            if i < 2:
-                ln_wrap = QtWidgets.QWidget()
-                ln_wrap.setFixedHeight(40)
-                ln_wrap_vl = QtWidgets.QVBoxLayout(ln_wrap)
-                ln_wrap_vl.setContentsMargins(0, 18, 0, 0)
-                ln = QtWidgets.QFrame()
-                ln.setFrameShape(QtWidgets.QFrame.HLine)
-                ln.setFixedHeight(4)
-                ln.setStyleSheet(
-                    'background:#ddd;border:none;'
-                    'border-top:3px solid #ddd;')
-                ln_wrap_vl.addWidget(ln)
-                ln_wrap_vl.addStretch()
-                ps_hl.addWidget(ln_wrap, 1)
-                self._pipe_lines.append(ln)
-
-        vb.addWidget(pipe_strip)
 
         # Stack
         self.stack=QtWidgets.QStackedWidget()
@@ -4536,83 +4515,37 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
                 and bool(getattr(self.t0Page, '_svt', {})))
 
     def _refresh_pipe_visuals(self, current_idx):
-        """Update circle icons / colours / status labels based on _state_done +
-        current_idx. Called by _go(), _on_done(), and after t0 data load."""
-        # Idx 0 (T0) is implicitly "done" once data is loaded — the user works
-        # interactively on it, there's no separate "compute T0" stage in the
-        # pipeline (T0 fitting happens inside the worker for MR/Age).
+        """v3.8.21 simplified rule: a step is BLUE if completed OR active,
+        GREY otherwise. No checkmark — just solid filled circles. Connector
+        line BLUE if both endpoints are blue, GREY otherwise.
+
+        Idx 0 (T₀) is "completed" the moment data is loaded — there's no
+        separate compute stage for it (T₀ fitting runs inside the worker
+        alongside MR/Age)."""
         self._state_done[0] = self._t0_has_data()
+        BLUE = '#1a5fb4'
+        GREY = '#bbbbbb'
+
+        # Per-circle blue flag
+        is_blue = [None, None, None]
+        for i in range(3):
+            is_blue[i] = self._state_done[i] or (i == current_idx)
 
         for i in range(3):
-            circle = self._pipe_circles[i]
+            circle   = self._pipe_circles[i]
             name_lbl = self._pipe_labels[i]
-            status_lbl = self._pipe_status[i]
-            done = self._state_done[i]
-            active = (i == current_idx)
-            if done:
-                # Green check — but if it's also the active page, keep blue
-                if active:
-                    circle.setText('●')
-                    circle.setStyleSheet(
-                        'color:#1a5fb4;font-size:34px;font-weight:bold;'
-                        'background:transparent;')
-                    name_lbl.setStyleSheet(
-                        'color:#1a5fb4;font-size:14px;font-weight:bold;'
-                        'background:transparent;')
-                    status_lbl.setText('ACTIVE')
-                    status_lbl.setStyleSheet(
-                        'color:#1a5fb4;font-size:10px;font-weight:bold;'
-                        'letter-spacing:1px;background:transparent;')
-                else:
-                    circle.setText('✓')
-                    circle.setStyleSheet(
-                        'color:#2e7d52;font-size:30px;font-weight:bold;'
-                        'background:transparent;')
-                    name_lbl.setStyleSheet(
-                        'color:#2e7d52;font-size:14px;font-weight:bold;'
-                        'background:transparent;')
-                    status_lbl.setText('DONE')
-                    status_lbl.setStyleSheet(
-                        'color:#2e7d52;font-size:10px;font-weight:bold;'
-                        'letter-spacing:1px;background:transparent;')
-            elif active:
-                circle.setText('●')
-                circle.setStyleSheet(
-                    'color:#1a5fb4;font-size:34px;font-weight:bold;'
-                    'background:transparent;')
-                name_lbl.setStyleSheet(
-                    'color:#1a5fb4;font-size:14px;font-weight:bold;'
-                    'background:transparent;')
-                status_lbl.setText('ACTIVE')
-                status_lbl.setStyleSheet(
-                    'color:#1a5fb4;font-size:10px;font-weight:bold;'
-                    'letter-spacing:1px;background:transparent;')
-            else:
-                circle.setText('○')
-                circle.setStyleSheet(
-                    'color:#bbb;font-size:34px;font-weight:bold;'
-                    'background:transparent;')
-                name_lbl.setStyleSheet(
-                    'color:#666;font-size:14px;font-weight:bold;'
-                    'background:transparent;')
-                status_lbl.setText('PENDING')
-                status_lbl.setStyleSheet(
-                    'color:#999;font-size:10px;font-weight:bold;'
-                    'letter-spacing:1px;background:transparent;')
-
-            # Connector line: green if BOTH endpoints done
+            colour = BLUE if is_blue[i] else GREY
+            text_col = BLUE if is_blue[i] else '#666666'
+            circle.setText('●')
+            circle.setStyleSheet(
+                f'color:{colour};font-size:24px;font-weight:bold;'
+                f'background:transparent;')
+            name_lbl.setStyleSheet(
+                f'color:{text_col};font-size:12px;font-weight:bold;'
+                f'background:transparent;')
             if i < 2:
-                next_done = self._state_done[i + 1]
-                if done and next_done:
-                    self._pipe_lines[i].setStyleSheet(
-                        'background:#2e7d52;border:none;border-top:3px solid #2e7d52;')
-                elif done:
-                    # half-done state: fade green-to-grey would be ideal, use solid green
-                    self._pipe_lines[i].setStyleSheet(
-                        'background:#2e7d52;border:none;border-top:3px solid #2e7d52;')
-                else:
-                    self._pipe_lines[i].setStyleSheet(
-                        'background:#ddd;border:none;border-top:3px solid #ddd;')
+                line_col = BLUE if (is_blue[i] and is_blue[i + 1]) else GREY
+                self._pipe_lines[i].setStyleSheet(f'background:{line_col};')
 
     def _pipe_click(self, idx):
         """Pipeline circle/card clicked. v3.8.20: navigate AND recompute.
