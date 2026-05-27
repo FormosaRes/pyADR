@@ -1,8 +1,36 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16
 最後整理日期：2026-05-27
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.16（2026-05-27）— 撤銷 v3.8.15 chart 內標題、button row 置中、scatter 改 1:1
+
+### 改動
+
+**1. mV chart 標題搬回 chart 外（撤銷 v3.8.15 的 ax.set_title 改動）**
+
+v3.8.15 把 `Ar36 / T₀=... / err=... / R²=...` 移進 chart 內當 ax.set_title。使用者試用後決定恢復成 v3.8.14 之前的外部 Qt label 樣式：
+
+- titleLbl 重新顯示，單行 rich text：`Ar³⁶ T₀=... err=... R²=...`
+- blank ≥ signal 警示用 ⚠ icon + 紅字（Qt rich text 樣式）
+- v3.8.15 在 `_paint_mv` 內的 `ax.set_title(loc='left', ...)` 移除
+- mV chart 內部恢復乾淨，仍保留 v3.8.15 的 seaborn darkgrid 風格（沒被白底 override 蓋掉）
+
+**2. cycle / n-filter / best-n button row 改置中**
+
+三排原本 `addStretch()` 只放尾端 → 按鈕貼左、右邊一片白。改成 `addStretch()` 加在頭尾兩端 → 按鈕置中，跟 chart x-axis range 視覺對齊。
+
+**3. T₀ vs 2σ scatter 比例 1:1**
+
+`vb.addWidget(self.cv_mv, 2)` + `vb.addWidget(self.cv_sc, 3)` → 改成 `1` + `1`。cv_mv 跟 cv_sc 在剩餘垂直空間平均分配，配合等寬 → scatter 接近 1:1（先前 2:3 stretch 使 scatter 太高）。
+
+### 檔案改動
+
+- `AutoPipeline.py` — MvCanvas `_build` titleLbl + cycle/nf/best-n 三 row stretch + cv_mv/cv_sc stretch + `_paint_mv` 撤銷 set_title 改動、改寫 titleLbl
+- `.work/.app_info.txt` — 3.8.15 → 3.8.16
 
 ---
 

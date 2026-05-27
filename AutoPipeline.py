@@ -985,11 +985,19 @@ class MvCanvas(QtWidgets.QWidget):
         vb = QtWidgets.QVBoxLayout(self)
         vb.setContentsMargins(2, 2, 2, 2); vb.setSpacing(2)
 
-        # v3.8.15: Ar title now lives inside the chart (ax.set_title in _paint_mv).
-        # titleLbl kept as a hidden Qt widget for back-compat with any external
-        # code that might still reference it.
-        self.titleLbl = QtWidgets.QLabel('')
-        self.titleLbl.hide()
+        # Ar title above the chart (Qt label).
+        # v3.8.16: restored from v3.8.15 attempt to move it inside the chart —
+        # user prefers the external label format. Title shows
+        # "Ar36  T₀=...  err=...  R²=..." in a single rich-text line.
+        sup_map = {'36':'³⁶','37':'³⁷','38':'³⁸','39':'³⁹','40':'⁴⁰'}
+        self.titleLbl = QtWidgets.QLabel(f'Ar{sup_map.get(self.nm, self.nm)}')
+        self.titleLbl.setTextFormat(QtCore.Qt.RichText)
+        self.titleLbl.setStyleSheet(
+            f'font-size:18px;font-weight:bold;color:{AR_COLS[self.ai]};'
+            f'padding-bottom:0px;margin-bottom:0px;background:transparent;')
+        self.titleLbl.setAlignment(QtCore.Qt.AlignLeft)
+        self.titleLbl.setMinimumWidth(1)
+        vb.addWidget(self.titleLbl)
 
         # mV canvas. v3.8.14: min width 240 → 220 so 5 canvases + sidebar + margins
         # fit ~1280 px viewports (after Windows DPI scaling 125% etc.).
@@ -999,15 +1007,16 @@ class MvCanvas(QtWidgets.QWidget):
         self.cv_mv.setStyleSheet(f'background:white;border:1px solid {BRD};')
         self.cv_mv.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-        vb.addWidget(self.cv_mv, 2)   # v3.8.13: was stretch=3; reduced to give
+        vb.addWidget(self.cv_mv, 1)   # v3.8.16: stretch 1:1 with cv_sc → square scatter
 
-        # cycle buttons 1-10. v3.8.14: 22×22 spacing 0 (was 24) → 220 px row,
-        # matches cv_mv min width. Trailing stretch keeps row left-aligned and
-        # lets MvCanvas resize wider without distorting the row.
+        # cycle buttons 1-10. v3.8.16: stretch on BOTH sides → row centred,
+        # roughly aligning with the chart's x-axis data range (which is itself
+        # centred within cv_mv after matplotlib's internal margins).
         self._btns = []
         cg = QtWidgets.QWidget()
         gl = QtWidgets.QHBoxLayout(cg)
         gl.setContentsMargins(0, 0, 0, 0); gl.setSpacing(0)
+        gl.addStretch()
         for i in range(10):
             b = QtWidgets.QPushButton(str(i + 1))
             b.setFixedSize(22, 22); b.setCheckable(True); b.setChecked(True)
@@ -1053,10 +1062,8 @@ class MvCanvas(QtWidgets.QWidget):
         nf_gl  = QtWidgets.QHBoxLayout(nf_row)
         nf_gl.setContentsMargins(0,0,0,0); nf_gl.setSpacing(0)
         self._nf_btns = {}
-        # v3.8.14: setFixedSize on every button so the row has a deterministic
-        # min-width. Without fixed widths, Qt's default QPushButton min width
-        # (~75 px on Windows) made each row ~600 px, blowing up MvCanvas min
-        # width and clipping the 5th (Ar40) canvas on full-screen.
+        # v3.8.16: stretch on BOTH sides → row centred under the scatter chart.
+        nf_gl.addStretch()
         btn_all = QtWidgets.QPushButton('All')
         btn_all.setFixedSize(28, 24); btn_all.setCheckable(True); btn_all.setChecked(True)
         btn_all.setStyleSheet(
@@ -1077,7 +1084,7 @@ class MvCanvas(QtWidgets.QWidget):
             b.clicked.connect(lambda _, nv=n: self._nf_toggle(nv))
             nf_gl.addWidget(b)
             self._nf_btns[n] = b
-        nf_gl.addStretch()   # push buttons to the left, leftover space empty
+        nf_gl.addStretch()
         vb.addWidget(nf_row)
 
         self._sc_fig = _mfig.Figure(facecolor='white')
@@ -1089,7 +1096,7 @@ class MvCanvas(QtWidgets.QWidget):
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         self.cv_sc.setStyleSheet(f'border:1px solid {BRD};')
         self.cv_sc.mpl_connect('button_press_event', self._sc_click)
-        vb.addWidget(self.cv_sc, 3)   # T₀ vs 2σ scatter more vertical room (was 2)
+        vb.addWidget(self.cv_sc, 1)   # v3.8.16: 1:1 with cv_mv; scatter near 1:1 W:H
 
         # Best-n buttons: one per n_used (10→4), shows min-error for that n
         best_hdr = QtWidgets.QLabel('Best per n')
@@ -1103,6 +1110,8 @@ class MvCanvas(QtWidgets.QWidget):
         self._best_row = QtWidgets.QWidget()
         self._best_gl  = QtWidgets.QHBoxLayout(self._best_row)
         self._best_gl.setContentsMargins(0,0,0,0); self._best_gl.setSpacing(0)
+        # v3.8.16: leading stretch + trailing stretch (added below) → centred
+        self._best_gl.addStretch()
         self._best_btns = {}   # n_used → QPushButton
         for n in range(10, 3, -1):
             b = QtWidgets.QPushButton(str(n))   # v3.8.12: drop "n=" prefix
@@ -1404,29 +1413,30 @@ class MvCanvas(QtWidgets.QWidget):
             ax.plot(t_range, f(t_range, *popt_inc),
                     color='#1c7a3a', linestyle='--', linewidth=1.2)
 
-        # v3.8.15: external Qt titleLbl deprecated — info moved into ax.set_title
-        # above. Keep the label hidden so layout doesn't reserve space for it
-        # (rather than removing it entirely, which would break other widget
-        # references). _refresh() no longer needs to update titleLbl text.
+        # v3.8.16: update Qt titleLbl above chart (was set_title inside chart in
+        # v3.8.15, reverted per user). Single line: "Ar36  T₀=...  err=...  R²=..."
+        # Title goes red when blank T₀ ≥ signal T₀ (physics constraint violation).
+        if hasattr(self, 'titleLbl'):
+            sup_map2 = {'36':'³⁶','37':'³⁷','38':'³⁸','39':'³⁹','40':'⁴⁰'}
+            sup2 = sup_map2.get(self.nm, self.nm)
+            is_warning = (self._bt is not None) and (t0_inc <= self._bt)
+            warn = '⚠ ' if is_warning else ''
+            txt_col = '#b41a1a' if is_warning else self.col
+            self.titleLbl.setText(
+                f'<span style="font-size:18px;font-weight:bold;color:{self.col};">'
+                f'Ar{sup2}</span>'
+                f'&nbsp;<span style="font-size:11px;font-family:Courier New;color:{txt_col};">'
+                f'{warn}T₀={t0_inc:.3e}&nbsp;&nbsp;err={sig_inc:.3e}&nbsp;&nbsp;'
+                f'R²={r2_inc:.3f}</span>'
+            )
 
         ax.set_xlabel('t (sec)', fontsize=11)
-        # v3.8.13: only Ar36 shows the y-axis 'mV' label
         if self.ai == 0:
             ax.set_ylabel('mV', fontsize=11)
         else:
             ax.set_ylabel('')
         ax.tick_params(labelsize=9)
         ax.ticklabel_format(axis='y', style='sci', scilimits=(0, 0))
-
-        # v3.8.15: header info inside chart top-left (CalcT0Page convention).
-        # Title turns red if blank T₀ ≥ signal T₀ (a physics-constraint failure
-        # that previously surfaced as a ⚠ icon on the external Qt label).
-        is_warn = (self._bt is not None) and (t0_inc <= self._bt)
-        ax.set_title(
-            'Ar {}\n$T_0$ = {:.5e}\nerror = {:.5e}\n$R^2$ = {:.5e}'.format(
-                self.ai + 36, t0_inc, sig_inc, r2_inc),
-            loc='left', fontsize=9,
-            color='#b41a1a' if is_warn else '#222')
         ax.tick_params(labelsize=14)
         ax.yaxis.set_major_formatter(
             _ticker.ScalarFormatter(useMathText=True))
