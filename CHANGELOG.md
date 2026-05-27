@@ -1,8 +1,53 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23
 最後整理日期：2026-05-27
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.23（2026-05-27）— CalcT0Page 新增 Yield panel（%⁴⁰Ar(r) + %³⁹Ar(K) vs cum ³⁹Ar(K)）
+
+### 問題
+
+使用者要在 CalcT0 階段就能即時看 plateau 挑選提示：哪幾個溫度 step 釋放的 ⁴⁰Ar(r) 跟 ³⁹Ar(K) 佔總體訊號比例多少。這在原本的 Mass Ratio / Age Calc step 才看得到，但那時 cycle mask 已經 locked，回頭微調太慢。
+
+### 修法
+
+`AutoPipeline.py` `CalcT0Page._build` Degassing Pattern 區段新增 yield panel，位置在 cv_degas 右側並排（同 HBoxLayout 內，中間 10 px spacing）：
+
+- 新 widget：`cv_yield = _FigCanvas(self._yield_fig)`，`setFixedSize(480, 280)`
+- 單 subplot `_yield_ax`，雙線：
+  - 藍色 `%⁴⁰Ar(r)` = ⁴⁰Ar(r) / Σ(³⁶+³⁷+³⁸+³⁹+⁴⁰)_(measured,bc) × 100
+  - 紅色 `%³⁹Ar(K)` = ³⁹Ar(K) / Σ(³⁶+³⁷+³⁸+³⁹+⁴⁰)_(measured,bc) × 100
+- x 軸：cumulative ³⁹Ar(K) %，按 temperature 排序累積
+- 當前 step 用橘色點線標位置（跟 degassing 圖風格一致）
+
+計算用既存的 `_propagate(T0, sT0, bT0, bSIG)` helper（line 181 hardcoded `_PR` production ratios），取 `Ar40_r` 跟 `Ar39_K`。**不需要 J value**，所以 CalcT0 階段就能算。
+
+新 `_paint_yield_pattern` 方法：
+
+- 用 n=10 full mask 對每個 temperature step 跑 `_fit_one` × 5 isotopes → 組成 `T0[5]`/`sT0[5]` → 呼叫 `_propagate`
+- 獨立 `self._yield_cache`，cache key 跟 `_degas_cache` 同形（`(svt keys, fit, id(bvt))`），signal files 換才重算
+
+`_refresh_guide` 結尾加 `self._paint_yield_pattern()` call，確保 degas 跟 yield 同步刷新。
+
+### 驗證 checklist
+
+- [ ] 啟動 AutoPipeline → 載 Blank/Signal → 進 Calculate T₀
+- [ ] Yield panel 在 degassing pattern 右邊並排顯示
+- [ ] %⁴⁰Ar(r) 在高溫 step 通常 > 90%，低溫 step 偏低（NO.65 muscovite）
+- [ ] %³⁹Ar(K) 在 muscovite 全 step 應該 > 5%（K-rich mineral）
+- [ ] 切 step (sidebar tab) 橘色 vertical line 跟著移動
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - `CalcT0Page._build` Degassing layout 區段：新增 `cv_yield` 並排
+  - 新增 `CalcT0Page._paint_yield_pattern` 方法
+  - `_refresh_guide` 加 yield call
+- `.work/.app_info.txt`：3.8.22 → 3.8.23
+- `CHANGELOG.md`：本段
 
 ---
 

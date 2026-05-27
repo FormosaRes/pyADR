@@ -1913,9 +1913,24 @@ class CalcT0Page(QtWidgets.QWidget):
         self.cv_degas.setFixedSize(480, 280)
         p5l.addWidget(self.cv_degas)
 
+        # v3.8.23: yield panel — side-by-side with degassing pattern.
+        # x: cumulative ³⁹Ar(K) %  |  y: %⁴⁰Ar(r) and %³⁹Ar(K) of Σ(³⁶+³⁷+³⁸+³⁹+⁴⁰)
+        # Lets the user see, while still on Calculate T₀, which temperature steps
+        # contribute most ⁴⁰Ar(r) and how clean each release is — before pipeline
+        # ever computes the age.
+        p5_yield = QtWidgets.QWidget()
+        p5yl = QtWidgets.QVBoxLayout(p5_yield); p5yl.setContentsMargins(0,0,0,0); p5yl.setSpacing(1)
+        self._yield_fig = _mfig.Figure(facecolor='white')
+        self._yield_ax  = self._yield_fig.add_subplot(111)
+        self.cv_yield   = _FigCanvas(self._yield_fig)
+        self.cv_yield.setFixedSize(480, 280)
+        p5yl.addWidget(self.cv_yield)
+
         degas_center = QtWidgets.QHBoxLayout()
         degas_center.addStretch()
         degas_center.addWidget(p5)
+        degas_center.addSpacing(10)
+        degas_center.addWidget(p5_yield)
         degas_center.addStretch()
         guide_vl.addLayout(degas_center)
 
@@ -2598,6 +2613,8 @@ class CalcT0Page(QtWidgets.QWidget):
     def _refresh_guide(self):
         if not hasattr(self, 'cv_degas'): return
         self._paint_degas_pattern()
+        if hasattr(self, 'cv_yield'):
+            self._paint_yield_pattern()
 
     # New advanced analysis panels (⑤⑥⑦⑧)
     # ══════════════════════════════════════════════════════════
@@ -2717,7 +2734,125 @@ class CalcT0Page(QtWidgets.QWidget):
         
         self._degas_fig.tight_layout(pad=0.5)
         self.cv_degas.draw()
-    
+
+    def _paint_yield_pattern(self):
+        """v3.8.23: Yield diagram next to degassing pattern.
+
+        x-axis : cumulative ³⁹Ar(K) %, computed across all sample steps
+                 sorted by temperature
+        y-axis : %⁴⁰Ar(r) and %³⁹Ar(K), defined as
+                   numerator / Σ(³⁶+³⁷+³⁸+³⁹+⁴⁰)_(measured, blank-corr) × 100
+
+        Per-step ⁴⁰Ar(r) and ³⁹Ar(K) come from _propagate() using n=10 full
+        mask — independent of any per-cycle manual mask, so this view is
+        stable while user tweaks individual step masks.
+
+        Cache: separate _yield_cache, same key shape as _degas_cache. Both
+        invalidate when signal files change.
+        """
+        ax = self._yield_ax; ax.clear()
+        ax.set_facecolor('white')
+        self._yield_fig.patch.set_facecolor('white')
+
+        if not self._svt:
+            ax.text(0.5, 0.5, 'Load signal files first',
+                    transform=ax.transAxes, ha='center', va='center',
+                    fontsize=10, color='grey')
+            self._yield_fig.tight_layout(pad=0.5)
+            self.cv_yield.draw()
+            return
+
+        cache_key = (tuple(sorted(self._svt.keys())), self._fit, id(self._bvt))
+        cached = getattr(self, '_yield_cache', None)
+
+        if cached is not None and cached.get('key') == cache_key:
+            temps      = cached['temps']
+            ar40r_pct  = cached['ar40r_pct']
+            ar39k_pct  = cached['ar39k_pct']
+            cum_ar39k  = cached['cum_ar39k']
+        else:
+            import re
+            temp_map = {}
+            for nm in self._svt.keys():
+                m = re.search(r'(\d+)', nm)
+                if m:
+                    temp_map[int(m.group(1))] = nm
+
+            temps = sorted(temp_map.keys())
+            ar39k_vals = []
+            ar40r_pct  = []
+            ar39k_pct  = []
+
+            f = Utilities.fit_func_list[self._fit]
+
+            for temp_val in temps:
+                nm = temp_map[temp_val]
+                vt = self._svt[nm]
+                mask_full = np.ones(self._nc)
+
+                T0  = np.zeros(5); sT0 = np.zeros(5)
+                for ai in range(5):
+                    t0, sig, _, _ = _fit_one(f, vt[ai], mask_full)
+                    T0[ai]  = t0
+                    sT0[ai] = sig
+
+                res = _propagate(T0, sT0, self._bT0, self._bSIG)
+                ar40_r = res['Ar40_r'][0]
+                ar39_k = res['Ar39_K'][0]
+
+                # blank-corrected sum of all 5 measured isotopes
+                sum_meas = float(np.sum(T0 - self._bT0))
+                if abs(sum_meas) > 1e-30:
+                    ar40r_pct.append(ar40_r / sum_meas * 100)
+                    ar39k_pct.append(ar39_k / sum_meas * 100)
+                else:
+                    ar40r_pct.append(np.nan)
+                    ar39k_pct.append(np.nan)
+                # clip negative for cumulative (rare: blank > signal)
+                ar39k_vals.append(max(ar39_k, 0.0))
+
+            tot = sum(ar39k_vals) if sum(ar39k_vals) > 0 else 1.0
+            cum_ar39k = []
+            running = 0.0
+            for v in ar39k_vals:
+                running += v
+                cum_ar39k.append(running / tot * 100)
+
+            self._yield_cache = {
+                'key': cache_key,
+                'temps': temps,
+                'ar40r_pct': ar40r_pct,
+                'ar39k_pct': ar39k_pct,
+                'cum_ar39k': cum_ar39k,
+            }
+
+        # Plot — two lines
+        ax.plot(cum_ar39k, ar40r_pct, marker='o', markersize=4,
+                color='#3584e4', label='%⁴⁰Ar(r)', linewidth=1.5, alpha=0.9)
+        ax.plot(cum_ar39k, ar39k_pct, marker='s', markersize=4,
+                color='#b41a1a', label='%³⁹Ar(K)', linewidth=1.5, alpha=0.9)
+
+        # Mark current step with orange dotted line (matches degas convention)
+        if self._cur and self._cur != '__BLANK__':
+            import re
+            m = re.search(r'(\d+)', self._cur)
+            if m:
+                cur_temp = int(m.group(1))
+                if cur_temp in temps:
+                    idx = temps.index(cur_temp)
+                    ax.axvline(cum_ar39k[idx], color='#e67e00', linestyle=':',
+                               linewidth=1.2, alpha=0.7, zorder=0)
+
+        ax.set_xlabel('cumulative ³⁹Ar(K) (%)', fontsize=8)
+        ax.set_ylabel('% of Σ(³⁶+³⁷+³⁸+³⁹+⁴⁰)', fontsize=8)
+        ax.set_xlim(-2, 102)
+        ax.tick_params(labelsize=7)
+        ax.legend(fontsize=7, framealpha=0.8, loc='best')
+        ax.grid(True, alpha=0.2)
+
+        self._yield_fig.tight_layout(pad=0.5)
+        self.cv_yield.draw()
+
 
     # ── Save ─────────────────────────────────────────────────
     def _save(self):
