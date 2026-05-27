@@ -83,6 +83,19 @@ z-score 用 MAD（median absolute deviation）算，比 std 更 robust 對單一
 - `AutoPipeline.py` — MvCanvas `_build`（cv_mv min width、cycle/nf/best btn sizes、sc_hdr/best_hdr 文字 dedupe）、`_update_best_btns`（font 9→13）、`_paint_mv`（aspect 1.2:1、titleLbl 字體 11→13）、`_paint_sc`（set_box_aspect 1/1.2）
 - `.work/.app_info.txt` — 3.8.16 → 3.8.17
 
+### 後續增量：Help menu → Cycle Selection Guide
+
+使用者要求把上面的「顏色說明 + 挑選策略」放進程式內 help 而不只是聊天回覆。
+
+- `AutoPipelineWindow._show_cycle_guide()` — 新方法，開啟 QDialog with QScrollArea + rich-text QLabel：
+  - 4 個彩色 badge（藍/黃/紅/灰）跟 `MvCanvas._cs()` 實際按鈕色一致（同 bg、border、text color 配色）
+  - z-score MAD 機制說明（淡黃 callout box）
+  - 5 步驟挑選策略表格（① 排紅、② 黃色情況判斷、③ scatter Best per n 對照、④ scatter marker 讀法、⑤ 別過度修剪）
+  - 一句話 SOP（藍色 callout）
+- `AutoPipelineWindow._build` Help menu 多一個 QAction "Cycle Selection Guide" 接到 `_show_cycle_guide`
+
+入口：選單列 → Help → Cycle Selection Guide。
+
 ---
 
 ## V3.8.16（2026-05-27）— 撤銷 v3.8.15 chart 內標題、button row 置中、scatter 改 1:1

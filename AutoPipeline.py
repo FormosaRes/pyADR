@@ -4107,6 +4107,180 @@ class AutoPipelineWindow(QtWidgets.QMainWindow):
                 'Documentation lives in NTNU_DataReduction.py '
                 '(_show_diagram_plot_help function).')
 
+    def _show_cycle_guide(self):
+        """v3.8.17: scrollable rich-text dialog explaining the cycle 1-10
+        button color scheme (MAD z-score tiers) and a practical selection
+        strategy. Triggered by the Help → Cycle Selection Guide menu item.
+        Content mirrors the user-facing chat reply so the in-app docs match
+        what gets said in conversation."""
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle('Cycle Selection Guide — 按鈕顏色與挑選策略')
+        dlg.setMinimumSize(720, 640)
+
+        vl = QtWidgets.QVBoxLayout(dlg)
+        vl.setContentsMargins(0, 0, 0, 0); vl.setSpacing(0)
+
+        # Scrollable rich-text content
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet('QScrollArea{background:white;border:none;}')
+
+        body = QtWidgets.QLabel()
+        body.setTextFormat(QtCore.Qt.RichText)
+        body.setWordWrap(True)
+        body.setAlignment(QtCore.Qt.AlignTop)
+        body.setMargin(20)
+        body.setStyleSheet('background:white;color:#222;font-size:13px;')
+
+        # Build HTML — colored badges mirror MvCanvas._cs() actual styles.
+        def badge(bg, brd, txt_col, label):
+            return (f'<span style="display:inline-block;background:{bg};'
+                    f'border:1.5px solid {brd};color:{txt_col};'
+                    f'padding:2px 10px;border-radius:3px;'
+                    f'font-weight:bold;font-family:Courier New;">{label}</span>')
+
+        b_blue  = badge('#d6e8f7', '#1a5fb4', '#1a5fb4', ' 5 ')
+        b_amber = badge('#fff4d0', '#c0a020', '#8a6000', ' 5 ')
+        b_red   = badge('#ffd6d6', '#b41a1a', '#a01010', ' 5 ')
+        b_grey  = badge('#eeede8', '#bbbbbb', '#b41a1a', ' 5 ')
+
+        html = f'''
+<h2 style="color:#1a5fb4;margin-top:0;">Cycle 1-10 按鈕顏色（直觀版）</h2>
+
+<p>每個按鈕的顏色 = <b>這個 cycle 偏離擬合線多嚴重</b>：</p>
+
+<table cellspacing="0" cellpadding="8" style="border-collapse:collapse;width:100%;">
+  <tr style="background:#f5f4f0;">
+    <th style="border:1px solid #ccc;text-align:center;width:70px;">顏色</th>
+    <th style="border:1px solid #ccc;text-align:left;">直觀解讀</th>
+    <th style="border:1px solid #ccc;text-align:left;">數學意義</th>
+  </tr>
+  <tr>
+    <td style="border:1px solid #ccc;text-align:center;">{b_blue}</td>
+    <td style="border:1px solid #ccc;">這點貼合，沒事</td>
+    <td style="border:1px solid #ccc;">殘差正常（z &lt; 1.8 σ）</td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #ccc;text-align:center;">{b_amber}</td>
+    <td style="border:1px solid #ccc;">這點有點偏，要小心看</td>
+    <td style="border:1px solid #ccc;">殘差偏大（1.8–3.0 σ）</td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #ccc;text-align:center;">{b_red}</td>
+    <td style="border:1px solid #ccc;">這點明顯離群，建議排除</td>
+    <td style="border:1px solid #ccc;">殘差很大（≥ 3 σ），統計上 &lt; 0.3% 機率</td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #ccc;text-align:center;">{b_grey}</td>
+    <td style="border:1px solid #ccc;">你已經把它排除了</td>
+    <td style="border:1px solid #ccc;">mask=0，不參與 fit</td>
+  </tr>
+</table>
+
+<p style="margin-top:14px;background:#f8f8f0;padding:10px;border-left:3px solid #c0a020;">
+z 用 <b>MAD（median absolute deviation）</b>算，不是普通 std。好處：單一極端值不會把分母拉爆，紅色判斷比較「真實」，不會因為自己是 outlier 卻把自己 normalize 掉。
+</p>
+
+<h2 style="color:#1a5fb4;border-top:2px solid #1a5fb4;padding-top:12px;">挑 cycle 的實戰策略</h2>
+
+<h3 style="color:#b41a1a;">① 先排紅色（強制）</h3>
+<p>紅色幾乎一定是 mass-spec 突波、訊號跳動，或前 1–2 cycle 還沒穩定。
+<b>直接點掉，不要猶豫</b>。</p>
+
+<h3 style="color:#8a6000;">② 黃色看情況決定</h3>
+<table cellspacing="0" cellpadding="6" style="border-collapse:collapse;width:100%;">
+  <tr style="background:#f5f4f0;">
+    <th style="border:1px solid #ccc;text-align:left;">黃色排掉後</th>
+    <th style="border:1px solid #ccc;text-align:left;">該怎麼做</th>
+  </tr>
+  <tr>
+    <td style="border:1px solid #ccc;">n 還有 ≥ 7 → R² 變高、err 變小</td>
+    <td style="border:1px solid #ccc;"><b>排掉</b>，比較乾淨</td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #ccc;">n 已經剩 ≤ 5</td>
+    <td style="border:1px solid #ccc;"><b>留著</b>，n 太少 σ 反而不穩</td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #ccc;">排掉後 R²、err 沒明顯改善</td>
+    <td style="border:1px solid #ccc;"><b>留著</b>，沒必要硬排</td>
+  </tr>
+</table>
+
+<h3 style="color:#1c7a3a;">③ 用 scatter 圖的 "Best per n" 對照</h3>
+<p>scatter 圖底下 [10][9][8][7][6][5][4] 按鈕：</p>
+<ul>
+  <li><span style="background:#d0edda;border:1.5px solid #1c7a3a;padding:1px 6px;color:#1c7a3a;font-weight:bold;">綠色</span> 那顆 = 全部 C(10, n) 組合裡 σ 最小的 n（演算法挑的最佳）</li>
+  <li>點下去 → 自動套用那個 n 的最佳 mask</li>
+</ul>
+
+<p><b>策略</b>：先看綠色顯示在哪個 n（通常 n=8–10），點下去看 mV chart 兩條虛線：</p>
+<ul>
+  <li><span style="color:#e67e00;font-weight:bold;">━ ━</span> 橘虛線 = 全部 10 點 fit</li>
+  <li><span style="color:#1c7a3a;font-weight:bold;">━ ━</span> 綠虛線 = 你選的 subset fit</li>
+</ul>
+<p>兩條應該 <b>接近平行</b>。差很多 → 代表排掉的點影響太大，要重新檢查。</p>
+
+<h3 style="color:#9b59b6;">④ scatter 圖標記讀法</h3>
+<table cellspacing="0" cellpadding="6" style="border-collapse:collapse;width:100%;">
+  <tr style="background:#f5f4f0;">
+    <th style="border:1px solid #ccc;text-align:center;width:80px;">符號</th>
+    <th style="border:1px solid #ccc;text-align:left;">含義</th>
+  </tr>
+  <tr>
+    <td style="border:1px solid #ccc;text-align:center;color:#e67e00;font-size:18px;">▲</td>
+    <td style="border:1px solid #ccc;">你 <b>目前</b> 選的 mask</td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #ccc;text-align:center;color:#9b59b6;font-size:18px;">◆</td>
+    <td style="border:1px solid #ccc;">物理 valid 範圍內 36Ar_air 最小（最逼近大氣值）— 只有 Ar36 顯示</td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #ccc;text-align:center;color:#1f77b4;font-size:18px;">●</td>
+    <td style="border:1px solid #ccc;">全部 C(10, k) 組合，按 n_used 上色（n=10 藍、n=9 綠…）</td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #ccc;text-align:center;color:#cccccc;font-size:18px;">●</td>
+    <td style="border:1px solid #ccc;">不符合物理條件（如 36Ar_air ≤ 0），不可用</td>
+  </tr>
+</table>
+<p>選 cycle 時看：<b>你的橘三角應該落在點雲的左下角</b>（小 T₀ + 小 σ）。如果落在右上，代表你選的 mask 不是好選擇。</p>
+
+<h3 style="color:#444;">⑤ 別過度修剪</h3>
+<ul>
+  <li>R² = 0.0 並 <b>不一定</b> 代表 fit 不好 — 數據本身可能就是水平線（mass-spec 訊號穩定），σ 仍然有效</li>
+  <li>一個 cycle 黃色但所有指標都還 OK → 不必硬排</li>
+  <li><b>目標是讓 fit 反映物理真相，不是讓 R² 變漂亮</b></li>
+</ul>
+
+<h2 style="color:#1a5fb4;border-top:2px solid #1a5fb4;padding-top:12px;">一句話 SOP</h2>
+<p style="background:#eef5ff;padding:12px;border-left:4px solid #1a5fb4;font-size:14px;">
+<b>紅色全排 → 看 scatter 綠色 best 點哪個 n → 點下去 → 看 mV chart 兩條虛線是否平行 → 不平行就手動 fine-tune（多看黃色幾顆）→ 確認橘三角落在點雲左下。</b>
+</p>
+
+<p style="color:#888;font-size:11px;margin-top:18px;">
+v3.8.17 — 顏色閾值定義於 <code>MvCanvas._cs()</code>，z-score 演算於 <code>_cycle_z_scores()</code>。
+</p>
+'''
+        body.setText(html)
+
+        scroll.setWidget(body)
+        vl.addWidget(scroll, 1)
+
+        # Close button row
+        btn_w = QtWidgets.QWidget()
+        btn_w.setStyleSheet(f'background:{BG};border-top:1px solid {BRD};')
+        btn_l = QtWidgets.QHBoxLayout(btn_w)
+        btn_l.setContentsMargins(12, 8, 12, 8)
+        btn_l.addStretch()
+        btn = QtWidgets.QPushButton('Close')
+        btn.setFixedSize(80, 28)
+        btn.clicked.connect(dlg.accept)
+        btn_l.addWidget(btn)
+        vl.addWidget(btn_w)
+
+        dlg.exec_()
+
     def _build(self):
         cw=QtWidgets.QWidget(); self.setCentralWidget(cw)
         vb=QtWidgets.QVBoxLayout(cw); vb.setContentsMargins(0,0,0,0); vb.setSpacing(0)
@@ -4125,6 +4299,10 @@ class AutoPipelineWindow(QtWidgets.QMainWindow):
         _act_help = QtWidgets.QAction('Formulas && References', self)
         _menu_help.addAction(_act_help)
         _act_help.triggered.connect(self._show_help)
+        # v3.8.17: cycle button color tier + selection strategy guide.
+        _act_cycle_guide = QtWidgets.QAction('Cycle Selection Guide', self)
+        _menu_help.addAction(_act_cycle_guide)
+        _act_cycle_guide.triggered.connect(self._show_cycle_guide)
 
         # Top bar: Mode/Fit/Blank/Signal chips + Pipeline progress + Output
         top_bar = QtWidgets.QWidget()
