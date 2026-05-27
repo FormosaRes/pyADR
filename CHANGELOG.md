@@ -1,8 +1,91 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25
 最後整理日期：2026-05-28
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.25（2026-05-28）— PNG 路徑對齊子程式（Data/ ↔ Figures/ 雙根分離）
+
+### 問題
+
+使用者審查 AutoPipeline 各階段存檔路徑時發現 PNG 沒跟子程式同步：
+
+子程式 `NTNU_DataReduction.py` line 1333-1334：
+```python
+self.data_folder       = 'Data/'      # CSV / 數據
+self.screenshot_folder = 'Figures/'   # PNG / 截圖
+```
+PNG 跟 CSV 分別存到兩個根資料夾。但 AutoPipeline v3.8.24 還是把 PNG 塞進 `Data/`：
+
+| 階段 | v3.8.24 PNG 位置 | 子程式對應位置 |
+|---|---|---|
+| T0 截圖 | `Data/T0/Sample/{folder}/{step}.png` | `Figures/T0/{T0type}/{name}.png` |
+| Diagram (DFW/DFA/DFN/DFI) | `Data/Figures/{sid}_{key}.png` | `Figures/Publish/StepHeating/{...}.png` |
+
+### 修法
+
+#### 1. T0 PNG（`CalcT0Page._save`）
+
+CSV 仍然存 `Data/T0/Sample/{folder}/` 不動；PNG 額外算 `Figures/T0/Sample/{folder}/` 並 `os.makedirs(...)`：
+
+```python
+sample_folder_name = os.path.basename(target.rstrip(os.sep)) or 'unknown'
+fig_target = os.path.join(work_dir, 'Figures', 'T0', 'Sample', sample_folder_name)
+os.makedirs(fig_target, exist_ok=True)
+png_path = os.path.join(fig_target, step_label + '.png')
+self._crow_w.grab().save(png_path, 'PNG')
+```
+
+`work_dir = os.path.dirname(os.path.abspath(__file__))` 已經在 v3.8.15 算好。
+
+#### 2. Diagram PNG（`PipelineWorker._run`）
+
+`_run` 開頭原本算的 `fig_d=os.path.join(out,'Figures')` 整段移除（out 是 `Data/`，會跑出 `Data/Figures/`）；改在 work_dir 已知後（與 `getDFStatistics_sh` 同段）重新算：
+
+```python
+# v3.8.25: Figures/Publish/StepHeating/ (work_dir-relative)
+fig_d=os.path.join(work_dir,'Figures','Publish','StepHeating')
+os.makedirs(fig_d,exist_ok=True)
+for key in ['DFW','DFA','DFN','DFI']:
+    src=os.path.join(work_dir,'.work',key+'.png')
+    if os.path.exists(src):
+        shutil.copyfile(src,os.path.join(fig_d,str(sid)+'_'+key+'.png'))
+```
+
+mirrors NTNU line 4885 `self.screenshot_folder + 'Publish/StepHeating/'`。
+
+### 對齊結果
+
+| 階段 | AutoPipeline v3.8.25 | 子程式 | 對齊 |
+|---|---|---|---|
+| T0 CSV (signal) | `Data/T0/Sample/{folder}/{step}.csv` | `Data/T0/Sample/{name}.csv` | ✓ |
+| T0 CSV (blank) | `Data/T0/PBs/{blank}.csv` | `Data/T0/PBs/{name}.csv` | ✓ |
+| T0 PNG | `Figures/T0/Sample/{folder}/{step}.png` | `Figures/T0/{T0type}/{name}.png` | ✓ |
+| MassRatio CSV | `Data/MassRatio/{step}.csv` | `Data/MassRatio/` | ✓ |
+| AgeCalc CSV | `Data/Agecalc/{step}.csv` | `Data/Agecalc/` | ✓ |
+| Datum CSV | `Data/Publish/{sid}_datum.csv` | `Data/Publish/` | ✓ |
+| Diagram PNG | `Figures/Publish/StepHeating/{sid}_{key}.png` | `Figures/Publish/StepHeating/` | ✓ |
+
+batch mode 多一層 `{folder}` 是 AutoPipeline 一次跑多個 step 的需要（子程式 single-step 每次手動 save 不需要），結構上仍與子程式相容。
+
+### 驗證 checklist
+
+- [ ] 跑 AutoPipeline → Calculate T₀ → Save T₀
+- [ ] 確認 CSV 在 `Data/T0/Sample/{folder}/` 內
+- [ ] 確認 PNG 在 `Figures/T0/Sample/{folder}/` 內（**不是** `Data/T0/Sample/`）
+- [ ] 跑完整 pipeline → 確認 Datum CSV 在 `Data/Publish/` 內
+- [ ] Diagram PNG (DFW/DFA/DFN/DFI) 在 `Figures/Publish/StepHeating/` 內（**不是** `Data/Figures/`）
+- [ ] `Data/Figures/` 不應該再被建出來
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - `CalcT0Page._save`：PNG 目標從 `target/` 換成 `work_dir/Figures/T0/Sample/{folder}/`
+  - `PipelineWorker._run`：line 4111 `fig_d=os.path.join(out,'Figures')` 移除，line 4243 之前新建 `fig_d=os.path.join(work_dir,'Figures','Publish','StepHeating')`
+- `.work/.app_info.txt`：3.8.24 → 3.8.25
+- `CHANGELOG.md`：本段
 
 ---
 

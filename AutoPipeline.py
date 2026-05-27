@@ -2913,22 +2913,30 @@ class CalcT0Page(QtWidgets.QWidget):
         # we use QWidget.grab() on the crow_w container that holds all 10 sub-plots.
         # Only the currently-shown step gets a PNG; switch step + Save again to
         # capture another step's view.
+        # v3.8.25: PNG target moved from Data/T0/Sample/{folder}/ to
+        # Figures/T0/Sample/{folder}/ so it matches the sub-program convention
+        # (LRP_save line 3737: pn = work_dir + 'Figures/' + 'T0/' + T0type + '/').
+        # CSVs stay under Data/ exactly as before — only PNGs split off.
         png_written = None
         if hasattr(self, '_crow_w') and self._crow_w is not None:
             step_label = (self._cur if self._cur and self._cur != '__BLANK__'
                           else 'blank' if self._cur == '__BLANK__'
                           else 'current')
-            png_path = os.path.join(target, step_label + '.png')
+            sample_folder_name = os.path.basename(target.rstrip(os.sep)) or 'unknown'
+            fig_target = os.path.join(work_dir, 'Figures', 'T0', 'Sample',
+                                      sample_folder_name)
+            os.makedirs(fig_target, exist_ok=True)
+            png_path = os.path.join(fig_target, step_label + '.png')
             try:
                 self._crow_w.grab().save(png_path, 'PNG')
                 written.append(png_path)
-                png_written = step_label
+                png_written = png_path
             except Exception as e:
                 # PNG failure should not block CSV save
                 self.statusLbl.setText(f'PNG export failed: {e}')
 
         self.statusLbl.setText(f'✓ Saved {len(written)} files')
-        png_msg = f'\n  • PNG (step={png_written}) → {png_written}.png' if png_written else ''
+        png_msg = (f'\n  • PNG → {png_written}' if png_written else '')
         QtWidgets.QMessageBox.information(self, 'Save T₀ — Done',
             'Saved:\n'
             f'  • Blank → Data/T0/PBs/{blank_name}.csv\n'
@@ -4108,7 +4116,12 @@ class PipelineWorker(QtCore.QThread):
         mr_d=os.path.join(out,'MassRatio'); os.makedirs(mr_d,exist_ok=True)
         ac_d=os.path.join(out,'Agecalc');   os.makedirs(ac_d,exist_ok=True)
         dp_d=os.path.join(out,'Publish');   os.makedirs(dp_d,exist_ok=True)
-        fig_d=os.path.join(out,'Figures');  os.makedirs(fig_d,exist_ok=True)
+        # v3.8.25: diagram PNGs moved out of Data/Figures/ and into
+        # Figures/Publish/StepHeating/ (relative to work_dir, not out_dir)
+        # to align with NTNU_DataReduction line 4885 path convention:
+        #     screenshot_folder + 'Publish/StepHeating/'
+        # where screenshot_folder = 'Figures/'.
+        # fig_d is computed later (after work_dir is known, near line 4216).
         OGD=self.params[self.pnames.index('OG Date')]
         J=float(self.params[self.pnames.index('J value')])
         Js=float(self.params[self.pnames.index('J std')])
@@ -4238,6 +4251,10 @@ class PipelineWorker(QtCore.QThread):
         try: Utilities.getDFStatistics_sh(datum_csv,mask_all,consts,'b','o',
                                           isochron_method='ols')
         except Exception as e: self.sig_warn.emit(f'getDFStatistics_sh: {e}')
+        # v3.8.25: Figures/Publish/StepHeating/ (work_dir-relative) instead of
+        # Data/Figures/ to match NTNU_DataReduction.line 4885.
+        fig_d=os.path.join(work_dir,'Figures','Publish','StepHeating')
+        os.makedirs(fig_d,exist_ok=True)
         for key in ['DFW','DFA','DFN','DFI']:
             src=os.path.join(work_dir,'.work',key+'.png')
             if os.path.exists(src): shutil.copyfile(src,os.path.join(fig_d,str(sid)+'_'+key+'.png'))
