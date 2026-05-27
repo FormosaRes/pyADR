@@ -1,8 +1,95 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20
 最後整理日期：2026-05-27
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.20（2026-05-27）— Pipeline UI 重做：圈圈放大、點擊可重算、Next 不再 one-shot
+
+### 問題
+
+使用者回饋舊版 pipeline UI 三項：
+
+1. **太小看不清** — 480×50 widget 塞在頂部 chips 跟 Next button 中間，圈圈才 22px 字、step name 才 9px。
+2. **點圈圈完全不能算** — `mousePressEvent → _go(idx)` 只換 stack page，沒觸發 Mass Ratio / Age Calc 重算。
+3. **Next button 一次性** — 第一次按可以跑，跑完 `_go(2)` 把 nextBtn 設成 "Done" + disabled，要再算 MR/Age 就動不了。
+
+### 修法
+
+`AutoPipeline.py` `AutoPipelineWindow`：
+
+#### 1. Pipeline 搬到獨立 strip + 放大
+
+- 從 top_bar 內 480×50 子 widget 改成 top_bar **下方** 獨立 row：78px 高、full width、底色 `#fafafa` 配 1px border
+- 三個 step "card" 在 HBoxLayout 平均分佈，每張 card：
+  - **圈圈 34px 大字**（v3.8.19 之前 22px），三態：
+    - `○` 灰色 = PENDING
+    - `●` 藍色 #1a5fb4 = ACTIVE（當前頁面）
+    - `✓` 綠色 #2e7d52 = DONE
+  - **Step name 14px bold**（之前 9px），DONE 綠 / ACTIVE 藍 / PENDING 灰
+  - **狀態 badge 10px 大寫間距**：DONE / ACTIVE / PENDING
+- 兩條 connector line：3px 高、green 如果兩端都 done、否則灰
+
+#### 2. 點圈圈可重算
+
+新方法 `_pipe_click(idx)`：
+
+```
+idx == 0  → 純 navigate 到 T₀ page（T₀ 是互動頁面，沒「重算」概念）
+idx == 1  → _target_after_run=1, _run_pipeline() → _on_done() → _go(1)
+idx == 2  → _target_after_run=2, _run_pipeline() → _on_done() → _go(2)
+```
+
+`_on_done` 用 `_target_after_run` 決定要導去哪一頁（之前 hard-code `_go(1)`）。預設 1，每次 run 結束 reset 回 1。
+
+`_pipe_click` 同時檢查：
+- `_t0_has_data()` — 沒載 blank/signal → warn dialog
+- `self._worker.isRunning()` — worker 還在跑 → status bar 提示「Pipeline already running…」不重複觸發
+
+#### 3. Next button 永遠 re-run
+
+`_next_action()` 重寫：
+- 永遠呼叫 `_run_pipeline()`（之前 idx=1 時只 `_go(2)` 不重算）
+- target = `min(idx+1, 2)`，idx=2 也可以 click 然後 stay 在 Age Calc 但重跑
+- 同樣有 `_t0_has_data()` + `_worker.isRunning()` guard
+
+`_go(idx)` 重寫 Next button 行為：
+- 不再 "Done" + disabled 死路
+- idx=0：「Run Pipeline →」
+- idx=1：「↻ Recompute → Age Calc」
+- idx=2：「↻ Recompute Pipeline」
+- 三種狀態 enabled 條件都是 `_t0_has_data()`（loaded files 就 enabled）
+
+`_run_pipeline()` 開頭把 nextBtn 改成 "Running…" + disabled 防雙擊。新 handler `_on_pipeline_err()` 失敗時恢復按鈕。
+
+#### 4. 載入檔案自動更新 pipe 視覺
+
+`CalcT0Page.load_signal()` 結尾呼叫 `parent._refresh_pipe_visuals()` → circle 0 立刻變綠勾 ✓ DONE（因為 `_state_done[0]` 被 `_t0_has_data()` 推到 True）。
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - `AutoPipelineWindow._build`：拆 pipe_container → top_bar 內 nextBtn + 下方獨立 pipe_strip（78px）
+  - 新方法 `_pipe_click`、`_t0_has_data`、`_refresh_pipe_visuals`、`_on_pipeline_err`
+  - `_go` 重寫（不再 disable Next）
+  - `_next_action` 重寫（永遠 re-run，target=min(idx+1,2)）
+  - `_run_pipeline` 加上 nextBtn disable + "Running…" 文字
+  - `_on_done` 用 `_target_after_run` 控制導頁，標記 `_state_done[1/2]=True`
+  - `CalcT0Page.load_signal` 結尾觸發 parent `_refresh_pipe_visuals`
+- `.work/.app_info.txt`：3.8.19 → 3.8.20
+
+### 驗證 checklist
+
+- [ ] 啟動後 pipeline 在頂部第二 row，三大圈圈清楚可見
+- [ ] 載入 blank+sample → 第一個圈圈變綠 ✓ DONE，第二三個還是 ○ PENDING
+- [ ] 點第二個圈圈（Mass Ratio）→ 觸發 pipeline 計算 → 完成後第二三個圈圈都變綠 ✓ DONE，當前頁面切到 MR
+- [ ] 改 T₀ mask 後再點第二個圈圈 → **再次** 觸發 pipeline 重算 → MR 表格更新
+- [ ] 點第三個圈圈 → pipeline 重算 → 完成後切到 Age Calc 頁面
+- [ ] Next button 在 idx=1 顯示「↻ Recompute → Age Calc」，按下會重算
+- [ ] Next button 在 idx=2 顯示「↻ Recompute Pipeline」，按下會重算（不會變 Done 死路）
+- [ ] 跑 pipeline 中 Next 按鈕變灰 "Running…"，跑完恢復
 
 ---
 

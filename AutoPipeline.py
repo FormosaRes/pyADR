@@ -2029,6 +2029,16 @@ class CalcT0Page(QtWidgets.QWidget):
         self._auto_update_delta_t()
         self.nextBtn.setEnabled(True)
         self.footMsg.setText('Files loaded')
+        # v3.8.20: refresh pipeline strip visuals — circle 0 now ✓ done since
+        # blank + signal are loaded, Next button text/enabled state updated.
+        try:
+            parent = self.parent()
+            while parent is not None and not hasattr(parent, '_refresh_pipe_visuals'):
+                parent = parent.parent()
+            if parent is not None:
+                parent._refresh_pipe_visuals(parent.stack.currentIndex())
+        except Exception:
+            pass
 
     def _auto_update_delta_t(self):
         """Read OGD from AutoPipelineWindow's _params; combine with first sample
@@ -4379,56 +4389,103 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
             self._nav_chip_widgets.append(chip)
         
         tbl.addStretch()
-        
-        # Center: Pipeline progress (綠色線條 + 圓圈風格)
-        pipe_container = QtWidgets.QWidget()
-        pipe_container.setFixedSize(480, 50)
-        self._pipe_circles = []
-        self._pipe_lines = []
-        self._pipe_labels = []
-        
-        for i, txt in enumerate(['Calculate T0','Mass Ratio','Age Calc + Datum']):
-            # Circle
-            c_lbl = QtWidgets.QLabel('○', pipe_container)
-            c_lbl.setStyleSheet('color:#ccc;font-size:22px;background:transparent;')
-            c_lbl.setAlignment(QtCore.Qt.AlignCenter)
-            c_lbl.setCursor(QtCore.Qt.PointingHandCursor)  # 可點選
-            c_lbl.mousePressEvent = lambda e, idx=i: self._go(idx)
-            x_pos = 10 + i * 155
-            c_lbl.setGeometry(x_pos, 5, 30, 30)
-            self._pipe_circles.append(c_lbl)
-            
-            # Line (between circles)
-            if i < 2:
-                ln = QtWidgets.QLabel(pipe_container)
-                ln.setGeometry(x_pos + 30, 18, 125, 3)
-                ln.setStyleSheet('background:#ccc;')
-                self._pipe_lines.append(ln)
-            
-            # Text below (字體放大)
-            t_lbl = QtWidgets.QLabel(txt, pipe_container)
-            t_lbl.setStyleSheet('color:#666;font-size:12px;font-weight:bold;background:transparent;')
-            t_lbl.setAlignment(QtCore.Qt.AlignCenter)
-            t_lbl.setGeometry(x_pos - 35, 32, 100, 15)
-            self._pipe_labels.append(t_lbl)
-        
-        tbl.addWidget(pipe_container)
-        tbl.addStretch()
-        
-        # Next button (moved from bottom)
-        self.nextBtn = QtWidgets.QPushButton('Next: Mass Ratio →')
+
+        # v3.8.20: Next button stays in top bar (right side) but pipeline moves
+        # to its own dedicated row below — much bigger, cleaner, dashboard-style.
+        self.nextBtn = QtWidgets.QPushButton('Run Pipeline →')
         self.nextBtn.setStyleSheet(
             f'QPushButton{{background:#1a5fb4;color:white;border:1px solid #1a5fb4;'
-            f'border-radius:3px;padding:6px 12px;font-size:12px;font-weight:bold;}}'
-            f'QPushButton:hover{{background:#1c5fa0;}}')
-        self.nextBtn.setFixedHeight(40)
+            f'border-radius:4px;padding:8px 16px;font-size:13px;font-weight:bold;}}'
+            f'QPushButton:hover{{background:#1c5fa0;}}'
+            f'QPushButton:disabled{{background:#aaa;border-color:#aaa;}}')
+        self.nextBtn.setFixedHeight(44)
         self.nextBtn.setEnabled(False)
-        self.nextBtn.clicked.connect(self._next_action)  # 改為動態判斷
+        self.nextBtn.clicked.connect(self._next_action)
         tbl.addWidget(self.nextBtn)
-        
+
         # v3.8.10: removed Output dir picker (Out: [Data/] 📁). Pipeline writes
         # to './Data/' relative to cwd (same as previous default).
         vb.addWidget(top_bar)
+
+        # ═══ Pipeline strip (v3.8.20: dedicated row, dashboard-style) ═══
+        # Replaces the cramped 480×50 widget that was wedged between chips and
+        # Next button. New design:
+        #   • 64 px tall, full width
+        #   • 3 step "cards" with large 38 px circle indicators
+        #   • Circles change icon + colour per state (✓ done / ● active / ○ pending)
+        #   • Step name in 14 px bold, status badge in 10 px below circle
+        #   • Click any circle → navigate AND recompute (circles 1 & 2 trigger
+        #     _run_pipeline; circle 0 just navigates to T₀ page which is
+        #     interactive anyway).
+        pipe_strip = QtWidgets.QWidget()
+        pipe_strip.setStyleSheet(f'background:#fafafa;border-bottom:1px solid {BRD};')
+        pipe_strip.setFixedHeight(78)
+        ps_hl = QtWidgets.QHBoxLayout(pipe_strip)
+        ps_hl.setContentsMargins(40, 6, 40, 6); ps_hl.setSpacing(0)
+
+        self._pipe_circles = []
+        self._pipe_labels = []
+        self._pipe_status = []
+        self._pipe_lines  = []
+        # Tracks per-step completion (set when navigating away from / completing a step).
+        self._state_done = {0: False, 1: False, 2: False}
+
+        step_names = ['Calculate T₀', 'Mass Ratio', 'Age Calc + Datum']
+        for i, name in enumerate(step_names):
+            # ── Step card (circle + name + status) ──
+            card = QtWidgets.QWidget()
+            card.setFixedWidth(180)
+            card.setCursor(QtCore.Qt.PointingHandCursor)
+            cv = QtWidgets.QVBoxLayout(card)
+            cv.setContentsMargins(0, 0, 0, 0); cv.setSpacing(2)
+
+            circle = QtWidgets.QLabel('○')
+            circle.setAlignment(QtCore.Qt.AlignCenter)
+            circle.setFixedHeight(40)
+            circle.setStyleSheet(
+                'color:#bbb;font-size:34px;font-weight:bold;'
+                'background:transparent;')
+            cv.addWidget(circle)
+            self._pipe_circles.append(circle)
+
+            name_lbl = QtWidgets.QLabel(name)
+            name_lbl.setAlignment(QtCore.Qt.AlignCenter)
+            name_lbl.setStyleSheet(
+                'color:#666;font-size:14px;font-weight:bold;background:transparent;')
+            cv.addWidget(name_lbl)
+            self._pipe_labels.append(name_lbl)
+
+            status_lbl = QtWidgets.QLabel('PENDING')
+            status_lbl.setAlignment(QtCore.Qt.AlignCenter)
+            status_lbl.setStyleSheet(
+                'color:#999;font-size:10px;font-weight:bold;'
+                'letter-spacing:1px;background:transparent;')
+            cv.addWidget(status_lbl)
+            self._pipe_status.append(status_lbl)
+
+            # Click anywhere on the card → navigate + recompute
+            card.mousePressEvent = lambda e, idx=i: self._pipe_click(idx)
+
+            ps_hl.addWidget(card)
+
+            # ── Connector line to next card ──
+            if i < 2:
+                ln_wrap = QtWidgets.QWidget()
+                ln_wrap.setFixedHeight(40)
+                ln_wrap_vl = QtWidgets.QVBoxLayout(ln_wrap)
+                ln_wrap_vl.setContentsMargins(0, 18, 0, 0)
+                ln = QtWidgets.QFrame()
+                ln.setFrameShape(QtWidgets.QFrame.HLine)
+                ln.setFixedHeight(4)
+                ln.setStyleSheet(
+                    'background:#ddd;border:none;'
+                    'border-top:3px solid #ddd;')
+                ln_wrap_vl.addWidget(ln)
+                ln_wrap_vl.addStretch()
+                ps_hl.addWidget(ln_wrap, 1)
+                self._pipe_lines.append(ln)
+
+        vb.addWidget(pipe_strip)
 
         # Stack
         self.stack=QtWidgets.QStackedWidget()
@@ -4449,53 +4506,153 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
         self._go(0)
 
     def _go(self, idx):
+        """Switch to the given page WITHOUT recomputing. Updates chip visibility,
+        Next button text/enabled state, and the pipeline-strip visuals."""
         self.stack.setCurrentIndex(idx)
-        
-        # Hide nav chips on Mass Ratio (idx==1) and Age Calc (idx==2), show on T0 (idx==0)
+
+        # Hide nav chips on Mass Ratio (idx==1) and Age Calc (idx==2), show on T0
         for chip in self._nav_chip_widgets:
             chip.setVisible(idx == 0)
-        
-        # 動態更新 nextBtn 文字
+
+        # v3.8.20: Next button always functional — text reflects which action it
+        # will take, but it's never the "Done / disabled" dead-end of before.
+        # Enabled requires t0Page to have loaded files (the only true prereq).
+        ready = self._t0_has_data()
         if idx == 0:
-            self.nextBtn.setText('Next: Mass Ratio →')
-            self.nextBtn.setEnabled(False)  # T0 完成後才啟用
+            self.nextBtn.setText('Run Pipeline →')
+            self.nextBtn.setEnabled(ready)
         elif idx == 1:
-            self.nextBtn.setText('Next: Age Calc & Datum →')
-            self.nextBtn.setEnabled(True)
+            self.nextBtn.setText('↻ Recompute → Age Calc')
+            self.nextBtn.setEnabled(ready)
         elif idx == 2:
-            self.nextBtn.setText('Done')
-            self.nextBtn.setEnabled(False)
-        
-        # 更新管線進度視覺效果
+            self.nextBtn.setText('↻ Recompute Pipeline')
+            self.nextBtn.setEnabled(ready)
+
+        self._refresh_pipe_visuals(idx)
+
+    def _t0_has_data(self):
+        """True if t0Page has at least blank + signal loaded — pipeline can run."""
+        return (getattr(self.t0Page, '_bvt', None) is not None
+                and bool(getattr(self.t0Page, '_svt', {})))
+
+    def _refresh_pipe_visuals(self, current_idx):
+        """Update circle icons / colours / status labels based on _state_done +
+        current_idx. Called by _go(), _on_done(), and after t0 data load."""
+        # Idx 0 (T0) is implicitly "done" once data is loaded — the user works
+        # interactively on it, there's no separate "compute T0" stage in the
+        # pipeline (T0 fitting happens inside the worker for MR/Age).
+        self._state_done[0] = self._t0_has_data()
+
         for i in range(3):
-            if i < idx:
-                # 已完成: 綠色實心圓 + 綠色線
-                self._pipe_circles[i].setText('✓')
-                self._pipe_circles[i].setStyleSheet('color:#2e7d52;font-size:22px;font-weight:bold;background:transparent;')
-                self._pipe_labels[i].setStyleSheet('color:#2e7d52;font-size:9px;font-weight:bold;background:transparent;')
-                if i < 2:
-                    self._pipe_lines[i].setStyleSheet('background:#2e7d52;')
-            elif i == idx:
-                # 進行中: 藍色空心圓
-                self._pipe_circles[i].setText('◉')
-                self._pipe_circles[i].setStyleSheet('color:#1a5fb4;font-size:22px;font-weight:bold;background:transparent;')
-                self._pipe_labels[i].setStyleSheet('color:#1a5fb4;font-size:9px;font-weight:bold;background:transparent;')
+            circle = self._pipe_circles[i]
+            name_lbl = self._pipe_labels[i]
+            status_lbl = self._pipe_status[i]
+            done = self._state_done[i]
+            active = (i == current_idx)
+            if done:
+                # Green check — but if it's also the active page, keep blue
+                if active:
+                    circle.setText('●')
+                    circle.setStyleSheet(
+                        'color:#1a5fb4;font-size:34px;font-weight:bold;'
+                        'background:transparent;')
+                    name_lbl.setStyleSheet(
+                        'color:#1a5fb4;font-size:14px;font-weight:bold;'
+                        'background:transparent;')
+                    status_lbl.setText('ACTIVE')
+                    status_lbl.setStyleSheet(
+                        'color:#1a5fb4;font-size:10px;font-weight:bold;'
+                        'letter-spacing:1px;background:transparent;')
+                else:
+                    circle.setText('✓')
+                    circle.setStyleSheet(
+                        'color:#2e7d52;font-size:30px;font-weight:bold;'
+                        'background:transparent;')
+                    name_lbl.setStyleSheet(
+                        'color:#2e7d52;font-size:14px;font-weight:bold;'
+                        'background:transparent;')
+                    status_lbl.setText('DONE')
+                    status_lbl.setStyleSheet(
+                        'color:#2e7d52;font-size:10px;font-weight:bold;'
+                        'letter-spacing:1px;background:transparent;')
+            elif active:
+                circle.setText('●')
+                circle.setStyleSheet(
+                    'color:#1a5fb4;font-size:34px;font-weight:bold;'
+                    'background:transparent;')
+                name_lbl.setStyleSheet(
+                    'color:#1a5fb4;font-size:14px;font-weight:bold;'
+                    'background:transparent;')
+                status_lbl.setText('ACTIVE')
+                status_lbl.setStyleSheet(
+                    'color:#1a5fb4;font-size:10px;font-weight:bold;'
+                    'letter-spacing:1px;background:transparent;')
             else:
-                # 未開始: 灰色空心圓
-                self._pipe_circles[i].setText('○')
-                self._pipe_circles[i].setStyleSheet('color:#ccc;font-size:22px;background:transparent;')
-                self._pipe_labels[i].setStyleSheet('color:#666;font-size:9px;background:transparent;')
-                if i > 0 and self._pipe_lines[i-1]:
-                    self._pipe_lines[i-1].setStyleSheet('background:#ccc;')
-    
-    def _next_action(self):
-        """Top bar Next button 動態行為：依當前 page 決定動作"""
-        idx = self.stack.currentIndex()
+                circle.setText('○')
+                circle.setStyleSheet(
+                    'color:#bbb;font-size:34px;font-weight:bold;'
+                    'background:transparent;')
+                name_lbl.setStyleSheet(
+                    'color:#666;font-size:14px;font-weight:bold;'
+                    'background:transparent;')
+                status_lbl.setText('PENDING')
+                status_lbl.setStyleSheet(
+                    'color:#999;font-size:10px;font-weight:bold;'
+                    'letter-spacing:1px;background:transparent;')
+
+            # Connector line: green if BOTH endpoints done
+            if i < 2:
+                next_done = self._state_done[i + 1]
+                if done and next_done:
+                    self._pipe_lines[i].setStyleSheet(
+                        'background:#2e7d52;border:none;border-top:3px solid #2e7d52;')
+                elif done:
+                    # half-done state: fade green-to-grey would be ideal, use solid green
+                    self._pipe_lines[i].setStyleSheet(
+                        'background:#2e7d52;border:none;border-top:3px solid #2e7d52;')
+                else:
+                    self._pipe_lines[i].setStyleSheet(
+                        'background:#ddd;border:none;border-top:3px solid #ddd;')
+
+    def _pipe_click(self, idx):
+        """Pipeline circle/card clicked. v3.8.20: navigate AND recompute.
+          • idx 0: just navigate to T₀ page (interactive page, no auto-recompute)
+          • idx 1: run pipeline → land on Mass Ratio page
+          • idx 2: run pipeline → land on Age Calc page
+        Requires t0Page to have data loaded; otherwise shows a warning."""
         if idx == 0:
-            self._run_pipeline()  # T0 → Mass Ratio
-        elif idx == 1:
-            self._go(2)  # Mass Ratio → Age Calc
-        # idx==2 時 nextBtn 已 disabled
+            self._go(0)
+            return
+        if not self._t0_has_data():
+            QtWidgets.QMessageBox.warning(
+                self, 'Load files first',
+                'Load blank + sample .dat files on the Calculate T₀ page '
+                'before running the pipeline.')
+            return
+        # Worker thread might already be running — guard against re-entry.
+        if getattr(self, '_worker', None) is not None and \
+           self._worker.isRunning():
+            self.statusBar().showMessage('Pipeline already running…')
+            return
+        self._target_after_run = idx
+        self._run_pipeline()
+
+    def _next_action(self):
+        """Top bar Next button: always re-runs the pipeline (no more one-shot
+        Done state). Target page after run is current+1, clamped to 2."""
+        idx = self.stack.currentIndex()
+        if not self._t0_has_data():
+            QtWidgets.QMessageBox.warning(
+                self, 'Load files first',
+                'Load blank + sample .dat files on the Calculate T₀ page first.')
+            return
+        if getattr(self, '_worker', None) is not None and \
+           self._worker.isRunning():
+            self.statusBar().showMessage('Pipeline already running…')
+            return
+        # idx 0 → go to MR (1); idx 1 → go to Age (2); idx 2 → stay at Age (2)
+        self._target_after_run = min(idx + 1, 2)
+        self._run_pipeline()
 
     def _ret(self):
         try: self.parent().toMain()
@@ -4518,19 +4675,38 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
         if not sig_csvs:
             QtWidgets.QMessageBox.warning(self,'Error','Load sample files first.'); return
         self.statusBar().showMessage('Running pipeline...')
+        # v3.8.20: disable Next button while worker is running so user can't
+        # double-click. _on_done / sig_err handlers restore it.
+        self.nextBtn.setEnabled(False)
+        self.nextBtn.setText('Running…')
         self._worker=PipelineWorker(blank_csv,sig_csvs,self._params,self._pnames,out)
         self._worker.sig_prog.connect(self.statusBar().showMessage)
         self._worker.sig_warn.connect(lambda m: QtWidgets.QMessageBox.warning(self,'Warning',m))
         self._worker.sig_done.connect(self._on_done)
-        self._worker.sig_err.connect(lambda m: QtWidgets.QMessageBox.critical(self,'Error',m))
+        self._worker.sig_err.connect(self._on_pipeline_err)
         self._worker.start()
+
+    def _on_pipeline_err(self, msg):
+        """Worker failed — restore Next button + show error dialog."""
+        self.statusBar().showMessage('✗ Pipeline failed')
+        # Restore Next button to whatever the current page wants it to say
+        self._go(self.stack.currentIndex())
+        QtWidgets.QMessageBox.critical(self, 'Pipeline Error', msg)
 
     def _on_done(self, res):
         self.mrPage.populate(res['steps'])
         self.agePage.populate(res['steps'],res['datum_csv'],res['work_dir'],
                               consts=res.get('consts'))
         self.statusBar().showMessage('✓ Done — '+res['datum_csv'])
-        self._go(1)
+        # v3.8.20: pipeline computes T0, MR, and Age all in one shot — mark all
+        # three as done. Navigate to the target page the caller requested
+        # (set by _pipe_click or _next_action) instead of always landing on MR.
+        self._state_done[1] = True
+        self._state_done[2] = True
+        target = getattr(self, '_target_after_run', 1)
+        self._go(target)
+        # Reset target so a stale value doesn't carry over to the next run
+        self._target_after_run = 1
 
     def load_files(self, blank_path, sample_paths):
         self.t0Page.load_blank(blank_path, self._nc)
