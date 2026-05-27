@@ -1,8 +1,46 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22
 最後整理日期：2026-05-27
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.22（2026-05-27）— Scatter 點擊吸附 respect n-filter
+
+### 問題
+
+CalcT0Page 的 T₀ vs 2σ scatter plot：使用者用上方 n-filter 按鈕（All / 10 / 9 / … / 4）只勾選某一個 n（例如只勾 n=6）後，畫面上只剩 n=6 的點，但**滑鼠點擊還是會吸附到隱藏的 n=7、n=8 點**。原因是 `MvCanvas._sc_click` 計算最近點時遍歷 `self._all_pts`（含被 filter 隱藏的點），沒做 n-filter 過濾。
+
+### 影響
+
+使用者明明只勾 n=6 想在 n=6 的散佈裡挑點，結果一點就跳去 n=7 / n=8 / n=10 的某個組合，等於 n-filter 對點擊沒有效果。手動挑點流程被嚴重干擾。
+
+### 修法
+
+`AutoPipeline.py` `MvCanvas._sc_click`（line 1618）：
+
+```python
+n_filter = getattr(self, '_n_filter', set(range(4, 11)))
+visible = [p for p in self._all_pts if p[2] in n_filter]
+if not visible: return
+# range / 最近點搜尋皆改用 visible，不再用 self._all_pts
+```
+
+效果：n_filter = {6} → 點擊只會命中 n=6 的點；n_filter = {6,7} → 只命中 n∈{6,7}，永遠不會跳到 n=8/9/10 的隱藏組合。range 也改用 visible 計算（距離 metric 跟使用者看到的範圍一致）。
+
+### 驗證 checklist
+
+- [ ] 啟動 AutoPipeline → 載入 Blank/Signal → 進 Calculate T₀
+- [ ] n-filter 按 "6"（只剩 n=6 的點）→ 在散佈上點任意位置 → titleLbl 顯示的 T₀/σ 應該對應某個 n=6 組合
+- [ ] n-filter 按 "All" → 點擊恢復可命中任意 n
+- [ ] n-filter 按 "6"+"7" → 點擊只命中 n=6 或 n=7
+
+### 檔案改動
+
+- `AutoPipeline.py`：`MvCanvas._sc_click` 加 n_filter 過濾，最近點搜尋與 range 正規化都改用 visible-only points
+- `.work/.app_info.txt`：3.8.21 → 3.8.22
+- `CHANGELOG.md`：本段
 
 ---
 

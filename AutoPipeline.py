@@ -1622,14 +1622,22 @@ class MvCanvas(QtWidgets.QWidget):
         t0_click = event.xdata; e2_click = event.ydata
         if t0_click is None or e2_click is None: return
 
-        # normalise for fair distance
-        t0s = [p[0] for p in self._all_pts]
-        e2s = [p[1] for p in self._all_pts]
+        # v3.8.22: respect n-filter — clicks only snap to visible (not greyed-out)
+        # combos. Before this fix, picking n=6 then clicking still hit hidden n=7
+        # / n=8 points because the loop scanned self._all_pts unconditionally.
+        n_filter = getattr(self, '_n_filter', set(range(4, 11)))
+        visible = [p for p in self._all_pts if p[2] in n_filter]
+        if not visible: return  # nothing to pick
+
+        # normalise for fair distance (use visible-only range so the metric
+        # matches what the user sees)
+        t0s = [p[0] for p in visible]
+        e2s = [p[1] for p in visible]
         t0_rng = max(t0s) - min(t0s) + 1e-30
         e2_rng = max(e2s) - min(e2s) + 1e-30
 
         best = None; best_d = 1e30
-        for t0, e2, nu, valid, m in self._all_pts:
+        for t0, e2, nu, valid, m in visible:
             dt = (t0 - t0_click) / t0_rng
             de = (e2 - e2_click) / e2_rng
             d  = dt*dt + de*de
