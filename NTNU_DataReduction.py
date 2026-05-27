@@ -1208,7 +1208,17 @@ class App():
         try:
             _splash_path = os.path.join(self.work_dir, '.work', 'splash.png')
             if os.path.exists(_splash_path):
-                _pix = QtGui.QPixmap(_splash_path)
+                _pix_raw = QtGui.QPixmap(_splash_path)
+
+                # v3.8.19: splash.png has a built-in grey footer strip
+                # (y=455–480) with a horizontal divider at y=455 that the user
+                # wants gone. Crop the pixmap to (W, 455) at load so only the
+                # clean white card area shows, then paint Loading… centered
+                # below the URL. The grey footer + bottom-right showMessage()
+                # are both eliminated.
+                _crop_h = 455
+                _W = _pix_raw.width()
+                _pix = _pix_raw.copy(0, 0, _W, _crop_h)
 
                 # Read version + date from .app_info.txt
                 _ver = '?'; _date = '?'
@@ -1227,7 +1237,6 @@ class App():
                 _painter = QtGui.QPainter(_pix)
                 _painter.setRenderHint(QtGui.QPainter.Antialiasing)
                 _painter.setRenderHint(QtGui.QPainter.TextAntialiasing)
-                _W = _pix.width()
 
                 _font_v = QtGui.QFont('Georgia', 16, QtGui.QFont.Bold)
                 _painter.setFont(_font_v)
@@ -1242,15 +1251,24 @@ class App():
                 _painter.drawText(QtCore.QRect(0, 374, _W, 22),
                                   QtCore.Qt.AlignHCenter,
                                   f'updated {_date}')
+
+                # v3.8.19: "Loading…" centered below github URL (URL renders
+                # at ~y=400; place text at y=425, centered horizontally).
+                _font_l = QtGui.QFont('Arial', 9, QtGui.QFont.StyleItalic)
+                _font_l.setItalic(True)
+                _painter.setFont(_font_l)
+                _painter.setPen(QtGui.QColor(120, 120, 120))
+                _painter.drawText(QtCore.QRect(0, 425, _W, 22),
+                                  QtCore.Qt.AlignHCenter,
+                                  'Loading…')
+
                 _painter.end()
 
                 self._splash = QtWidgets.QSplashScreen(
                     _pix, QtCore.Qt.WindowStaysOnTopHint)
                 self._splash.setMask(_pix.mask())
-                self._splash.showMessage(
-                    'Loading…',
-                    QtCore.Qt.AlignRight | QtCore.Qt.AlignBottom,
-                    QtGui.QColor(60, 60, 60))
+                # v3.8.19: showMessage removed — Loading… now baked into pixmap,
+                # centered below the URL instead of bottom-right grey strip.
                 self._splash.show()
                 self.app.processEvents()
                 # record show time so run() can enforce minimum splash duration

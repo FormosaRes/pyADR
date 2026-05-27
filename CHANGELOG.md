@@ -1,8 +1,42 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19
 最後整理日期：2026-05-27
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.19（2026-05-27）— Splash 灰色 footer 拿掉，Loading 移到 URL 下方置中
+
+### 問題
+
+splash.png 是 640×480 PNG（NTNU_DataReduction.py 啟動時用 QSplashScreen 顯示），y=455–480 有一條 25px 高的灰色 footer 帶分隔線（PNG 內建，不是 Qt 加上去的）。`Loading…` 文字是用 `splash.showMessage('Loading…', AlignRight | AlignBottom, ...)` 寫在這條 footer 的右下角。
+
+使用者要求：拿掉灰色 footer，`Loading…` 移到 `github.com/FormosaRes/pyADR` 下面、置中。
+
+### 修法
+
+`NTNU_DataReduction.py` 啟動畫面 painter block：
+
+1. 載入 splash.png 後 `_pix.copy(0, 0, W, 455)` 裁切掉灰色 footer，新 pixmap 是 640×455。
+2. 原本 painter 只畫 version + date，新增第三段畫 `Loading…`：
+   - y=425（github URL 大約 y=400，往下 25px 距離適中）
+   - 寬度 = pixmap 寬，`AlignHCenter` 水平置中
+   - Arial 9pt 斜體灰字 `(120, 120, 120)`，跟 URL 視覺風格搭
+3. 移除 `splash.showMessage('Loading…', AlignRight | AlignBottom, ...)` 呼叫 — Loading 文字現在已 baked 進 pixmap，不需要 Qt overlay。
+
+splash.png 本身**沒有改動**（純 runtime crop，使用者要保留原 PNG asset 可日後 regenerate 處理）。
+
+### 效果
+
+啟動畫面：
+- 高度 480 → 455（消除底部灰色 footer + 分隔線）
+- `Loading…` 從右下角灰條搬到 URL 下方水平置中
+
+### 檔案改動
+
+- `NTNU_DataReduction.py` — splash 載入 block 加 `_pix.copy(0,0,W,455)`、painter 多畫 Loading、移除 `showMessage`
+- `.work/.app_info.txt` — 3.8.18 → 3.8.19
 
 ---
 
