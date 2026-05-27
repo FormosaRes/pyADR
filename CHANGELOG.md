@@ -1,8 +1,72 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14
 最後整理日期：2026-05-27
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.14（2026-05-27）— Ar40 canvas 在全螢幕仍被裁切的根因修正
+
+### 問題
+
+v3.8.13 之後使用者反映「全螢幕下 Ar40 的 T₀ vs 2σ 跟 best-n button 仍然被切」。截圖顯示 Ar40 的 n-filter 缺少「4」、best-n 缺少「4」、scatter 右側留白被裁。其他 4 個 isotope 都完整顯示。
+
+### 根因
+
+MvCanvas 內的兩列：
+- n-filter row：8 個 QPushButton（All / 10 / 9 / ... / 4）
+- best-n row：7 個 QPushButton（10 / 9 / ... / 4）
+
+之前**只 `setFixedHeight`，沒 `setFixedWidth`**。Qt 在 Windows 上 QPushButton 預設 min width 約 75 px。於是：
+
+- n-filter row 實際最小寬度 ≈ 8 × 75 = 600 px
+- best-n row 實際最小寬度 ≈ 7 × 75 = 525 px
+
+MvCanvas 的 min width = max(全部 child 的 min)，被這兩列撐到 **~600 px**。5 個並排就要 3000 px，遠超任何視窗。
+
+CalcT0Page 外層 QScrollArea 設定 `setHorizontalScrollBarPolicy(ScrollBarAlwaysOff)`，所以橫向 overflow **不會出 scrollbar 而是直接裁掉**右側。最右的 Ar40 自然被切。
+
+### 修法
+
+**1. 給 n-filter 跟 best-n 每個 button 明確 `setFixedSize`**
+
+```python
+# n-filter:
+btn_all  setFixedSize(28, 24)     # 'All' 略寬
+btn_10   setFixedSize(24, 24)     # 兩位數
+其他     setFixedSize(20, 24)     # 個位數
+# Total: 28 + 24 + 6*20 = 172 px
+
+# best-n:
+btn_10   setFixedSize(28, 28)
+其他     setFixedSize(24, 28)
+# Total: 28 + 6*24 = 172 px
+```
+
+`setSpacing(2) → 0`，並在兩列末端加 `addStretch()` 把 leftover space 推到右邊（不會撐開 min）。
+
+**2. cv_mv min width 240 → 220、cycle button 24 → 22 px**
+
+5 × 220 = 1100 px，加 sidebar 95 + margins ≈ 1240 px 視窗就能塞下，1280p 螢幕（含 Windows 125% DPI 縮放後的 1920p）都安全。
+
+**3. 修掉其他 hidden width inflation**
+
+- `scInfoLbl` (σ 標註 label)：`setWordWrap(True)` + `setMinimumWidth(1)`，避免長文字撐開 canvas
+- `sc_hdr` 文字縮短：`'T₀ vs 2σ  (Manual: click to select)'` → `'T₀ vs 2σ'`，完整說明改 tooltip
+- `best_hdr` 同：`'Best per cycle count  (min error):'` → `'Best per n'` + tooltip
+- `usedLbl` font 14 → 12 + `setMinimumWidth(1)`
+
+所有改動都加 `setMinimumWidth(1)` 強制這些 label 不貢獻 MvCanvas min width。
+
+### 驗證
+
+預期 MvCanvas min width 收斂到 **~220 px**（被 cv_mv min 跟 cycle row 雙重 binding）。5 × 220 + sidebar 95 + margins ≈ 1240 px，1366p+ 螢幕都能完整顯示 Ar40。
+
+### 檔案改動
+
+- `AutoPipeline.py` — MvCanvas n-filter / best-n button widths、cv_mv min、cycle button size、label min widths
+- `.work/.app_info.txt` — 3.8.13 → 3.8.14
 
 ---
 

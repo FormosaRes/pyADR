@@ -994,43 +994,46 @@ class MvCanvas(QtWidgets.QWidget):
         self.titleLbl.setAlignment(QtCore.Qt.AlignLeft)
         vb.addWidget(self.titleLbl)
 
-        # mV canvas — 3:4 aspect (width:height)
-        # v3.8.11: reduced min width 320→240 so 5 canvases fit a 1440px wide
-        # window without horizontal scroll.
+        # mV canvas. v3.8.14: min width 240 → 220 so 5 canvases + sidebar + margins
+        # fit ~1280 px viewports (after Windows DPI scaling 125% etc.).
         self.cv_mv = QtWidgets.QLabel()
-        self.cv_mv.setMinimumSize(240, 1)
+        self.cv_mv.setMinimumSize(220, 1)
         self.cv_mv.setAlignment(QtCore.Qt.AlignCenter)
         self.cv_mv.setStyleSheet(f'background:white;border:1px solid {BRD};')
         self.cv_mv.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         vb.addWidget(self.cv_mv, 2)   # v3.8.13: was stretch=3; reduced to give
 
-        # cycle buttons 1-10. v3.8.13: 24×24, spacing=0 to match T₀ vs 2σ
-        # n-filter button style (bigger digits, tight rows).
-        # 10 buttons × 24 + 9 × 0 = 240 px (== cv_mv min width).
+        # cycle buttons 1-10. v3.8.14: 22×22 spacing 0 (was 24) → 220 px row,
+        # matches cv_mv min width. Trailing stretch keeps row left-aligned and
+        # lets MvCanvas resize wider without distorting the row.
         self._btns = []
         cg = QtWidgets.QWidget()
         gl = QtWidgets.QHBoxLayout(cg)
         gl.setContentsMargins(0, 0, 0, 0); gl.setSpacing(0)
         for i in range(10):
             b = QtWidgets.QPushButton(str(i + 1))
-            b.setFixedSize(24, 24); b.setCheckable(True); b.setChecked(True)
+            b.setFixedSize(22, 22); b.setCheckable(True); b.setChecked(True)
             b.setStyleSheet(self._cs(True))
             b.clicked.connect(lambda _, idx=i: self._toggle(idx))
             gl.addWidget(b)
             self._btns.append(b)
+        gl.addStretch()
         vb.addWidget(cg)
 
         self.usedLbl = QtWidgets.QLabel('Used: 10/10')
         self.usedLbl.setStyleSheet(
-            f'font-size:14px;color:{TXT3};font-family:Courier New;')
+            f'font-size:12px;color:{TXT3};font-family:Courier New;')
+        self.usedLbl.setMinimumWidth(1)
         vb.addWidget(self.usedLbl)
 
         # T0 vs 2σ — interactive FigureCanvas
-        sc_hdr = QtWidgets.QLabel('T\u2080 vs 2\u03c3  (Manual: click to select)')
+        sc_hdr = QtWidgets.QLabel('T\u2080 vs 2\u03c3')
         sc_hdr.setStyleSheet(
             f'font-size:14px;font-weight:bold;color:{TXT2};'
             f'border-top:1px solid {BRD};padding-top:2px;')
+        sc_hdr.setToolTip('Manual mode: click any dot to select that cycle combo.')
+        sc_hdr.setMinimumWidth(1)
         vb.addWidget(sc_hdr)
 
         # v3.8.12: \u03c3 values shown as a Qt label above the scatter (was an
@@ -1040,6 +1043,10 @@ class MvCanvas(QtWidgets.QWidget):
             f'font-size:10px;font-family:"Courier New",monospace;color:{TXT2};'
             f'background:transparent;padding:1px 4px;')
         self.scInfoLbl.setTextFormat(QtCore.Qt.RichText)
+        # v3.8.14: word-wrap on + minWidth 1 so this label cannot inflate the
+        # MvCanvas min size when σ strings are long.
+        self.scInfoLbl.setWordWrap(True)
+        self.scInfoLbl.setMinimumWidth(1)
         vb.addWidget(self.scInfoLbl)
 
         # n-filter toggle row: All + n=10..4 (移到 scatter plot 上方，透明背景)
@@ -1047,10 +1054,14 @@ class MvCanvas(QtWidgets.QWidget):
         nf_row = QtWidgets.QWidget()
         nf_row.setStyleSheet('background:transparent;')  # 透明背景
         nf_gl  = QtWidgets.QHBoxLayout(nf_row)
-        nf_gl.setContentsMargins(0,0,0,0); nf_gl.setSpacing(2)
+        nf_gl.setContentsMargins(0,0,0,0); nf_gl.setSpacing(0)
         self._nf_btns = {}
+        # v3.8.14: setFixedSize on every button so the row has a deterministic
+        # min-width. Without fixed widths, Qt's default QPushButton min width
+        # (~75 px on Windows) made each row ~600 px, blowing up MvCanvas min
+        # width and clipping the 5th (Ar40) canvas on full-screen.
         btn_all = QtWidgets.QPushButton('All')
-        btn_all.setFixedHeight(24); btn_all.setCheckable(True); btn_all.setChecked(True)
+        btn_all.setFixedSize(28, 24); btn_all.setCheckable(True); btn_all.setChecked(True)
         btn_all.setStyleSheet(
             f'QPushButton{{background:{BLUE_BG};color:#000;border:1px solid #1a5fb4;'
             f'border-radius:3px;font-size:12px;font-weight:bold;}}'
@@ -1060,7 +1071,8 @@ class MvCanvas(QtWidgets.QWidget):
         self._nf_all_btn = btn_all
         for n in range(10, 3, -1):
             b = QtWidgets.QPushButton(f'{n}')
-            b.setFixedHeight(24); b.setCheckable(True); b.setChecked(True)
+            w = 24 if n == 10 else 20
+            b.setFixedSize(w, 24); b.setCheckable(True); b.setChecked(True)
             b.setStyleSheet(
                 f'QPushButton{{background:{BLUE_BG};color:#000;border:1px solid #1a5fb4;'
                 f'border-radius:3px;font-size:12px;font-weight:bold;}}'
@@ -1068,7 +1080,8 @@ class MvCanvas(QtWidgets.QWidget):
             b.clicked.connect(lambda _, nv=n: self._nf_toggle(nv))
             nf_gl.addWidget(b)
             self._nf_btns[n] = b
-        vb.addWidget(nf_row)  # 放在 scatter header 下方
+        nf_gl.addStretch()   # push buttons to the left, leftover space empty
+        vb.addWidget(nf_row)
 
         self._sc_fig = _mfig.Figure(facecolor='white')
         self._sc_ax  = self._sc_fig.add_subplot(111)
@@ -1082,25 +1095,32 @@ class MvCanvas(QtWidgets.QWidget):
         vb.addWidget(self.cv_sc, 3)   # T₀ vs 2σ scatter more vertical room (was 2)
 
         # Best-n buttons: one per n_used (10→4), shows min-error for that n
-        best_hdr = QtWidgets.QLabel('Best per cycle count  (min error):')
+        best_hdr = QtWidgets.QLabel('Best per n')
         best_hdr.setStyleSheet(
             f'font-size:14px;font-weight:bold;color:{TXT2};padding-top:2px;')
+        best_hdr.setToolTip('Cycle count with the minimum residual error '
+                            '(click to apply that mask).')
+        best_hdr.setMinimumWidth(1)
         vb.addWidget(best_hdr)
 
         self._best_row = QtWidgets.QWidget()
         self._best_gl  = QtWidgets.QHBoxLayout(self._best_row)
-        self._best_gl.setContentsMargins(0,0,0,0); self._best_gl.setSpacing(2)
+        self._best_gl.setContentsMargins(0,0,0,0); self._best_gl.setSpacing(0)
         self._best_btns = {}   # n_used → QPushButton
         for n in range(10, 3, -1):
             b = QtWidgets.QPushButton(str(n))   # v3.8.12: drop "n=" prefix
-            b.setFixedHeight(32)
+            # v3.8.14: fixed width so the row min stays compact (was variable
+            # width with Qt's ~75 px default → blew up MvCanvas min size).
+            b.setFixedSize(28 if n == 10 else 24, 28)
             b.setStyleSheet(
                 f'QPushButton{{background:#eeede8;color:{TXT2};'
-                f'border:1px solid {BRD};border-radius:3px;font-size:15px;}}'
+                f'border:1px solid {BRD};border-radius:3px;font-size:12px;'
+                f'font-weight:bold;}}'
                 f'QPushButton:hover{{background:{BLUE_BG};}}')
             b.clicked.connect(lambda _, nv=n: self._apply_best(nv))
             self._best_gl.addWidget(b)
             self._best_btns[n] = b
+        self._best_gl.addStretch()
         vb.addWidget(self._best_row)
         # bestLbl 移除（圖上已有綠色標示最佳解）
 
