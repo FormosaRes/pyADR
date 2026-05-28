@@ -3799,6 +3799,11 @@ class MassRatioPage(QtWidgets.QWidget):
                         raw = step.get('raw', [0]*5)
                         net = step.get('net', [0]*5)
                         sigma = step.get('sigma', [0]*5)
+                        # v3.8.33: also fetch 'ratio' values — previous code
+                        # wrote '—' in the Value column, but sub-program
+                        # MR_save writes ratio_result[3][i] there. Now
+                        # consistent with NTNU + PipelineWorker.
+                        ratio = step.get('ratio', [0]*5)
                         ratio_sigma = step.get('ratio_sigma', [0]*5)
                         
                         # 從 mr_csv 讀取 Samp#, t, Min, PK (如果有的話)
@@ -3826,7 +3831,10 @@ class MassRatioPage(QtWidgets.QWidget):
                                 f'{net[i]:.17e}',  # Measurement
                                 f'{sigma[i]:.17e}',  # Sigma
                                 self._ratio_names[i],  # Ratio name
-                                '—',  # Ratio value (原始程式沒有這欄數值)
+                                # v3.8.33: was '—' (incorrect comment claimed
+                                # the sub-program lacks this column — it
+                                # doesn't, see NTNU MR_save line 3014).
+                                f'{ratio[i]:.17e}',     # Ratio value
                                 f'{ratio_sigma[i]:.17e}'  # Ratio sigma
                             ]
                             # 寫成單一 string 避免多餘引號

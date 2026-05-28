@@ -1,8 +1,69 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33
 最後整理日期：2026-05-28
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.33（2026-05-28）— MassRatioPage._save Value 欄修正（從 '—' 改成實際 ratio 數值）
+
+### 問題
+
+使用者要求審查 AutoPipeline 的 Calculate T₀ 跟 Mass Ratio 輸出格式對齊度。Audit 結果：
+
+| 項目 | 子程式 | AutoPipeline | 一致？ |
+|---|---|---|---|
+| Calculate T₀ (`write_t0_csv` vs `LRP_save`) | header + 欄序 100% 同 | ✓ | ✓ |
+| T₀ Date 格式 | `2024/4/18` raw | `2024/04/18` zero-padded | ⚠ 微改進，不算 bug |
+| MR PipelineWorker._run | header + 欄序 + ratio name 全同 | ✓ | ✓ |
+| MR MassRatioPage._save header | 11 cols 拆開 (v3.8.24 修過) | ✓ | ✓ |
+| MR MassRatioPage._save **Value 欄** | `ratio_result[3][i]` (實際數值) | `'—'` 永遠 dash | **❌ Bug** |
+
+子程式 `MR_save`（NTNU line 3014）跟 AutoPipeline `PipelineWorker._run`（line 4143）都在 Mass Ratio CSV 第 10 欄 (`Value`) 寫實際 ratio 數值（mr[3][i]），但 `MassRatioPage._save` 卻寫 `'—'`。代碼註解 `# Ratio value (原始程式沒有這欄數值)` 是錯的——子程式有這欄而且有數值。
+
+→ 使用者按 sidebar **Save To** 手動存的 Mass Ratio CSV，Value 欄全是 dash，缺真實數值；按 pipeline 自動跑出來的 CSV 則正確。**兩個入口輸出不一致**。
+
+### 修法
+
+`MassRatioPage._save` 兩處改動：
+
+```python
+# 取資料時順便拿 ratio (PipelineWorker._run 已經存在 step['ratio'] 內)
+ratio = step.get('ratio', [0]*5)
+
+# row 寫入：'—' → f'{ratio[i]:.17e}'
+self._ratio_names[i],          # Ratio name (col 9)
+f'{ratio[i]:.17e}',            # Ratio value (col 10) ← 修
+f'{ratio_sigma[i]:.17e}'       # Ratio sigma (col 11)
+```
+
+`step['ratio']` 由 PipelineWorker line 4154 寫入 `list(mr[3])`，已經包含在 AgeCalcPage / MassRatioPage 共用的 `_steps` 結構裡，不需要重新計算。
+
+### Ratio name 對照（已對齊，記錄供 audit）
+
+三邊完全一致 `['Ar39/40', 'Ar36/40', 'Ar39/36', 'Ar40/36', 'Ar38/36']`：
+- 子程式 `self.mass_pair` (NTNU line 1332)
+- AutoPipeline `MassRatioPage._ratio_names` (line 3609)
+- AutoPipeline `PipelineWorker._run` hardcoded (line 4143)
+
+### Date format（不動，記錄差異）
+
+子程式 LRP_save 寫 raw `info[3]`（e.g. `2024/4/18`），AutoPipeline `write_t0_csv` 通過 `_norm_date` zero-pad 成 `2024/04/18`。這是 **AutoPipeline 的改進**（統一格式），不破壞讀取相容性，**保留**。
+
+### 驗證 checklist
+
+- [ ] 跑 Run Pipeline → 進 Mass Ratio page
+- [ ] 點 sidebar Save To → 選溫度 → 選存檔資料夾
+- [ ] 開存出來的 CSV → 第 10 欄 `Value` 應該是 ratio 數值（科學記號），**不再是** `—`
+- [ ] 數值跟 `Data/MassRatio/{step}.csv` （PipelineWorker 寫的）第 10 欄一致
+- [ ] 拿手動 Save 出來的 CSV 跟子程式 MR_save 同一 step 對比，格式相同
+
+### 檔案改動
+
+- `AutoPipeline.py`：`MassRatioPage._save` 取 `step['ratio']` + row 寫入 Value 改 ratio[i]
+- `.work/.app_info.txt`：3.8.32 → 3.8.33
+- `CHANGELOG.md`：本段
 
 ---
 
