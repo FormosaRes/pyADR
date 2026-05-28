@@ -27,7 +27,7 @@ Integration (4 changes in NTNU_DataReduction.py):
            self.widget.setCurrentIndex(20)
 """
 
-import os, sys, csv, shutil, math
+import os, sys, csv, shutil, math, zipfile, json
 import warnings
 warnings.filterwarnings('ignore', category=UserWarning, module='matplotlib')
 import numpy as np
@@ -437,6 +437,73 @@ def write_t0_csv(filepath, info, T0, SIG, R):
 #    Row 3: T0 vs 2σ scatter (matplotlib → QPixmap)
 # ═══════════════════════════════════════════════════════════
 import io as _io
+
+
+# ═══════════════════════════════════════════════════════════
+#  Session save / load (.adr file format)  v3.8.28
+# ═══════════════════════════════════════════════════════════
+#
+# .adr = zip archive containing the AutoPipeline Calculate-T₀ state:
+#
+#   meta.json              schema_version, app_version, fit, manual, nc, cur,
+#                          blank_name, step_names, sinfo, binfo, sigma_method,
+#                          step_dates
+#   blank_vt.npz           five arrays ar36..ar40, each shape (nc, 2) = (v, t)
+#   blank_mask.npy         shape (5, nc), 1=include, 0=exclude per cycle
+#   sig/<step>/vt.npz      per-step signal arrays (same layout as blank)
+#   sig/<step>/mask.npy    per-step mask (5, nc)
+#
+# Loading restores everything needed to resume from Calculate T₀ without
+# re-importing the original .dat files. Downstream pipeline (MassRatio /
+# Datum / AgeCalc) is not stored — re-run via the Pipeline button.
+SESSION_SCHEMA_VERSION = 1
+
+def save_session_adr(path, state):
+    """Write state dict to .adr zip. state keys: meta, bvt, bmask, svt, smask."""
+    meta = dict(state['meta'])
+    meta['schema_version'] = SESSION_SCHEMA_VERSION
+    with zipfile.ZipFile(path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr('meta.json', json.dumps(meta, indent=2, default=str))
+        if state.get('bvt') is not None:
+            buf = _io.BytesIO()
+            np.savez(buf, **{f'ar{i+36}': state['bvt'][i] for i in range(5)})
+            zf.writestr('blank_vt.npz', buf.getvalue())
+            buf = _io.BytesIO()
+            np.save(buf, np.asarray(state['bmask']))
+            zf.writestr('blank_mask.npy', buf.getvalue())
+        for nm, vt in state.get('svt', {}).items():
+            buf = _io.BytesIO()
+            np.savez(buf, **{f'ar{i+36}': vt[i] for i in range(5)})
+            zf.writestr(f'sig/{nm}/vt.npz', buf.getvalue())
+            buf = _io.BytesIO()
+            np.save(buf, np.asarray(state['smask'][nm]))
+            zf.writestr(f'sig/{nm}/mask.npy', buf.getvalue())
+
+
+def load_session_adr(path):
+    """Read .adr zip. Returns dict with meta, bvt, bmask, svt, smask."""
+    out = {'svt': {}, 'smask': {}, 'bvt': None, 'bmask': None}
+    with zipfile.ZipFile(path, 'r') as zf:
+        out['meta'] = json.loads(zf.read('meta.json'))
+        ver = out['meta'].get('schema_version', 0)
+        if ver > SESSION_SCHEMA_VERSION:
+            raise ValueError(
+                f'Session schema v{ver} newer than supported '
+                f'v{SESSION_SCHEMA_VERSION}. Upgrade pyADR.')
+        names = zf.namelist()
+        if 'blank_vt.npz' in names:
+            npz = np.load(_io.BytesIO(zf.read('blank_vt.npz')))
+            out['bvt'] = [npz[f'ar{i+36}'] for i in range(5)]
+            out['bmask'] = np.load(_io.BytesIO(zf.read('blank_mask.npy')))
+        for nm in out['meta'].get('step_names', []):
+            vt_key = f'sig/{nm}/vt.npz'; mk_key = f'sig/{nm}/mask.npy'
+            if vt_key in names and mk_key in names:
+                npz = np.load(_io.BytesIO(zf.read(vt_key)))
+                out['svt'][nm] = [npz[f'ar{i+36}'] for i in range(5)]
+                out['smask'][nm] = np.load(_io.BytesIO(zf.read(mk_key)))
+    return out
+
+
 import matplotlib as _mpl
 _mpl.use('Agg')
 import matplotlib.pyplot as _plt
@@ -1868,6 +1935,11 @@ class CalcT0Page(QtWidgets.QWidget):
         self.btnAB      = sb_btn('Auto Blank')
         self.btnAS      = sb_btn('Auto Signal')
         self.btnM       = sb_btn('Manual')
+        # v3.8.28: Session save / open (.adr) — restores T₀ state without
+        # re-importing the .dat files. Downstream pipeline (MassRatio /
+        # Datum) is NOT included in the .adr; re-run via Run Pipeline.
+        self.btnSaveSession = sb_btn('Save Session')
+        self.btnOpenSession = sb_btn('Open Session')
         # Back-compat hidden widget so any lingering reference doesn't AttributeError
         self.btnABest = QtWidgets.QPushButton(); self.btnABest.hide()
         # Back-compat aliases so existing code referring to btnL/btnA still works
@@ -1876,7 +1948,8 @@ class CalcT0Page(QtWidgets.QWidget):
         self.btnA = QtWidgets.QPushButton(); self.btnA.hide()
 
         for b in (self.returnBtn, self.saveBtn, self.btnLdBlank, self.btnLdSig,
-                  self.btnAB, self.btnAS, self.btnM):
+                  self.btnAB, self.btnAS, self.btnM,
+                  self.btnSaveSession, self.btnOpenSession):
             sbl.addWidget(b)
 
         # v3.8.18: Δt label moved out of sidebar into the top nav bar (chip
@@ -2090,6 +2163,9 @@ class CalcT0Page(QtWidgets.QWidget):
         # v3.8.18: btnABest hidden (not added to sidebar); no click wire needed.
         self.btnM.clicked.connect(self._toggle_manual)
         self.saveBtn.clicked.connect(self._save)
+        # v3.8.28: session save / open
+        self.btnSaveSession.clicked.connect(self._save_session)
+        self.btnOpenSession.clicked.connect(self._open_session)
         # Deferred: set scroll content after event loop starts (avoids Py3.13 hang)
         QtCore.QTimer.singleShot(0, self._deferred_scroll_setup)
 
@@ -3126,6 +3202,196 @@ class CalcT0Page(QtWidgets.QWidget):
             f'  • Blank + {len(self._svt)} step(s) → {target}'
             f'{png_msg}\n\n'
             f'Total: {len(written)} files')
+
+    # ── Session save / open (.adr)  v3.8.28 ───────────────────
+    def _save_session(self):
+        """Save current T₀ state to a .adr file. User can reopen later and
+        resume from Calculate T₀ without re-importing the original .dat
+        files."""
+        if self._bvt is None and not self._svt:
+            QtWidgets.QMessageBox.warning(self, 'Save Session',
+                'Nothing to save — load Blank + Sample first.')
+            return
+        # Sync current canvas mask back to dict (Save T₀ does this implicitly
+        # via get_blank_csv / get_signal_csvs; here we also need it)
+        if self._cur == '__BLANK__' and self._bvt is not None:
+            for ai, cv in enumerate(self._cv):
+                if cv._mask is not None:
+                    self._bmask[ai] = cv._mask.copy()
+        elif self._cur and self._cur in self._smask:
+            for ai, cv in enumerate(self._cv):
+                if cv._mask is not None:
+                    self._smask[self._cur][ai] = cv._mask.copy()
+
+        # Default filename = current sample folder name or "session"
+        default_name = 'session'
+        if self._svt:
+            # Try first signal step's parent folder name
+            try:
+                first_nm = next(iter(self._svt))
+                default_name = first_nm.split('.')[0]
+            except Exception:
+                pass
+        work_dir = os.path.dirname(os.path.abspath(__file__))
+        default_dir = os.path.join(work_dir, 'Data', 'Session')
+        os.makedirs(default_dir, exist_ok=True)
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, 'Save AutoPipeline Session',
+            os.path.join(default_dir, default_name + '.adr'),
+            'AutoPipeline session (*.adr);;All files (*)')
+        if not path:
+            return
+        if not path.lower().endswith('.adr'):
+            path += '.adr'
+
+        meta = {
+            'app_version': '3.8.28',
+            'fit': int(self._fit),
+            'manual': bool(self._manual),
+            'nc': int(self._nc),
+            'cur': self._cur if self._cur else '__BLANK__',
+            'blank_name': self._chips['Blank file'].text() if hasattr(self, '_chips') else 'blank.dat',
+            'step_names': list(self._svt.keys()),
+            'binfo': list(self._binfo) if self._binfo else None,
+            'sinfo': {nm: list(info) for nm, info in self._sinfo.items()},
+            'sigma_method': SIGMA_METHOD,
+            'step_dates': {nm: d.isoformat() if hasattr(d, 'isoformat') else str(d)
+                           for nm, d in getattr(self, '_step_dates', {}).items()},
+        }
+        state = {
+            'meta': meta,
+            'bvt': self._bvt,
+            'bmask': self._bmask if self._bvt is not None else None,
+            'svt': self._svt,
+            'smask': self._smask,
+        }
+        try:
+            save_session_adr(path, state)
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, 'Save Session',
+                f'Failed to save session:\n{e}')
+            return
+        size_kb = os.path.getsize(path) / 1024
+        QtWidgets.QMessageBox.information(self, 'Save Session',
+            f'Session saved ({size_kb:.1f} KB):\n{path}\n\n'
+            f'• {len(self._svt)} signal step(s)\n'
+            f'• Blank: {"yes" if self._bvt is not None else "no"}\n'
+            f'• Fit: {Utilities.fit_func_list[self._fit].__name__}\n'
+            f'• Manual mode: {self._manual}\n\n'
+            'Open this .adr later to resume from Calculate T₀ without\n'
+            're-importing the .dat files.')
+        self.footMsg.setText(f'Session saved: {os.path.basename(path)}')
+
+    def _open_session(self):
+        """Load a .adr session — restores blank + signal raw data, masks,
+        fit type, manual mode, current step. Triggers prefetch automatically."""
+        work_dir = os.path.dirname(os.path.abspath(__file__))
+        default_dir = os.path.join(work_dir, 'Data', 'Session')
+        if not os.path.isdir(default_dir):
+            default_dir = work_dir
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, 'Open AutoPipeline Session', default_dir,
+            'AutoPipeline session (*.adr);;All files (*)')
+        if not path:
+            return
+        try:
+            state = load_session_adr(path)
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, 'Open Session',
+                f'Failed to load session:\n{e}')
+            return
+
+        meta = state['meta']
+        # Restore scalars
+        self._nc     = int(meta.get('nc', 10))
+        self._fit    = int(meta.get('fit', 0))
+        self._manual = bool(meta.get('manual', False))
+
+        # Restore blank
+        if state.get('bvt') is not None:
+            self._bvt   = state['bvt']
+            self._bmask = state['bmask']
+            self._binfo = tuple(meta['binfo']) if meta.get('binfo') else None
+            blank_name  = meta.get('blank_name', 'blank.dat')
+            if hasattr(self, '_chips'):
+                self._chips['Blank file'].setText(blank_name)
+        else:
+            self._bvt = None
+            self._bmask = np.ones((5, self._nc))
+
+        # Restore signals
+        self._svt   = state['svt']
+        self._smask = state['smask']
+        sinfo_dict  = meta.get('sinfo', {})
+        self._sinfo = {nm: tuple(info) for nm, info in sinfo_dict.items()}
+
+        # Restore step dates (best-effort)
+        self._step_dates = {}
+        from datetime import date as _date
+        for nm, ds in meta.get('step_dates', {}).items():
+            try:
+                self._step_dates[nm] = _date.fromisoformat(str(ds).split(' ')[0])
+            except Exception:
+                pass
+
+        if hasattr(self, '_chips'):
+            self._chips['Signal'].setText(f'{len(self._svt)} steps')
+
+        # Rebuild UI elements that depend on step list
+        self._rebuild_step_btns()
+        self._prefetch_cache = {}  # fresh — id(vt) of loaded arrays is new
+
+        # Restore current step
+        self._cur = meta.get('cur', '__BLANK__')
+        if self._cur not in self._svt and self._cur != '__BLANK__':
+            self._cur = '__BLANK__' if self._bvt is not None else (
+                list(self._svt.keys())[0] if self._svt else None)
+
+        # Sync fit dropdown if it exists (label text matches fit name)
+        if hasattr(self, 'fitCombo'):
+            try:
+                self.fitCombo.setCurrentIndex(self._fit)
+            except Exception:
+                pass
+
+        # Sync Manual button state
+        if hasattr(self, 'btnM'):
+            try:
+                self.btnM.setText('Manual ✓' if self._manual else 'Manual')
+            except Exception:
+                pass
+
+        # Refresh canvases
+        if self._cur == '__BLANK__' and self._bvt is not None:
+            self._refresh_blank()
+        elif self._cur and self._cur in self._svt:
+            self._refresh_signal()
+
+        self._update_step_colors()
+        self._auto_update_delta_t()
+        self.nextBtn.setEnabled(True)
+        self.footMsg.setText(f'Session loaded: {os.path.basename(path)}')
+
+        # Refresh pipeline strip visuals if available
+        try:
+            parent = self.parent()
+            while parent is not None and not hasattr(parent, '_refresh_pipe_visuals'):
+                parent = parent.parent()
+            if parent is not None:
+                parent._refresh_pipe_visuals(parent.stack.currentIndex())
+        except Exception:
+            pass
+
+        # Kick off background prefetch on the fresh arrays
+        self._start_prefetch()
+
+        QtWidgets.QMessageBox.information(self, 'Open Session',
+            f'Loaded session: {os.path.basename(path)}\n\n'
+            f'• {len(self._svt)} signal step(s)\n'
+            f'• Blank: {"yes" if self._bvt is not None else "no"}\n'
+            f'• Fit: {Utilities.fit_func_list[self._fit].__name__}\n'
+            f'• Manual: {self._manual}\n\n'
+            'Adjust masks if needed, then click Run Pipeline.')
 
     # ── Public getters ────────────────────────────────────────
     def get_blank_csv(self, out_dir):
@@ -4748,7 +5014,20 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
         vb=QtWidgets.QVBoxLayout(cw); vb.setContentsMargins(0,0,0,0); vb.setSpacing(0)
 
         # v3.8.6: top menu bar with Main (return) + Help (formulas / refs).
+        # v3.8.28: File menu added for session save / open (.adr).
         _mb = self.menuBar()
+        _menu_file = _mb.addMenu('File')
+        _act_open_sess = QtWidgets.QAction('Open Session...', self)
+        _act_open_sess.setShortcut('Ctrl+O')
+        _menu_file.addAction(_act_open_sess)
+        _act_open_sess.triggered.connect(
+            lambda: self.t0Page._open_session() if hasattr(self, 't0Page') else None)
+        _act_save_sess = QtWidgets.QAction('Save Session...', self)
+        _act_save_sess.setShortcut('Ctrl+S')
+        _menu_file.addAction(_act_save_sess)
+        _act_save_sess.triggered.connect(
+            lambda: self.t0Page._save_session() if hasattr(self, 't0Page') else None)
+
         _menu_main = _mb.addMenu('Main')
         self._actGoHome = QtWidgets.QAction('Return to pyADR Home', self)
         _menu_main.addAction(self._actGoHome)

@@ -1,8 +1,105 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28
 最後整理日期：2026-05-28
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.28（2026-05-28）— Session save/open（.adr 檔，跳過 .dat 重新匯入）
+
+### 問題
+
+使用者需求：跑完一輪 AutoPipeline (Calculate T₀ → Mass Ratio → Datum) 之後，能存一個檔案、之後重新開啟可以直接從 Calculate T₀ 階段繼續調 mask 重跑 pipeline，**不用再次 import 原始 blank+sample .dat 檔案**。
+
+### 修法
+
+#### 1. .adr session 檔案格式（zip + json + npz）
+
+新副檔名 `.adr` (AutoPipeline Reduction)，本質是 zip：
+
+```
+session.adr/
+├── meta.json              schema_version=1, app_version, fit, manual, nc, cur,
+│                          blank_name, step_names, sinfo, binfo, sigma_method,
+│                          step_dates
+├── blank_vt.npz           5 arrays ar36..ar40，每個 shape (nc, 2) = (v, t)
+├── blank_mask.npy         shape (5, nc), 1=include / 0=exclude per cycle
+├── sig/<step>/vt.npz      per-step 5 isotope arrays
+└── sig/<step>/mask.npy    per-step (5, nc) mask
+```
+
+下游 pipeline 結果 (Mass Ratio / Datum CSV) **不存** — 載入後再按 Run Pipeline 重跑即可。
+
+#### 2. Module-level helpers
+
+```python
+def save_session_adr(path, state):
+    # state: {'meta', 'bvt', 'bmask', 'svt', 'smask'}
+    # zip + json.dumps + np.savez/np.save → .adr
+
+def load_session_adr(path):
+    # → dict with same keys, schema_version check
+```
+
+#### 3. UI 觸發
+
+**Sidebar**（CalcT0Page）多兩個 button：
+- `Save Session`
+- `Open Session`
+
+**Menu bar** 多 File menu（top-left）：
+- `Open Session...` （Ctrl+O）
+- `Save Session...` （Ctrl+S）
+- 觸發 `AutoPipelineWindow.t0Page._save_session/_open_session`
+
+#### 4. `CalcT0Page._save_session`
+
+- 同步當前 canvas mask 回 `_bmask` / `_smask[cur]`（user 可能還沒手動觸發 save）
+- 預設位置 `Data/Session/`，預設檔名 = 第一個 step 名稱
+- 收集 `meta` (fit, manual, nc, cur, blank_name, step_names, sinfo, binfo, sigma_method, step_dates) + raw arrays
+- 呼叫 `save_session_adr(path, state)`
+- 顯示已存 KB 數 + step 數 + fit / manual 狀態
+
+#### 5. `CalcT0Page._open_session`
+
+- `load_session_adr` 解包
+- restore 順序：scalar (nc/fit/manual) → blank arrays → signal arrays → step_dates
+- `_rebuild_step_btns()` 重建 step tab bar
+- `_prefetch_cache = {}` 清空（id(vt) 是新的）
+- restore current step → `_refresh_blank/_refresh_signal`
+- sync fitCombo + btnM (Manual ✓) 狀態
+- refresh pipeline strip + Δt chip
+- `_start_prefetch()` 背景算 enumerate（搭 v3.8.27 fast path，~1 秒完成）
+
+### 為什麼不包含下游 pipeline 結果
+
+原本選項 B（含 MassRatio / Datum CSV）使用者最後選「只存 T0 階段」。理由合理：
+- T0 階段是 manual tuning 的核心；下游全部 deterministic，按 Run Pipeline 重跑都一樣
+- 不存下游檔案小很多（5–50 KB vs 數 MB）
+- 不會出現 「state stale」問題（user 改 mask 後忘記 re-run pipeline，但 session 還是舊結果）
+
+### 驗證 checklist
+
+- [ ] 載入 NO.65 muscovite blank + 9 signal step
+- [ ] 在 Calculate T₀ 調幾個 cycle mask
+- [ ] 點 Save Session → 確認 `Data/Session/{name}.adr` 產生
+- [ ] 關 AutoPipeline，重開
+- [ ] File → Open Session → 選剛才的 .adr
+- [ ] 確認所有 step tab 恢復 + 當前 step + 所有 mask 都正確
+- [ ] 確認 fit type / Manual mode 狀態正確
+- [ ] 點 Run Pipeline → MassRatio / Datum / Age 結果跟原本一致
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - 加 `zipfile`, `json` import
+  - 加 module-level `save_session_adr` / `load_session_adr` + `SESSION_SCHEMA_VERSION = 1`
+  - `CalcT0Page._build`：sidebar 加 `btnSaveSession` / `btnOpenSession`
+  - `CalcT0Page` 加 `_save_session` / `_open_session` methods
+  - `AutoPipelineWindow._build`：menubar 加 File menu (Open/Save Session + 快捷鍵)
+- `.work/.app_info.txt`：3.8.27 → 3.8.28
+- `CHANGELOG.md`：本段
 
 ---
 
