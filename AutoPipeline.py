@@ -4104,7 +4104,48 @@ class AgeCalcPage(QtWidgets.QWidget):
         
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 1)
-        vb.addWidget(splitter, 1)
+
+        # v3.8.36: wrap existing layout in a bottom-tabbed QTabWidget so the
+        # user can switch between Summary, raw Datum CSV, and full-size
+        # views of each individual diagram (with per-tab XY axis controls).
+        # tabPosition=South mirrors the Excel-style sheet tabs the user
+        # requested (screenshot).
+        tabs = QtWidgets.QTabWidget()
+        tabs.setTabPosition(QtWidgets.QTabWidget.South)
+        tabs.setDocumentMode(True)
+
+        # Tab 1: Summary (existing splitter — results table + 4-thumbnail grid)
+        _summary_w = QtWidgets.QWidget()
+        _sw_vl = QtWidgets.QVBoxLayout(_summary_w)
+        _sw_vl.setContentsMargins(0, 0, 0, 0); _sw_vl.setSpacing(0)
+        _sw_vl.addWidget(splitter, 1)
+        tabs.addTab(_summary_w, 'Summary')
+
+        # Tab 2: Datum (raw CSV table view — populated in populate())
+        self._datum_tbl = QtWidgets.QTableWidget(0, 0)
+        self._datum_tbl.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._datum_tbl.setStyleSheet(
+            f'QTableWidget{{font-size:11px;font-family:"Courier New",monospace;gridline-color:{BRD};}}'
+            f'QHeaderView::section{{font-size:10px;background:#eeede8;border:1px solid {BRD2};padding:2px 4px;}}')
+        self._datum_tbl.horizontalHeader().setSectionResizeMode(
+            QtWidgets.QHeaderView.Interactive)
+        self._datum_tbl.horizontalHeader().setDefaultSectionSize(110)
+        _datum_w = QtWidgets.QWidget()
+        _dw_vl = QtWidgets.QVBoxLayout(_datum_w)
+        _dw_vl.setContentsMargins(0, 0, 0, 0); _dw_vl.setSpacing(0)
+        _dw_vl.addWidget(self._datum_tbl, 1)
+        tabs.addTab(_datum_w, 'Datum')
+
+        # Tabs 3-6: full-size diagram views with axis controls
+        self._dlbls_big = {}
+        self._daxis_edits = {}
+        for _key, _title in [('DFW', 'Age Spectrum'), ('DFA', 'Ca/K'),
+                             ('DFN', 'Normal Isochron'),
+                             ('DFI', 'Inverse Isochron')]:
+            tabs.addTab(self._make_diagram_tab(_key, _title), _title)
+
+        self._tabs = tabs
+        vb.addWidget(tabs, 1)
 
     def populate(self, steps, datum_csv, work_dir, consts=None):
         self._steps = steps
@@ -4182,16 +4223,37 @@ class AgeCalcPage(QtWidgets.QWidget):
                     self.atmSigmaLbl.setText(
                         f'<span style="font-size:10px;color:#888;">± {atm_s:.2f}</span>')
         
-        # Load diagrams
-        for key,lbl in self._dlbls.items():
-            src=os.path.join(work_dir,'.work',key+'.png')
+        # v3.8.36: load diagrams + datum table together
+        self._reload_all_pngs()
+        self._load_datum_into_table(datum_csv)
+
+    def _reload_all_pngs(self):
+        """v3.8.36: reload regenerated PNGs into BOTH the thumbnail grid
+        (Tab 1 Summary) and the per-diagram big-view labels (Tabs 3-6).
+        Keeps both views in sync after any regen."""
+        for key, lbl in self._dlbls.items():
+            src = os.path.join(self._work_dir, '.work', key + '.png')
             if os.path.exists(src):
-                pm=QtGui.QPixmap(src)
+                pm = QtGui.QPixmap(src)
                 if not pm.isNull():
-                    lbl.setPixmap(pm.scaled(lbl.size(),
-                        QtCore.Qt.KeepAspectRatio,QtCore.Qt.SmoothTransformation))
+                    lbl.setPixmap(pm.scaled(
+                        lbl.size(),
+                        QtCore.Qt.KeepAspectRatio,
+                        QtCore.Qt.SmoothTransformation))
                     lbl.setText('')
-    
+        # Big views (full-size tabs)
+        if hasattr(self, '_dlbls_big'):
+            for key, lbl in self._dlbls_big.items():
+                src = os.path.join(self._work_dir, '.work', key + '.png')
+                if os.path.exists(src):
+                    pm = QtGui.QPixmap(src)
+                    if not pm.isNull():
+                        lbl.setPixmap(pm.scaled(
+                            lbl.size(),
+                            QtCore.Qt.KeepAspectRatio,
+                            QtCore.Qt.SmoothTransformation))
+                        lbl.setText('')
+
     def _on_isochron_method_changed(self, idx):
         """v3.8.5 (A2): user changed OLS / York dropdown. Regenerate DFI/DFN
         PNGs by re-calling Utilities.getDFStatistics_sh with the new method,
@@ -4203,15 +4265,8 @@ class AgeCalcPage(QtWidgets.QWidget):
             mask_all = np.ones(len(self._steps))
             Utilities.getDFStatistics_sh(self._datum_csv, mask_all, self._consts,
                                          'b', 'o', isochron_method=method)
-            for key, lbl in self._dlbls.items():
-                src = os.path.join(self._work_dir, '.work', key + '.png')
-                if os.path.exists(src):
-                    pm = QtGui.QPixmap(src)
-                    if not pm.isNull():
-                        lbl.setPixmap(pm.scaled(
-                            lbl.size(),
-                            QtCore.Qt.KeepAspectRatio,
-                            QtCore.Qt.SmoothTransformation))
+            # v3.8.36: reload both thumbnail + big view
+            self._reload_all_pngs()
         except Exception as e:
             QtWidgets.QMessageBox.warning(
                 self, 'Regen diagrams failed',
@@ -4463,16 +4518,9 @@ class AgeCalcPage(QtWidgets.QWidget):
                 f'getDFStatistics_sh failed:\n{e}')
             return
 
-        # Reload regenerated PNGs into the small thumbnail labels.
-        for key, lbl in self._dlbls.items():
-            src = os.path.join(self._work_dir, '.work', key + '.png')
-            if os.path.exists(src):
-                pm = QtGui.QPixmap(src)
-                if not pm.isNull():
-                    lbl.setPixmap(pm.scaled(
-                        lbl.size(),
-                        QtCore.Qt.KeepAspectRatio,
-                        QtCore.Qt.SmoothTransformation))
+        # v3.8.36: reload regenerated PNGs into both thumbnail (Summary tab)
+        # and big view (per-diagram tabs) labels.
+        self._reload_all_pngs()
     
     def _get_atm_ratio(self):
         """Get current atm ratio from input."""
@@ -4497,6 +4545,115 @@ class AgeCalcPage(QtWidgets.QWidget):
                 'Note: full recalculation requires re-running the Age Calc pipeline.\n'
                 'The new value will be applied to subsequent calculations.')
     
+    # ── v3.8.36: bottom-tabs Excel-style diagram views ────────
+    def _make_diagram_tab(self, key, title):
+        """Build a full-size diagram tab with XY axis range controls.
+        Stores the big QLabel in self._dlbls_big[key] and the axis edit
+        QLineEdits in self._daxis_edits[key]. Apply/Reset on this tab
+        update self._daxis[key] and call self._refresh_diagrams() so all
+        diagrams regenerate with the new axis range."""
+        w = QtWidgets.QWidget()
+        vl = QtWidgets.QVBoxLayout(w)
+        vl.setContentsMargins(8, 6, 8, 6); vl.setSpacing(4)
+
+        # Header row: title (small) + axis controls
+        ctrl_hl = QtWidgets.QHBoxLayout()
+        ctrl_hl.setSpacing(4)
+        _title_lbl = QtWidgets.QLabel(f'<b>{title}</b>')
+        _title_lbl.setStyleSheet(f'font-size:13px;color:{TXT};')
+        ctrl_hl.addWidget(_title_lbl)
+        ctrl_hl.addSpacing(20)
+
+        def _lbl(s):
+            l = QtWidgets.QLabel(s); l.setStyleSheet('font-size:11px;')
+            return l
+
+        def _edit():
+            e = QtWidgets.QLineEdit()
+            e.setPlaceholderText('auto')
+            e.setFixedWidth(80)
+            return e
+
+        xmin_e = _edit(); xmax_e = _edit(); ymin_e = _edit(); ymax_e = _edit()
+        ctrl_hl.addWidget(_lbl('X min:')); ctrl_hl.addWidget(xmin_e)
+        ctrl_hl.addWidget(_lbl('X max:')); ctrl_hl.addWidget(xmax_e)
+        ctrl_hl.addSpacing(10)
+        ctrl_hl.addWidget(_lbl('Y min:')); ctrl_hl.addWidget(ymin_e)
+        ctrl_hl.addWidget(_lbl('Y max:')); ctrl_hl.addWidget(ymax_e)
+        ctrl_hl.addSpacing(10)
+
+        applyBtn = QtWidgets.QPushButton('Apply')
+        applyBtn.setStyleSheet(_btn_style('#1a5fb4', 'white', '#1a5fb4') +
+                               'QPushButton{font-size:11px;padding:3px 12px;}')
+        ctrl_hl.addWidget(applyBtn)
+        resetBtn = QtWidgets.QPushButton('Reset')
+        resetBtn.setStyleSheet(_btn_style('#888', 'white', '#888') +
+                               'QPushButton{font-size:11px;padding:3px 10px;}')
+        ctrl_hl.addWidget(resetBtn)
+        ctrl_hl.addStretch()
+        vl.addLayout(ctrl_hl)
+
+        # Big diagram label (fills tab)
+        big_lbl = QtWidgets.QLabel('(pending — Run Pipeline first)')
+        big_lbl.setAlignment(QtCore.Qt.AlignCenter)
+        big_lbl.setMinimumSize(600, 400)
+        big_lbl.setStyleSheet(f'border:1px solid {BRD};background:white;color:#888;')
+        vl.addWidget(big_lbl, 1)
+
+        # Store handles
+        self._dlbls_big[key] = big_lbl
+        self._daxis_edits[key] = (xmin_e, xmax_e, ymin_e, ymax_e)
+
+        # Wire Apply / Reset
+        def _on_apply():
+            def _p(e):
+                t = e.text().strip()
+                if not t: return None
+                try: return float(t)
+                except Exception: return None
+            self._daxis[key] = {
+                'xmin': _p(xmin_e), 'xmax': _p(xmax_e),
+                'ymin': _p(ymin_e), 'ymax': _p(ymax_e),
+            }
+            self._refresh_diagrams()
+        applyBtn.clicked.connect(_on_apply)
+
+        def _on_reset():
+            for e in (xmin_e, xmax_e, ymin_e, ymax_e):
+                e.clear()
+            self._daxis[key] = {'xmin': None, 'xmax': None,
+                                 'ymin': None, 'ymax': None}
+            self._refresh_diagrams()
+        resetBtn.clicked.connect(_on_reset)
+
+        return w
+
+    def _load_datum_into_table(self, datum_csv):
+        """v3.8.36: populate the Datum tab's QTableWidget from the datum CSV.
+        Shows the full 88-column step-by-step datum data (one row per step)."""
+        if not datum_csv or not os.path.exists(datum_csv):
+            return
+        if not hasattr(self, '_datum_tbl'):
+            return
+        try:
+            with open(datum_csv, 'r', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                rows = list(reader)
+        except Exception:
+            return
+        if not rows:
+            return
+        header = rows[0]
+        data = [r for r in rows[1:] if any(c.strip() for c in r)]  # skip blank rows
+        self._datum_tbl.clear()
+        self._datum_tbl.setColumnCount(len(header))
+        self._datum_tbl.setHorizontalHeaderLabels(header)
+        self._datum_tbl.setRowCount(len(data))
+        for r, row in enumerate(data):
+            for c, val in enumerate(row):
+                item = QtWidgets.QTableWidgetItem(val)
+                self._datum_tbl.setItem(r, c, item)
+
     def _show_enlarged(self, key, title):
         """Show enlarged diagram in dialog"""
         src = os.path.join(self._work_dir, '.work', key+'.png')

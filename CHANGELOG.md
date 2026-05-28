@@ -1,8 +1,98 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36
 最後整理日期：2026-05-28
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.36（2026-05-28）— AgeCalcPage 底部 Excel 風格 Tab：Summary / Datum / 4×大圖
+
+### 修法
+
+#### 1. AgeCalcPage `_build` 加 `QTabWidget` 在 content 內
+
+`tabPosition=South` 把 tab bar 放底部（Excel-style）：
+
+```
+┌────────────────────────────────────────┐
+│  AgeCalcPage content                   │
+│  (summary banner: Total/Plateau/...)   │
+├────────────────────────────────────────┤
+│                                        │
+│  QTabWidget                            │
+│   ↓ Tab 1: Summary (既存 layout)        │
+│      [Results per Step] [4-grid PNGs] │
+│   ↓ Tab 2: Datum (新增 QTableWidget)    │
+│      raw {sid}_datum.csv 88 cols      │
+│   ↓ Tab 3: Age Spectrum (大圖+axis)     │
+│   ↓ Tab 4: Ca/K (大圖+axis)             │
+│   ↓ Tab 5: Normal Isochron (大圖+axis)  │
+│   ↓ Tab 6: Inverse Isochron (大圖+axis) │
+└────────────────────────────────────────┘
+      [Summary] [Datum] [Age Spectrum] [Ca/K] ...   ← bottom tabs
+```
+
+#### 2. `_make_diagram_tab(key, title)` helper
+
+每個 diagram tab 自帶 XY axis 控制：
+
+```
+┌─────────────────────────────────────────────────┐
+│ Age Spectrum   X min:[] X max:[] Y min:[] Y max:[]│
+│                            [Apply] [Reset]       │
+├─────────────────────────────────────────────────┤
+│                                                 │
+│         (大圖 600×400 minimum)                   │
+│                                                 │
+└─────────────────────────────────────────────────┘
+```
+
+`Apply` 解析 4 個 LineEdit 值（空白 = auto），寫進 `self._daxis[key]`，呼叫 `self._refresh_diagrams()` 真的重產 PNG。`Reset` 清空後 trigger refresh，回 auto 範圍。
+
+#### 3. Datum tab：`_load_datum_into_table(datum_csv)` 
+
+讀 `{sid}_datum.csv` 全 88 欄塞進 QTableWidget，header 自動設成 CSV 第一列，跳過全空 row。column 預設寬 110 px、`Interactive` mode 讓使用者可以拖拉調寬。
+
+#### 4. 統一 `_reload_all_pngs()` helper
+
+之前三處（populate / `_on_isochron_method_changed` / `_refresh_diagrams`）各自寫 PNG reload 迴圈，現在抽成單一 method，同時刷 thumbnail 跟 big view labels。
+
+### 影響
+
+- 介面上多 5 個底部 tab（Summary 之外另 5 個）
+- Summary tab 內容跟之前介面完全一樣，沒移動 widget
+- 大圖 tab 的 axis 控制現在真的 work（搭配 v3.8.35 修好的 `_refresh_diagrams`）
+- Datum tab 即時顯示計算結果，不需要另外開 CSV 檔
+
+### 已知待做（不在本版）
+
+| 項目 | 規模 | 備註 |
+|---|---|---|
+| 抄 DiagramPlot 還有什麼 feature | 中 | DiagramPlot 已有 4 個圖跟 AutoPipeline 相同，主要差別是大圖 + 軸控（本版已做）。額外功能（style 切換、export per-figure、mouse hover info 等）視需要再加 |
+| 大圖 resize 時 pixmap 自適應 | 小 | 目前 setMinimumSize(600, 400)，再 resize 視窗 pixmap 不會跟著縮放。要 override resizeEvent |
+
+### 驗證 checklist
+
+- [ ] 跑 Run Pipeline → 進 AgeCalc + Datum page
+- [ ] 介面下方應該有 6 個 tab：Summary / Datum / Age Spectrum / Ca/K / Normal Isochron / Inverse Isochron
+- [ ] Summary tab = 既存介面（results table + 4 縮圖）
+- [ ] 點 Datum tab → 表格顯示 datum CSV 完整內容（88 欄）
+- [ ] 點 Age Spectrum tab → 大圖顯示，上方有 X/Y min/max 4 個 input + Apply / Reset
+- [ ] 在 Normal Isochron tab 設 X max=100, Y max=600, Apply → 圖真的調軸
+- [ ] Reset → 圖回 auto 範圍
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - `AgeCalcPage._make_diagram_tab(key, title)` 新 helper
+  - `AgeCalcPage._load_datum_into_table(datum_csv)` 新 helper
+  - `AgeCalcPage._reload_all_pngs()` 新 helper（抽出統一 reload 邏輯）
+  - `AgeCalcPage._build` splitter 包進 QTabWidget(South)，加 5 個 tab
+  - `populate` / `_on_isochron_method_changed` / `_refresh_diagrams` 三處 PNG reload 改用 `_reload_all_pngs()`
+  - `populate` 加 `_load_datum_into_table(datum_csv)` call
+- `.work/.app_info.txt`：3.8.35 → 3.8.36
+- `CHANGELOG.md`：本段
 
 ---
 
