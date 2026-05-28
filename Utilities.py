@@ -281,8 +281,19 @@ def calculateT0(fit_function_type, v_t, mask,num):
         axs[i//3, i%3].set_title("Ar {}\n{} = {} \nerror = {}\nR^2 = {}".format(i+36, r'$T_{0}$', '{:0.5e}'.format(T0[i]), '{:0.5e}'.format(T0_SIGMA[i]),'{:0.5e}'.format(R[i])), loc='left')
     
     axs[1,2].axis('off')
-    plt.tight_layout()
-    plt.savefig(".work/LR.png", dpi=200)
+    # v3.8.37: defensive wrap — matplotlib mathtext parser can ValueError on
+    # the '$T_{0}$' titles set above when rendering on Anaconda Py 3.13.
+    # tight_layout / savefig both invoke a renderer pass; if it fails just
+    # skip the layout polish (figure still saves, just may have tighter or
+    # cropped margins).
+    try:
+        plt.tight_layout()
+    except Exception:
+        pass
+    try:
+        plt.savefig(".work/LR.png", dpi=200)
+    except Exception:
+        pass
     plt.clf()
     plt.close("all")
 
@@ -360,8 +371,19 @@ def REcalculateT0(fit_function_type, v_t, mask,num):
         axs[i//3, i%3].set_title("Ar {}\n{} = {} \nerror = {}\nR^2 = {}".format(i+36, r'$T_{0}$', '{:0.5e}'.format(T0[i]), '{:0.5e}'.format(T0_SIGMA[i]),'{:0.5e}'.format(R[i])), loc='left')
     
     axs[1,2].axis('off')
-    plt.tight_layout()
-    plt.savefig(".work/LR.png", dpi=200)
+    # v3.8.37: defensive wrap — matplotlib mathtext parser can ValueError on
+    # the '$T_{0}$' titles set above when rendering on Anaconda Py 3.13.
+    # tight_layout / savefig both invoke a renderer pass; if it fails just
+    # skip the layout polish (figure still saves, just may have tighter or
+    # cropped margins).
+    try:
+        plt.tight_layout()
+    except Exception:
+        pass
+    try:
+        plt.savefig(".work/LR.png", dpi=200)
+    except Exception:
+        pass
     plt.clf()
     plt.close("all")
 

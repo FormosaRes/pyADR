@@ -1,8 +1,81 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37
 最後整理日期：2026-05-28
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.37（2026-05-28）— 修 Auto Blank / Auto Signal 閃退 + Help 加 Guide
+
+### 問題
+
+使用者按 Auto Blank 或 Auto Signal 後 GUI 整個閃退。Console 沒留 traceback（因為 worker 是 sync call 在主執行緒、crash 直接掛）。
+
+### 根因
+
+`Utilities.calculateT0` (line 205) 內部：
+- Line 281：`axs[i//3, i%3].set_title("Ar ...\n$T_{0}$ = ...")` 使用 LaTeX `$T_{0}$`
+- Line 284：`plt.tight_layout()`
+- Line 285：`plt.savefig(".work/LR.png")`
+
+`tight_layout` / `savefig` 都會觸發 matplotlib renderer pass，跟 v3.8.30 修過的 mathtext parser bug 同一個（Anaconda Py 3.13 + 較新 matplotlib 對 `$\\mathdefault{...}$` parse 失敗 → ValueError）。AutoPipeline v3.8.30 修了自己 chart code，但 **Utilities.calculateT0 沒包**。
+
+### 修法
+
+#### 1. `Utilities.calculateT0` / `REcalculateT0` 包 try/except
+
+兩處 `plt.tight_layout()` + `plt.savefig()` 全包 try/except：
+
+```python
+try: plt.tight_layout()
+except Exception: pass
+try: plt.savefig(".work/LR.png", dpi=200)
+except Exception: pass
+```
+
+失敗時還是會 `return [status, T0, T0_SIGMA, R], mask` 給 caller — figure 沒存沒關係（AutoPipeline 自己有 mV chart，不依賴 LR.png）。
+
+#### 2. AutoPipeline 端 `_auto_blank` / `_auto_signal` 包 try/except
+
+雙保險。即使 Utilities 端的 try/except 沒攔住（例如以後新的 mathtext code path），AutoPipeline 端也會 catch + show warning dialog 而不是 crash。
+
+`_auto_signal` 額外處理：某個 step 失敗時繼續跑下一個，最後列出失敗的 step 清單給使用者參考（保留它們的既有 mask）。
+
+#### 3. Help menu 加 `Auto Blank / Signal Guide` entry
+
+新 menu item 開新 `_show_auto_guide()` dialog，內容包含：
+
+- **演算法**：每 isotope 跑 R²<0.8 trigger outlier removal、|r|>σ threshold、最多 4 個
+- **兩按鈕差異**：Auto Blank 只跑 blank、Auto Signal 跑所有 step
+- **何時用 / 何時不用**：4 個情境表格 — 第一次看樣品 ✓、發表級 fine-tune ⚠、low-T ³⁶Ar 受限 ✗、³⁷Ar 訊號小 ✗
+- **跟手動差別**：Auto threshold 比手動 MAD z-score 寬鬆，Auto 完還可以手動 fine-tune
+- **建議流程**：Auto Blank → Auto Signal → 手動排除紅色 → 點 Best per n button → 確認
+
+跟既存的 Cycle Selection Guide 區隔（Cycle Guide 著重在手動 cycle button 顏色/挑選策略；Auto Guide 是 high-level 「這兩個按鈕做什麼、怎麼用」）。
+
+### 影響
+
+- Auto Blank / Auto Signal 現在 robust，不會閃退
+- 失敗時 user 看到清楚的 warning dialog，知道是 matplotlib 問題，可以選擇手動或重試
+- 數值結果不變（沒動 σ_T0 公式跟 outlier criteria，只是包安全網）
+
+### 驗證 checklist
+
+- [ ] 載入 blank + signal → 進 Calculate T₀ page
+- [ ] 點 sidebar **Auto Blank** → 應該成功跑完，5 個 mV chart 更新；如果 Utilities 內部 raise，看到「Auto Blank failed」warning dialog 而非閃退
+- [ ] 點 **Auto Signal** → 所有 step 跑完，無閃退；如果有 step 失敗，最後 dialog 列出哪些
+- [ ] Help → Auto Blank / Signal Guide → 看到完整說明 dialog
+
+### 檔案改動
+
+- `Utilities.py`：`calculateT0` / `REcalculateT0` 兩處 `plt.tight_layout()` + `plt.savefig()` 包 try/except
+- `AutoPipeline.py`：
+  - `CalcT0Page._auto_blank` / `_auto_signal` 包 try/except + warning dialog
+  - `AutoPipelineWindow` Help menu 新增 `Auto Blank / Signal Guide` action
+  - `AutoPipelineWindow._show_auto_guide` 新 method（scrollable QDialog with rich-text content）
+- `.work/.app_info.txt`：3.8.36 → 3.8.37
+- `CHANGELOG.md`：本段
 
 ---
 

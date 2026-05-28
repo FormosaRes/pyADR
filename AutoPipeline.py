@@ -2682,27 +2682,61 @@ class CalcT0Page(QtWidgets.QWidget):
             cv._manual = self._manual
 
     def _auto_blank(self):
+        """v3.8.37: wrap Utilities.calculateT0 in try/except. The internal
+        `plt.tight_layout()` (Utilities.py line 284) can raise on the
+        matplotlib mathtext parser bug (same as v3.8.30) when rendering
+        the per-axis '$T_{0}$' LaTeX titles. Crash there used to kill the
+        whole GUI; now we show a clean warning dialog and let the user
+        continue with manual mask selection."""
         if self._bvt is None: return
         self.statusLbl.setText('Auto blank...')
         QtWidgets.QApplication.processEvents()
-        result, self._bmask = Utilities.calculateT0(
-            self._fit, self._bvt, np.ones((5, self._nc)), self._nc)
+        try:
+            result, self._bmask = Utilities.calculateT0(
+                self._fit, self._bvt, np.ones((5, self._nc)), self._nc)
+        except Exception as e:
+            self.statusLbl.setText('✗ Auto blank failed')
+            QtWidgets.QMessageBox.warning(
+                self, 'Auto Blank failed',
+                f'Utilities.calculateT0 raised:\n{e}\n\n'
+                'Often a matplotlib mathtext parser glitch on '
+                'Anaconda Py 3.13. Try manual cycle selection '
+                '(or click Auto Blank again).')
+            return
         self._bT0, self._bSIG = result[1], result[2]
         self._refresh_blank()
         self.statusLbl.setText('✓ Blank done')
 
     def _auto_signal(self):
+        """v3.8.37: same try/except wrap as _auto_blank. Also reports
+        per-step which steps failed so the user knows which to fix
+        manually."""
         if not self._svt: return
         self._calc_blank_t0()
+        failed = []
         for nm, vt in self._svt.items():
             self.statusLbl.setText(f'Auto {nm}...')
             QtWidgets.QApplication.processEvents()
-            # calculateT0 auto-detects outliers and returns updated mask
-            result, new_mask = Utilities.calculateT0(
-                self._fit, vt, np.ones((5, self._nc)), self._nc)
-            self._smask[nm] = new_mask   # save auto-detected mask per isotope
+            try:
+                # calculateT0 auto-detects outliers and returns updated mask
+                result, new_mask = Utilities.calculateT0(
+                    self._fit, vt, np.ones((5, self._nc)), self._nc)
+                self._smask[nm] = new_mask
+            except Exception as e:
+                failed.append((nm, str(e)))
+                # keep existing mask for this step, continue with others
+                continue
         if self._cur: self._refresh_signal()
-        self.statusLbl.setText('✓ Signal done')
+        if failed:
+            self.statusLbl.setText(f'⚠ Signal done ({len(failed)} failed)')
+            msg = 'Some steps failed Auto Signal:\n\n' + '\n'.join(
+                f'• {nm}: {err}' for nm, err in failed)
+            msg += ('\n\nThese steps keep their existing mask (manual '
+                    'selection still works). Often a matplotlib '
+                    'mathtext glitch on Anaconda Py 3.13.')
+            QtWidgets.QMessageBox.warning(self, 'Auto Signal — partial', msg)
+        else:
+            self.statusLbl.setText('✓ Signal done')
         self.nextBtn.setEnabled(True)
 
     def _auto_best_all(self):
@@ -5223,6 +5257,115 @@ class AutoPipelineWindow(QtWidgets.QMainWindow):
                 'Documentation lives in NTNU_DataReduction.py '
                 '(_show_diagram_plot_help function).')
 
+    def _show_auto_guide(self):
+        """v3.8.37: short standalone dialog explaining Auto Blank / Auto
+        Signal — what they do, when to use them, when to fall back to
+        manual cycle selection."""
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle('Auto Blank / Signal Guide')
+        dlg.setMinimumSize(680, 560)
+        vl = QtWidgets.QVBoxLayout(dlg)
+        vl.setContentsMargins(0, 0, 0, 0); vl.setSpacing(0)
+
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet('QScrollArea{background:white;border:none;}')
+
+        body = QtWidgets.QLabel()
+        body.setTextFormat(QtCore.Qt.RichText)
+        body.setWordWrap(True)
+        body.setAlignment(QtCore.Qt.AlignTop)
+        body.setMargin(20)
+        body.setStyleSheet('background:white;color:#222;font-size:13px;')
+
+        html = """
+<h1 style="color:#1a5fb4;">Auto Blank / Auto Signal</h1>
+
+<p>左側 sidebar 上的兩個按鈕，呼叫
+<code>Utilities.calculateT0()</code> 自動跑 outlier detection。
+跟 NTNU_DataReduction 子程式的 CalcT0Page 用 <b>同一個函式</b>，行為一致。</p>
+
+<h2 style="color:#1a5fb4;">演算法（每個 isotope 獨立跑）</h2>
+
+<ol>
+<li>用全部 10 個 cycle 跑第一次 <code>curve_fit</code>（linear 或 average）。</li>
+<li>計算 R²。<b>如果 R² &lt; 0.8</b>，啟動 outlier 移除（否則維持全 10 cycle）。</li>
+<li>對每個 cycle <code>j</code> 算 residual <code>r = v[j] − fit(t[j])</code>。</li>
+<li>如果 <code>|r| &gt; σ_error</code>（第一次擬合的 std），標記為 outlier、mask[j]=0。</li>
+<li>最多移除 4 個 outlier。</li>
+<li>剩下的 cycle 重新 fit，更新 T₀、σ、R²。</li>
+</ol>
+
+<h2 style="color:#1a5fb4;">兩個按鈕差別</h2>
+
+<ul>
+<li><b>Auto Blank</b>：對當前載入的 <b>blank .dat</b> 跑（5 個 isotope 各跑一次），結果寫進
+<code>self._bT0</code> / <code>self._bSIG</code>，以及更新 mask <code>self._bmask</code>。
+完成後 Blank 那 tab 的 5 個 mV chart 立刻反映新 mask。</li>
+<li><b>Auto Signal</b>：對<b>所有溫度 step</b>跑同樣流程，每個 step 5 個 isotope。
+更新 <code>self._smask[step_name]</code>。完成後當前 step 的 mV chart 反映新 mask。</li>
+</ul>
+
+<h2 style="color:#1a5fb4;">什麼時候用、什麼時候不用</h2>
+
+<table style="border-collapse:collapse;width:100%;font-size:12px;">
+<tr style="background:#eeede8;">
+<th style="border:1px solid #bbb;padding:6px;text-align:left;">情境</th>
+<th style="border:1px solid #bbb;padding:6px;text-align:left;">建議</th>
+</tr>
+<tr>
+<td style="border:1px solid #bbb;padding:6px;">第一次看新樣品、想快速跑全部</td>
+<td style="border:1px solid #bbb;padding:6px;color:#1c7a3a;">✓ Auto Blank → Auto Signal → Run Pipeline 看 spectrum 大致樣子</td>
+</tr>
+<tr>
+<td style="border:1px solid #bbb;padding:6px;">準備發表、要每個 step 精細 tune</td>
+<td style="border:1px solid #bbb;padding:6px;color:#8a5a00;">⚠ Auto 起手，再手動 fine-tune 每個 step（看 mV chart + T₀ vs 2σ scatter）</td>
+</tr>
+<tr>
+<td style="border:1px solid #bbb;padding:6px;">低 T 或 low-signal step（³⁶Ar &lt; blank）</td>
+<td style="border:1px solid #bbb;padding:6px;color:#b41a1a;">✗ Auto 可能誤判，手動才看得出物理約束（³⁶Ar net &gt; 0）</td>
+</tr>
+<tr>
+<td style="border:1px solid #bbb;padding:6px;">³⁷Ar 訊號特別小</td>
+<td style="border:1px solid #bbb;padding:6px;color:#b41a1a;">✗ ³⁷Ar 半衰期 35 天，已經 decay 一段時間後訊號很弱，Auto 對它效果差</td>
+</tr>
+</table>
+
+<h2 style="color:#1a5fb4;">跟手動 cycle 按鈕的差別</h2>
+
+<ul>
+<li>Auto threshold <code>|r| &gt; σ</code> 比手動 cycle button 的 z-score MAD 判定<b>寬鬆</b>。
+手動需要 z ≥ 1.8 才標黃、z ≥ 3.0 才標紅。Auto 跑完之後，剩下的可能還有偏黃 cycle，可以手動進一步排除。</li>
+<li>Auto 一次處理所有 cycle、不會看 scatter 上的 best-per-n 分佈。
+精細策略還是回手動：「看 scatter 哪個 n 給最低 2σ」 → 「點 best button apply」。</li>
+</ul>
+
+<h2 style="color:#1a5fb4;">建議流程</h2>
+
+<p style="background:#d6e8f7;padding:10px;border-left:4px solid #1a5fb4;">
+<b>Auto Blank → Auto Signal → 切到第一個 step 看 scatter → 對紅色（被 MAD 判定明顯離群）的 cycle 再手動排除 → 看 Best per n button 哪個 n 給最低 2σ → 點下去 → 確認 mV chart 兩條虛線平行、橘三角在點雲左下。
+</b></p>
+
+<p style="color:#888;font-size:11px;margin-top:20px;">
+※ 詳細的 cycle button 顏色判定（MAD z-score tiers）、scatter 的閱讀策略，看
+<b>Help → Cycle Selection Guide</b>。
+</p>
+"""
+        body.setText(html)
+        scroll.setWidget(body)
+        vl.addWidget(scroll, 1)
+
+        btn_box = QtWidgets.QHBoxLayout()
+        btn_box.setContentsMargins(10, 10, 10, 10)
+        btn_box.addStretch()
+        closeBtn = QtWidgets.QPushButton('Close')
+        closeBtn.setMinimumWidth(90)
+        closeBtn.clicked.connect(dlg.accept)
+        btn_box.addWidget(closeBtn)
+        vl.addLayout(btn_box)
+
+        dlg.exec_()
+
     def _show_cycle_guide(self):
         """v3.8.17: scrollable rich-text dialog explaining the cycle 1-10
         button color scheme (MAD z-score tiers) and a practical selection
@@ -5469,6 +5612,11 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
         _act_cycle_guide = QtWidgets.QAction('Cycle Selection Guide', self)
         _menu_help.addAction(_act_cycle_guide)
         _act_cycle_guide.triggered.connect(self._show_cycle_guide)
+        # v3.8.37: dedicated Auto Blank / Signal entry — short standalone
+        # explainer separate from the longer Cycle Selection Guide.
+        _act_auto_guide = QtWidgets.QAction('Auto Blank / Signal Guide', self)
+        _menu_help.addAction(_act_auto_guide)
+        _act_auto_guide.triggered.connect(self._show_auto_guide)
 
         # Top bar: Mode/Fit/Blank/Signal chips + Pipeline progress + Run button
         # v3.8.21: pipeline moved BACK inside top_bar (was a separate strip in
