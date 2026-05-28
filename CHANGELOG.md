@@ -1,8 +1,107 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34
 最後整理日期：2026-05-28
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.34（2026-05-28）— Save 按鈕改名 + 右上角綠按鈕拿掉 + Warning 統整成一個
+
+### 問題（三件事一起做）
+
+1. **CalcT0Page sidebar "Save T₀" 改成 "Save"**（使用者口頭要求）
+2. **MassRatioPage / AgeCalcPage 右上角綠色 Save / Export 按鈕拿掉** — sidebar Save To 已經是唯一入口，右上角的副本多餘
+3. **Mass Ratio Warning 跳很多視窗** — 9 個 step、每個 step 可能 1~5 個 Negative datum / Net≤0 警告，原本一次跑完 pipeline 會 pop 10+ 個重疊的 MessageBox。整成一個
+
+### 修法
+
+#### 1. Save T₀ → Save
+
+- `CalcT0Page._build` sidebar 按鈕 label: `'Save T₀'` → `'Save'`
+- `_save` dialog title: `'Save T₀'` → `'Save'`, `'Save T₀ — Done'` → `'Save — Done'`
+- 檔頭 module docstring 同步更新
+
+#### 2. 移除右上角綠色按鈕
+
+兩個 page header 都改成只有 centered title，原綠色按鈕變成 `QPushButton(); .hide()` 隱形 placeholder（保留 method 觸發路徑，sidebar Save To 透過 `lambda: self._save()` / `self._export()` 仍然可以叫到）。
+
+```python
+# 之前
+self.saveBtn = QtWidgets.QPushButton('Save')
+self.saveBtn.setStyleSheet(_btn_style('#2e7d52','white','#2e7d52')+...)
+self.saveBtn.clicked.connect(self._save)
+hdr.addWidget(self.saveBtn)            # ← 拿掉
+
+# 現在
+self.saveBtn = QtWidgets.QPushButton(); self.saveBtn.hide()
+self.saveBtn.clicked.connect(self._save)
+# 不 addWidget — 不在 UI 顯示
+```
+
+`AgeCalcPage.exportBtn` 同樣處理。
+
+#### 3. Warning 統整成一個 dialog
+
+`PipelineWorker`：
+
+- `__init__` 加 `self._warns = []` buffer
+- 4 處 `self.sig_warn.emit(msg)` 改成 `self._warns.append(msg)`：
+  - `Net values ≤0` (Mass Ratio 階段每個 step 都可能)
+  - `Negative datum at <step>` (Datum 階段每個 step 都可能)
+  - `getSHStatistics: <err>` (Statistics 階段)
+  - `getDFStatistics_sh: <err>` (Diagram 階段)
+- `_run` 結尾、`sig_prog.emit('Done')` 之前：
+
+```python
+if self._warns:
+    self.sig_warn.emit('\n\n'.join(self._warns))
+```
+
+→ 一次 emit 含所有累積訊息的單一 string，AutoPipelineWindow 端的 `sig_warn` slot 只觸發一個 QMessageBox。
+
+### 截圖前後
+
+- 之前：跑 9 step pipeline → 3+ 個重疊的 MessageBox（Net≤0 / Negative @1400°C / Negative @1500°C），user 要點 OK 3 次
+- 現在：跑完只有 1 個 MessageBox：
+
+```
+Net values ≤0:
+  Ar38 @Temperature 600°C
+  Ar37 @Temperature 850°C
+  ...
+
+Negative datum at Temperature 1400°C:
+  40Ar(r)=-4.284e-03, 36Ar(air)=-3.21e-06
+
+Negative datum at Temperature 1500°C:
+  40Ar(r)=-2.184e-02
+```
+
+點一次 OK 即可。
+
+### 驗證 checklist
+
+- [ ] CalcT0Page sidebar 第二顆按鈕標籤是 `Save`（不再是 `Save T₀`）
+- [ ] 按 Save 之後 dialog 標題 `Save` / `Save — Done`
+- [ ] MassRatioPage 右上角沒有綠色 Save 按鈕；header 只剩置中的 "Mass Ratio" 標題
+- [ ] AgeCalcPage 右上角沒有綠色 Export 按鈕；header 只剩 "Age Calculation & Datum" 標題
+- [ ] sidebar Save To 仍然能正常存檔（Mass Ratio CSV / Datum export）
+- [ ] 跑 Run Pipeline → pipeline 結束後**只有 1 個 Warning dialog**，內容包含所有 step 的 Net≤0 / Negative datum 訊息
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - `CalcT0Page._build` sidebar `'Save T₀'` → `'Save'`
+  - `CalcT0Page._save` dialog title 兩處 `Save T₀` → `Save`
+  - 檔頭 docstring 更新
+  - `MassRatioPage.__init__` header Save button 隱藏（saveBtn 保留 hidden）
+  - `AgeCalcPage.__init__` header Export button 隱藏（exportBtn 保留 hidden）
+  - `PipelineWorker.__init__` 加 `self._warns = []`
+  - 4 處 `sig_warn.emit` → `_warns.append`
+  - `_run` 結尾加 final batch emit
+- `.work/.app_info.txt`：3.8.33 → 3.8.34
+- `CHANGELOG.md`：本段
 
 ---
 

@@ -4,7 +4,7 @@ AutoPipeline.py  —  pyADR Auto Pipeline (full PyQt5 UI)
 =========================================================
 Native PyQt5 interface matching the HTML design:
   - Top navigation: 1.Calculate T0 → 2.Mass Ratio → 3.Age Calc+Datum
-  - Left sidebar: Return / Save T0 / Linear/Average / Auto Blank / Auto Signal / Manual
+  - Left sidebar: Return / Save / Linear/Average / Auto Blank / Auto Signal / Manual
   - 5 mV-vs-time canvases with 10-cycle toggle buttons
   - T0 summary table
   - Mass Ratio table
@@ -2023,7 +2023,7 @@ class CalcT0Page(QtWidgets.QWidget):
         # was meant to drop it from the UI, but the sidebar button slipped through).
         # Method `_auto_best_all` retained for possible future re-introduction.
         self.returnBtn  = sb_btn('Return')
-        self.saveBtn    = sb_btn('Save T₀')
+        self.saveBtn    = sb_btn('Save')
         self.btnLdBlank = sb_btn('Load Blank')
         self.btnLdSig   = sb_btn('Load Sample')
         self.btnAB      = sb_btn('Auto Blank')
@@ -3230,7 +3230,7 @@ class CalcT0Page(QtWidgets.QWidget):
           per-isotope QPixmaps not a single LR.png, so a direct shutil.copy
           doesn't apply here)."""
         if self._bvt is None:
-            QtWidgets.QMessageBox.warning(self, 'Save T₀',
+            QtWidgets.QMessageBox.warning(self, 'Save',
                 'No blank loaded — load Blank + Sample first.')
             return
 
@@ -3300,7 +3300,7 @@ class CalcT0Page(QtWidgets.QWidget):
 
         self.statusLbl.setText(f'✓ Saved {len(written)} files')
         png_msg = (f'\n  • PNG → {png_written}' if png_written else '')
-        QtWidgets.QMessageBox.information(self, 'Save T₀ — Done',
+        QtWidgets.QMessageBox.information(self, 'Save — Done',
             'Saved:\n'
             f'  • Blank → Data/T0/PBs/{blank_name}.csv\n'
             f'  • Blank + {len(self._svt)} step(s) → {target}'
@@ -3560,7 +3560,11 @@ class MassRatioPage(QtWidgets.QWidget):
         outer.addWidget(_content, 1)
         vb=QtWidgets.QVBoxLayout(_content); vb.setContentsMargins(10,8,8,8); vb.setSpacing(6)
 
-        # Header with centered title and Save button
+        # Header with centered title only.
+        # v3.8.34: dropped the green corner Save button — sidebar Save To
+        # is the single entry point now (per user request).
+        # saveBtn kept as a hidden no-UI widget so any lingering code path
+        # (e.g. sidebar's _save_handler lambda) still resolves.
         hdr=QtWidgets.QHBoxLayout()
         hdr.addStretch()
         lbl=QtWidgets.QLabel('<b>Mass Ratio</b>')
@@ -3568,11 +3572,8 @@ class MassRatioPage(QtWidgets.QWidget):
         lbl.setAlignment(QtCore.Qt.AlignCenter)
         hdr.addWidget(lbl)
         hdr.addStretch()
-        self.saveBtn=QtWidgets.QPushButton('Save')
-        self.saveBtn.setStyleSheet(_btn_style('#2e7d52','white','#2e7d52')+
-                                   'QPushButton{font-weight:bold;padding:6px 12px;}')
+        self.saveBtn=QtWidgets.QPushButton(); self.saveBtn.hide()
         self.saveBtn.clicked.connect(self._save)
-        hdr.addWidget(self.saveBtn)
         vb.addLayout(hdr)
         
         # Date info label
@@ -3876,7 +3877,10 @@ class AgeCalcPage(QtWidgets.QWidget):
         outer.addWidget(_content, 1)
         vb=QtWidgets.QVBoxLayout(_content); vb.setContentsMargins(10,8,10,8); vb.setSpacing(6)
 
-        # ═══ Header: centered title + Save button ═══
+        # ═══ Header: centered title only ═══
+        # v3.8.34: dropped the green corner Export button — sidebar Save To
+        # is the single entry point now. exportBtn kept as a hidden no-UI
+        # widget so any lingering ref doesn't AttributeError.
         hdr = QtWidgets.QHBoxLayout()
         hdr.addStretch()
         lbl=QtWidgets.QLabel('<b>Age Calculation &amp; Datum</b>')
@@ -3884,12 +3888,9 @@ class AgeCalcPage(QtWidgets.QWidget):
         lbl.setAlignment(QtCore.Qt.AlignCenter)
         hdr.addWidget(lbl)
         hdr.addStretch()
-        
-        self.exportBtn = QtWidgets.QPushButton('Export')
-        self.exportBtn.setStyleSheet(_btn_style('#2e7d52','white','#2e7d52')+
-                                     'QPushButton{font-weight:bold;padding:6px 12px;}')
+
+        self.exportBtn = QtWidgets.QPushButton(); self.exportBtn.hide()
         self.exportBtn.clicked.connect(self._export)
-        hdr.addWidget(self.exportBtn)
         vb.addLayout(hdr)
         
         # ═══ Summary banner (row 1: stat cells; row 2: controls) ═══
@@ -4815,6 +4816,11 @@ class PipelineWorker(QtCore.QThread):
         super().__init__()
         self.blank_csv=blank_csv; self.sig_csvs=sig_csvs
         self.params=params; self.pnames=pnames; self.out_dir=out_dir
+        # v3.8.34: accumulate warnings, emit once at the end of _run so the
+        # UI shows a single consolidated dialog instead of N popups (used to
+        # spawn one Warning per step's Net≤0 isotope and one per negative
+        # datum — could be 10+ overlapping MessageBoxes).
+        self._warns = []
 
     def run(self):
         try: self._run()
@@ -4887,7 +4893,8 @@ class PipelineWorker(QtCore.QThread):
             for ai,(a,net) in enumerate(zip([36,37,38,39,40],mr[1])):
                 if net<=0: warns.append(f'Ar{a} @{nm}')
             steps.append(step)
-        if warns: self.sig_warn.emit('Net values ≤0:\n'+'\n'.join(warns))
+        # v3.8.34: buffer instead of emit — final flush at end of _run
+        if warns: self._warns.append('Net values ≤0:\n  ' + '\n  '.join(warns))
         ar_list=[]; s39=0.0; s40=0.0
         for step in steps:
             self.sig_prog.emit(f'Age Calc {step["name"]}...')
@@ -4903,7 +4910,8 @@ class PipelineWorker(QtCore.QThread):
             if _sf(ar[18])<0: neg.append(f'39Ar(K)={_sf(ar[18]):.3e}')
             if _sf(ar[2]) <0: neg.append(f'36Ar(air)={_sf(ar[2]):.3e}')
             step['neg_datum']=neg
-            if neg: self.sig_warn.emit(f'Negative datum at {step["name"]}:\n'+', '.join(neg))
+            # v3.8.34: buffer instead of emit
+            if neg: self._warns.append(f'Negative datum at {step["name"]}:\n  ' + ', '.join(neg))
             # v3.8.24: also pull Min (mineral name) from mr_csv col 2 so the
             # downstream Datum row gets 'Muscovite' / 'Mus' instead of the step
             # temperature.  Mirrors NTNU_DataReduction line 5347:
@@ -4956,10 +4964,11 @@ class PipelineWorker(QtCore.QThread):
         work_dir=os.path.dirname(os.path.realpath(__file__))
         mask_all=np.ones(len(steps))
         try: Utilities.getSHStatistics(datum_csv,mask_all,consts)
-        except Exception as e: self.sig_warn.emit(f'getSHStatistics: {e}')
+        # v3.8.34: buffer instead of emit
+        except Exception as e: self._warns.append(f'getSHStatistics: {e}')
         try: Utilities.getDFStatistics_sh(datum_csv,mask_all,consts,'b','o',
                                           isochron_method='ols')
-        except Exception as e: self.sig_warn.emit(f'getDFStatistics_sh: {e}')
+        except Exception as e: self._warns.append(f'getDFStatistics_sh: {e}')
         # v3.8.25: Figures/Publish/StepHeating/ (work_dir-relative) instead of
         # Data/Figures/ to match NTNU_DataReduction.line 4885.
         fig_d=os.path.join(work_dir,'Figures','Publish','StepHeating')
@@ -4967,6 +4976,10 @@ class PipelineWorker(QtCore.QThread):
         for key in ['DFW','DFA','DFN','DFI']:
             src=os.path.join(work_dir,'.work',key+'.png')
             if os.path.exists(src): shutil.copyfile(src,os.path.join(fig_d,str(sid)+'_'+key+'.png'))
+        # v3.8.34: single consolidated warning dialog at end of pipeline,
+        # one popup instead of N (previously could be 10+ overlapping).
+        if self._warns:
+            self.sig_warn.emit('\n\n'.join(self._warns))
         self.sig_prog.emit('Done')
         # v3.8.5: include consts so AgeCalcPage can re-run getDFStatistics_sh
         # when the isochron_method dropdown changes.
