@@ -1637,13 +1637,23 @@ class MvCanvas(QtWidgets.QWidget):
         ax.tick_params(labelsize=9)
         ax.ticklabel_format(axis='y', style='sci', scilimits=(0, 0))
         ax.tick_params(labelsize=14)
+        # v3.8.30: useMathText=True triggers a matplotlib mathtext parser bug
+        # on Anaconda Py 3.13 + recent mpl ("$\mathdefault{...}$" fails to parse
+        # in mathtext.parse, crashing tight_layout). Plain-text sci notation
+        # ("1e-5" instead of "×10⁻⁵") avoids the parser entirely.
         ax.yaxis.set_major_formatter(
-            _ticker.ScalarFormatter(useMathText=True))
+            _ticker.ScalarFormatter(useMathText=False))
         ax.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
         # No per-canvas legend: shared legend shown below Row 1
         ax.grid(True, alpha=0.2, linewidth=0.4)
 
-        _plt.tight_layout(pad=0.2)
+        # v3.8.30: defensive try/except — even with useMathText=False there
+        # are edge cases (empty figure, NaN ticks) where tight_layout can
+        # raise. Crashing on resize is worse than a slightly cropped plot.
+        try:
+            _plt.tight_layout(pad=0.2)
+        except Exception:
+            pass
         buf = _io.BytesIO()
         fig.savefig(buf, format='png', dpi=dpi, facecolor='white')
         _plt.close(fig)
@@ -1753,8 +1763,10 @@ class MvCanvas(QtWidgets.QWidget):
         else:
             ax.set_ylabel('')
         ax.tick_params(labelsize=14)
-        ax.xaxis.set_major_formatter(_ticker.ScalarFormatter(useMathText=True))
-        ax.yaxis.set_major_formatter(_ticker.ScalarFormatter(useMathText=True))
+        # v3.8.30: useMathText=False to avoid matplotlib mathtext parser bug
+        # (see _paint_mv comment). Plain "1e-5" tick labels instead of LaTeX.
+        ax.xaxis.set_major_formatter(_ticker.ScalarFormatter(useMathText=False))
+        ax.yaxis.set_major_formatter(_ticker.ScalarFormatter(useMathText=False))
         ax.ticklabel_format(style='sci', axis='both', scilimits=(0,0))
         # v3.8.17: enforce 1:1.2 H:W aspect on the axes box — user feedback that
         # the previous 1:1 scatter (v3.8.16) was too tall. set_box_aspect takes
@@ -1772,7 +1784,10 @@ class MvCanvas(QtWidgets.QWidget):
         if leg: leg.remove()
         ax.grid(True, alpha=0.2, linewidth=0.3)
 
-        self._sc_fig.tight_layout(pad=0.3)
+        # v3.8.30: defensive tight_layout (mathtext parser bugs on some
+        # mpl/Python combos can crash here; cropped plot beats hard crash)
+        try: self._sc_fig.tight_layout(pad=0.3)
+        except Exception: pass
         self.cv_sc.draw()
 
     def _update_sc_info(self, t0, sig_std, sig_calc):
@@ -2894,10 +2909,12 @@ class CalcT0Page(QtWidgets.QWidget):
         self._degas_fig.patch.set_facecolor('white')
         
         if not self._svt:
-            ax1.text(0.5, 0.5, 'Load signal files first', 
+            ax1.text(0.5, 0.5, 'Load signal files first',
                     transform=ax1.transAxes, ha='center', va='center',
                     fontsize=10, color='grey')
-            self._degas_fig.tight_layout(pad=0.5)
+            # v3.8.30: defensive tight_layout (mathtext / glyph edge cases)
+            try: self._degas_fig.tight_layout(pad=0.5)
+            except Exception: pass
             self.cv_degas.draw()
             return
         
@@ -2963,7 +2980,8 @@ class CalcT0Page(QtWidgets.QWidget):
                 ax1.axhline(self._bT0[ai], color=iso_colors[ai], 
                            linestyle='--', linewidth=0.8, alpha=0.3)
         
-        ax1.set_ylabel('T₀ signal (mV)', fontsize=8)
+        # v3.8.30: $T_0$ LaTeX instead of unicode T₀ — Arial lacks U+2080
+        ax1.set_ylabel('$T_0$ signal (mV)', fontsize=8)
         ax1.tick_params(labelsize=7)
         ax1.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
         ax1.legend(fontsize=6, ncol=5, framealpha=0.8, loc='upper left')
@@ -2978,7 +2996,8 @@ class CalcT0Page(QtWidgets.QWidget):
                         color=iso_colors[ai], label=iso_names[ai], linewidth=1.5, alpha=0.8)
         
         ax2.set_xlabel('Temperature (°C)', fontsize=8)
-        ax2.set_ylabel('CV (σ/T₀ %)', fontsize=8)
+        # v3.8.30: $T_0$ LaTeX instead of unicode T₀
+        ax2.set_ylabel('CV ($\\sigma/T_0$ %)', fontsize=8)
         ax2.set_ylim(-2, 20)
         ax2.tick_params(labelsize=7)
         ax2.grid(True, alpha=0.2)
@@ -2989,12 +3008,14 @@ class CalcT0Page(QtWidgets.QWidget):
             m = re.search(r'(\d+)', self._cur)
             if m:
                 cur_temp = int(m.group(1))
-                ax1.axvline(cur_temp, color='#e67e00', linestyle=':', 
+                ax1.axvline(cur_temp, color='#e67e00', linestyle=':',
                            linewidth=1.2, alpha=0.7, zorder=0)
-                ax2.axvline(cur_temp, color='#e67e00', linestyle=':', 
+                ax2.axvline(cur_temp, color='#e67e00', linestyle=':',
                            linewidth=1.2, alpha=0.7, zorder=0)
-        
-        self._degas_fig.tight_layout(pad=0.5)
+
+        # v3.8.30: defensive tight_layout
+        try: self._degas_fig.tight_layout(pad=0.5)
+        except Exception: pass
         self.cv_degas.draw()
 
     def _paint_yield_pattern(self):
@@ -3020,7 +3041,9 @@ class CalcT0Page(QtWidgets.QWidget):
             ax.text(0.5, 0.5, 'Load signal files first',
                     transform=ax.transAxes, ha='center', va='center',
                     fontsize=10, color='grey')
-            self._yield_fig.tight_layout(pad=0.5)
+            # v3.8.30: defensive tight_layout
+            try: self._yield_fig.tight_layout(pad=0.5)
+            except Exception: pass
             self.cv_yield.draw()
             return
 
@@ -3112,7 +3135,9 @@ class CalcT0Page(QtWidgets.QWidget):
         ax.legend(fontsize=7, framealpha=0.8, loc='best')
         ax.grid(True, alpha=0.2)
 
-        self._yield_fig.tight_layout(pad=0.5)
+        # v3.8.30: defensive tight_layout
+        try: self._yield_fig.tight_layout(pad=0.5)
+        except Exception: pass
         self.cv_yield.draw()
 
 

@@ -1,8 +1,106 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30
 最後整理日期：2026-05-28
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.30（2026-05-28）— 修 Run Pipeline 閃退（mathtext parser + 缺字 glyph）
+
+### 問題
+
+使用者按 Run Pipeline 後閃退，console traceback：
+
+```
+ValueError:
+$\mathdefault{5.46}$
+^
+ParseException: Expected end of text, found '$'  (at char 0)
+```
+
+伴隨 warning：
+
+```
+UserWarning: Glyph 8320 (\N{SUBSCRIPT ZERO}) missing from font(s) Arial.
+```
+
+### 根因
+
+兩個獨立 issue 疊加：
+
+1. **mathtext parser bug**（crash 源頭）
+   - 多處 `_ticker.ScalarFormatter(useMathText=True)` 讓 axis tick label 變成 `$\mathdefault{5.46}$` LaTeX 形式
+   - Anaconda Python 3.13 + 較新 matplotlib 內部 mathtext parser 解析自家產的 `$\mathdefault{...}$` 失敗
+   - tight_layout 算 bbox 時觸發 text render → mathtext parse → ValueError → crash
+
+2. **Unicode glyph missing**（warning，不 crash）
+   - `T₀ signal (mV)` / `CV (σ/T₀ %)` 兩個 ylabel 直接用 unicode `₀` (U+2080)
+   - Arial 字體沒這個 glyph，matplotlib 打 warning（不影響功能，但 console 雜訊大）
+
+### 修法
+
+#### 1. ScalarFormatter `useMathText=True` → `False`
+
+```python
+# 三處：MvCanvas._paint_mv (y-axis), MvCanvas._paint_sc (x,y-axis)
+_ticker.ScalarFormatter(useMathText=False)
+```
+
+視覺差異：tick label 從 `×10⁻⁵` (LaTeX) 變成 `1e-5` (plain text)。略簡陋但**完全避開 mathtext parser**。
+
+#### 2. tight_layout 全部 try/except 包裹
+
+5 個位置 (`_paint_mv`, `_paint_sc`, degas pattern × 2 path, yield pattern × 2 path)：
+
+```python
+try: fig.tight_layout(pad=...)
+except Exception: pass
+```
+
+`tight_layout` 不是 critical — 算 padding 失敗最多就是 chart 邊緣略被切，比 hard crash 好太多。其他 matplotlib edge case (NaN ticks, empty axis) 也用此 pattern 防範。
+
+#### 3. Unicode T₀ → LaTeX `$T_0$`
+
+```python
+# was: ax1.set_ylabel('T₀ signal (mV)', ...)
+ax1.set_ylabel('$T_0$ signal (mV)', ...)
+
+# was: ax2.set_ylabel('CV (σ/T₀ %)', ...)
+ax2.set_ylabel('CV ($\\sigma/T_0$ %)', ...)
+```
+
+LaTeX `$T_0$` 不依賴 Arial 字體有沒有 ₀ glyph，matplotlib 自家 mathfont 一定能 render。順便消除 warning。
+
+Qt QLabel (titleLbl) 的 `T₀` 字符不動 — Qt 用系統字體 fallback，Windows 上 PMingLiU / Microsoft YaHei 等都有 U+2080，不會缺字。
+
+### 影響
+
+- **數值結果完全不變** — 純 render 層級的改動
+- tick label 視覺從 `×10⁻⁵` 變 `1e-5`，比較粗糙但避開 crash
+- degassing pattern ylabel `T₀` 變 italic 數學形式 $T_0$，視覺更標準
+
+### 驗證 checklist
+
+- [ ] 載 NO.65 muscovite blank + signal
+- [ ] 按 Run Pipeline — 應該不再閃退
+- [ ] mV / scatter chart 還是正常顯示
+- [ ] tick label 是 `1e-5` 之類的 plain sci notation
+- [ ] degassing pattern 的 y label 顯示 `$T_0$ signal (mV)`（italic T，subscript 0）
+- [ ] console 不再有 `Glyph 8320 missing` warning
+
+### 後續
+
+如果某天升級到 matplotlib stable 修好 mathtext bug，可以把 `useMathText=False` 改回 True 拿回 LaTeX-style tick label。但這個 fix 並非 hack，`useMathText=False` 是 mpl 文件支援的正常選項。
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - 3 處 `ScalarFormatter(useMathText=True)` → `False` (MvCanvas._paint_mv / _paint_sc)
+  - 5 處 `tight_layout` 包 try/except
+  - 2 處 degassing ylabel `T₀` → `$T_0$`
+- `.work/.app_info.txt`：3.8.29 → 3.8.30
+- `CHANGELOG.md`：本段
 
 ---
 
