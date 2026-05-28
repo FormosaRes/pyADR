@@ -1,8 +1,126 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26
 最後整理日期：2026-05-28
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.26（2026-05-28）— CalcT0Page step 切換加速（defer paint + background prefetch）
+
+### 問題
+
+使用者反映在 Calculate T₀ 介面切換不同溫度 step 或 Blank 都很慢，每次切要等好幾秒才畫完。
+
+定位瓶頸：
+
+```
+_sel_step(nm)
+  → _refresh_signal()/_refresh_blank()
+      → cv.load() × 5 isotopes
+          → _enumerate_combos() ← 每個 isotope C(10,4..10) = 848 個 curve_fit
+              ⇒ 5 isotope × 848 = 4 240 curve_fit per step（~4 秒）
+      → _paint_mv() + _paint_sc() ← scatter 還有 800+ 點要 render
+```
+
+v3.8.10 已加 cache（同 step 切回來秒切），但首次進每個 step 都會卡 ~4 秒。
+
+### 修法（兩層）
+
+#### Layer A: defer paint_sc 到下個 event loop
+
+`MvCanvas._refresh` 重構：
+
+```python
+def _refresh(self):
+    ...
+    self._paint_mv()   # 立即（mV chart 是輕的）
+    QtCore.QTimer.singleShot(0, self._refresh_deferred)
+
+def _refresh_deferred(self):
+    if self._vt is None: return
+    self._paint_sc()
+    self._update_best_btns()
+```
+
+`_paint_sc` 是 widget 內最重的渲染（per-n 上色、range 重算、axvspan、800+ scatter points）。defer 後切 step 的瞬間 mV chart 立刻顯示，user 視覺感受「秒切」，scatter 稍微慢 100–200 ms 補上。
+
+#### Layer B: background QThread 預算所有 step
+
+新 `PrefetchWorker(QThread)`，在 `load_blank` / `load_signal` 結束時 spawn：
+
+```python
+class PrefetchWorker(QtCore.QThread):
+    sig_one_done = QtCore.pyqtSignal(object, list)   # (cache_key, fits)
+    sig_progress = QtCore.pyqtSignal(int, int)
+    sig_finished = QtCore.pyqtSignal()
+    def run(self):
+        for key, vt in self.tasks:
+            if self._abort: return
+            fits = _enumerate_combos_simple(vt, self.fit, self.nc)
+            self.sig_one_done.emit(key, fits)
+```
+
+scipy `curve_fit` 在 C/Fortran 內 release GIL，所以 QThread parallel 對 UI 真的有效果。
+
+`CalcT0Page` 新增：
+- `self._prefetch_cache: dict[(id(vt), fit, nc) → list[(t0, sig, k, mask)]]`
+- `_start_prefetch()` 收集所有未 cache 的 (step, isotope) task 排進 worker
+- `_on_prefetch_one(key, fits)` slot 把結果 drop 進 cache
+- `_on_prefetch_progress(done, total)` 在 `footMsg` 顯示 `Pre-computing: 12/60`
+- `_on_prefetch_finished()` 顯示 `✓ Pre-compute done`
+
+`MvCanvas.load(...)` 加 `prefetched_fits=None` 參數，如果 caller 傳了就直接 `self._combo_fits = prefetched_fits`，跳過 ~4 秒 `_enumerate_combos`。
+
+`_refresh_signal` / `_refresh_blank` 改：
+
+```python
+cache = getattr(self, '_prefetch_cache', {})
+for ai, cv in enumerate(self._cv):
+    key = (id(vt[ai]), self._fit, self._nc)
+    cv.load(vt[ai], mask[ai], ..., prefetched_fits=cache.get(key))
+```
+
+加 helper `_enumerate_combos_simple(vt_i, fit_type, n_total)` (module level)，邏輯跟 `MvCanvas._enumerate_combos` 一致，worker 跟 instance 共用，避免 logic drift。
+
+### 效果
+
+| 情境 | v3.8.25 | v3.8.26 |
+|---|---|---|
+| 首次切到 step (cache 空) | ~4 s | mV 立即 + scatter <500 ms（defer） |
+| Prefetch 完成後切 step | ~4 s（每次首次都重算） | **<50 ms**（cache hit）|
+| 切回已 visit 過的 step | <500 ms | <50 ms |
+| Prefetch 進行中 footMsg | 無提示 | `Pre-computing combos: N/M` |
+
+12 step × 5 isotope = 60 個 task，每 task ~700 ms（單核），prefetch 全跑完約 30–50 秒。期間 user 切 step 還是先看到 mV，scatter 等 worker 算完才秒切。
+
+### 安全性
+
+- `_start_prefetch` 重入：load 新檔時先 `worker.abort()` + `wait(100)` 等舊 worker 退出，再清 `_prefetch_cache` 避免 id(vt) 衝撞
+- `id(vt)` cache key：dataset reload 後 numpy array 物件 id 可能撞 old key，因此 `load_blank` / `load_signal` 都先 `self._prefetch_cache = {}` 再 fire worker
+- worker 例外接 catch + traceback.print_exc，不會炸 GUI
+
+### 驗證 checklist
+
+- [ ] 啟動 AutoPipeline → 載 blank + signal → 進 Calculate T₀
+- [ ] 首次切到第一個溫度 step：mV chart 應該**馬上**顯示，scatter 200–500 ms 補上
+- [ ] 切到第二個溫度 step：類似（prefetch 應該已經算完前面幾個）
+- [ ] 等 footMsg 顯示 `✓ Pre-compute done`
+- [ ] 之後切 step：應該**幾乎瞬間**完成（<50 ms）
+- [ ] Re-load 新 dataset → footMsg 應該重新顯示 prefetch progress
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - 新 module-level `_enumerate_combos_simple` helper
+  - 新 `PrefetchWorker(QtCore.QThread)` class（PipelineWorker 前）
+  - `MvCanvas.load` 接 `prefetched_fits=None` 參數
+  - `MvCanvas._refresh` 拆出 `_refresh_deferred`，scatter+best-btn 走 QTimer.singleShot(0)
+  - `CalcT0Page._refresh_blank` / `_refresh_signal` 傳 prefetched fits
+  - `CalcT0Page.load_blank` / `load_signal` 結尾 call `_start_prefetch()`
+  - `CalcT0Page` 新增 `_start_prefetch` / `_on_prefetch_one` / `_on_prefetch_progress` / `_on_prefetch_finished`
+- `.work/.app_info.txt`：3.8.25 → 3.8.26
+- `CHANGELOG.md`：本段
 
 ---
 

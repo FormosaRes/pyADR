@@ -655,6 +655,22 @@ def _compute_combo_score(sig_a, sig_m, n, mask, nc=10,
     return base + penalty
 
 
+def _enumerate_combos_simple(vt_i, fit_type, n_total):
+    """v3.8.26: worker-callable enumerate, mirrors MvCanvas._enumerate_combos
+    exactly (k = n_total..4, no penalty, no R² rejection). Returns list of
+    (t0, sig, k, mask) tuples. Used by PrefetchWorker to pre-compute combo
+    fits for all step/isotope pairs in a background thread."""
+    f = Utilities.fit_func_list[fit_type]
+    out = []
+    for k in range(n_total, 3, -1):
+        for combo in _iter_combos(n_total, k):
+            m = np.zeros(n_total)
+            for idx in combo: m[idx] = 1
+            t0, sig, _, _ = _fit_one(f, vt_i, m)
+            out.append((t0, sig, k, m.copy()))
+    return out
+
+
 def _enumerate_combos_for_isotope(vt_i, fit_type=0, n_total=10,
                                     min_use=4, limit_per_n=150):
     """Enumerate all cycle combos for an isotope, returning detailed info.
@@ -1235,7 +1251,7 @@ class MvCanvas(QtWidgets.QWidget):
         self._refresh(); self.maskChanged.emit()
 
     # ── load / refresh ───────────────────────────────────────
-    def load(self, vt_i, mask, bt=None, fit=0, manual=False):
+    def load(self, vt_i, mask, bt=None, fit=0, manual=False, prefetched_fits=None):
         self._vt     = vt_i
         self._mask   = mask.copy()
         self._bt     = bt
@@ -1246,9 +1262,15 @@ class MvCanvas(QtWidgets.QWidget):
         # per isotope) keyed by (vt object id, fit type, nc). When user switches
         # between Blank ↔ signal step, each step reuses its cached fits and only
         # validity flags (cheap) are recomputed. Cuts step-switch latency ~20×.
+        # v3.8.26: if CalcT0Page background-prefetched fits are available, take
+        # them straight from the parent's cache — skips the ~4 s enumerate per
+        # isotope when first visiting a step.
         cache_key = (id(vt_i), fit, self._nc)
         if getattr(self, '_combo_cache_key', None) != cache_key:
-            self._enumerate_combos()
+            if prefetched_fits is not None:
+                self._combo_fits = prefetched_fits
+            else:
+                self._enumerate_combos()
             self._combo_cache_key = cache_key
         self._recompute_validity()
         self._refresh()
@@ -1377,6 +1399,15 @@ class MvCanvas(QtWidgets.QWidget):
             f'Used: {u}/{self._nc}' +
             (f'  Excl: {",".join(excl)}' if excl else ''))
         self._paint_mv()
+        # v3.8.26: defer scatter + best-btn render to the next event loop
+        # tick. This lets the mV chart + tab change paint immediately, so
+        # the step switch feels snappy even when scatter still has to draw
+        # ~848 points. _paint_sc is the heaviest operation in this widget
+        # (recolors per-n, recomputes range, draws axvspan etc).
+        QtCore.QTimer.singleShot(0, self._refresh_deferred)
+
+    def _refresh_deferred(self):
+        if self._vt is None: return
         self._paint_sc()
         self._update_best_btns()
 
@@ -2018,8 +2049,14 @@ class CalcT0Page(QtWidgets.QWidget):
         self._bmask = np.ones((5, nc))
         self._chips['Blank file'].setText(os.path.basename(fp))
         self._cur = '__BLANK__'
+        # v3.8.26: drop stale prefetch cache (id(vt) collisions possible after
+        # new parse_dat) so PrefetchWorker re-fills with fresh arrays
+        self._prefetch_cache = {}
         self._refresh_blank()
         self._update_step_colors()
+        # Kick off background combo-fit pre-compute (blank only here; full
+        # set including signal steps re-runs from load_signal)
+        self._start_prefetch()
 
     def load_signal(self, fps, nc=10):
         self._nc = nc
@@ -2035,6 +2072,9 @@ class CalcT0Page(QtWidgets.QWidget):
                 self._step_dates[nm] = d
         self._chips['Signal'].setText(f'{len(fps)} steps')
         self._rebuild_step_btns()
+        # v3.8.26: invalidate stale prefetch cache before restart so a previous
+        # dataset's id() entries don't collide with the new one
+        self._prefetch_cache = {}
         if self._svt:
             self._cur = list(self._svt.keys())[0]
             self._refresh_signal()
@@ -2042,6 +2082,8 @@ class CalcT0Page(QtWidgets.QWidget):
         self._auto_update_delta_t()
         self.nextBtn.setEnabled(True)
         self.footMsg.setText('Files loaded')
+        # v3.8.26: kick off background prefetch for blank + all signal steps
+        self._start_prefetch()
         # v3.8.20: refresh pipeline strip visuals — circle 0 now ✓ done since
         # blank + signal are loaded, Next button text/enabled state updated.
         try:
@@ -2171,9 +2213,14 @@ class CalcT0Page(QtWidgets.QWidget):
     def _refresh_blank(self):
         if self._bvt is None: return
         self._calc_blank_t0()
+        cache = getattr(self, '_prefetch_cache', {})
         for ai, cv in enumerate(self._cv):
+            # v3.8.26: hand over prefetched combo fits if background worker
+            # already finished this isotope — skips ~4 s enumerate per cv.
+            key = (id(self._bvt[ai]), self._fit, self._nc)
             cv.load(self._bvt[ai], self._bmask[ai],
-                    bt=None, fit=self._fit, manual=self._manual)
+                    bt=None, fit=self._fit, manual=self._manual,
+                    prefetched_fits=cache.get(key))
         self._broadcast_t0_net_37()
         self._refresh_sum()
 
@@ -2181,11 +2228,71 @@ class CalcT0Page(QtWidgets.QWidget):
         if not self._svt or self._cur is None or self._cur == '__BLANK__': return
         vt   = self._svt[self._cur]
         mask = self._smask[self._cur]
+        cache = getattr(self, '_prefetch_cache', {})
         for ai, cv in enumerate(self._cv):
+            # v3.8.26: ditto — try prefetch cache first
+            key = (id(vt[ai]), self._fit, self._nc)
             cv.load(vt[ai], mask[ai],
-                    bt=self._bT0[ai], fit=self._fit, manual=self._manual)
+                    bt=self._bT0[ai], fit=self._fit, manual=self._manual,
+                    prefetched_fits=cache.get(key))
         self._broadcast_t0_net_37()
         self._refresh_sum()
+
+    # ── Background prefetch (v3.8.26) ────────────────────────
+    def _start_prefetch(self):
+        """Spawn PrefetchWorker that pre-computes combo enumeration for every
+        (step, isotope) pair the user hasn't visited yet. Pulls step-switch
+        latency from ~4 s/isotope down to <50 ms once a step is in the cache.
+
+        Re-loading new files cancels any in-flight worker first."""
+        # Cancel + wait for previous worker (drop its results — cache was
+        # already cleared by the caller)
+        old = getattr(self, '_prefetch_worker', None)
+        if old is not None:
+            try:
+                old.abort()
+                old.wait(100)
+            except Exception: pass
+            self._prefetch_worker = None
+
+        if not hasattr(self, '_prefetch_cache'):
+            self._prefetch_cache = {}
+
+        tasks = []
+        # Blank first — user lands on Blank tab, then moves to signal
+        if self._bvt is not None:
+            for ai in range(5):
+                key = (id(self._bvt[ai]), self._fit, self._nc)
+                if key not in self._prefetch_cache:
+                    tasks.append((key, self._bvt[ai]))
+        for nm, vt in self._svt.items():
+            for ai in range(5):
+                key = (id(vt[ai]), self._fit, self._nc)
+                if key not in self._prefetch_cache:
+                    tasks.append((key, vt[ai]))
+
+        if not tasks: return
+
+        self._prefetch_worker = PrefetchWorker(tasks, self._fit, self._nc, self)
+        self._prefetch_worker.sig_one_done.connect(self._on_prefetch_one)
+        self._prefetch_worker.sig_progress.connect(self._on_prefetch_progress)
+        self._prefetch_worker.sig_finished.connect(self._on_prefetch_finished)
+        self._prefetch_worker.start()
+
+    def _on_prefetch_one(self, key, fits):
+        """Background worker finished one (step, isotope) — drop into cache."""
+        if not hasattr(self, '_prefetch_cache'):
+            self._prefetch_cache = {}
+        self._prefetch_cache[key] = fits
+
+    def _on_prefetch_progress(self, done, total):
+        if hasattr(self, 'footMsg') and done < total:
+            self.footMsg.setText(f'Pre-computing combos: {done}/{total}')
+
+    def _on_prefetch_finished(self):
+        if hasattr(self, 'footMsg'):
+            self.footMsg.setText('✓ Pre-compute done — step switch is now instant')
+        self._prefetch_worker = None
 
     def _mask_changed(self):
         # Sync canvas masks back to _bmask / _smask before recalculating
@@ -4093,6 +4200,53 @@ def _build_datum_row(ar, info, temperature, params, pnames, ar39pct, ar40pct):
     # v3.8.24: isochron columns (row[88]..row[97]) removed to match
     # NTNU_DataReduction DatumPublication format.
     return row
+
+
+# ═══════════════════════════════════════════════════════════
+#  PrefetchWorker — background combo-fit pre-computation
+# ═══════════════════════════════════════════════════════════
+class PrefetchWorker(QtCore.QThread):
+    """v3.8.26: background QThread that pre-computes combo enumeration for
+    every (step, isotope) pair after blank+signal load. Each emitted result
+    lands in CalcT0Page._prefetch_cache so subsequent step switches skip
+    the ~4 s/isotope curve_fit loop and feel instant.
+
+    Scipy curve_fit releases the GIL inside its C/Fortran inner loop, so
+    running this in a background QThread keeps the UI responsive while it
+    grinds through ~12 step × 5 isotope × 848 fits = ~50 800 curve_fits.
+
+    Cancellable via abort() — CalcT0Page calls this when the user loads a
+    fresh dataset to avoid wasted work."""
+
+    sig_one_done = QtCore.pyqtSignal(object, list)   # (cache_key, fits)
+    sig_progress = QtCore.pyqtSignal(int, int)        # (done, total)
+    sig_finished = QtCore.pyqtSignal()
+
+    def __init__(self, tasks, fit, nc, parent=None):
+        super().__init__(parent)
+        # tasks: list of (cache_key, vt_array)
+        self.tasks = tasks
+        self.fit   = fit
+        self.nc    = nc
+        self._abort = False
+
+    def abort(self):
+        self._abort = True
+
+    def run(self):
+        try:
+            total = len(self.tasks)
+            for idx, (key, vt) in enumerate(self.tasks):
+                if self._abort: return
+                fits = _enumerate_combos_simple(vt, self.fit, self.nc)
+                if self._abort: return
+                self.sig_one_done.emit(key, fits)
+                self.sig_progress.emit(idx + 1, total)
+            self.sig_finished.emit()
+        except Exception:
+            # Background work failure must not crash the GUI
+            import traceback; traceback.print_exc()
+            self.sig_finished.emit()
 
 
 class PipelineWorker(QtCore.QThread):
