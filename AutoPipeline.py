@@ -3884,10 +3884,26 @@ class AgeCalcPage(QtWidgets.QWidget):
         self.tbl=QtWidgets.QTableWidget(0,6)
         self.tbl.setHorizontalHeaderLabels(
             ['Step','Age (Ma)','±σ (Ma)','⁴⁰Ar(r)%','Ca/K','Issues'])
-        self.tbl.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        # v3.8.29: per-column resize modes so Step + Issues don't get
+        # elided. Step / numeric cols fit-content; Issues stretches to
+        # eat any remaining width. Word-wrap + slightly taller rows so
+        # long Issues text spans multiple lines instead of cropping.
+        _hdr = self.tbl.horizontalHeader()
+        _hdr.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)  # Step
+        _hdr.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)  # Age
+        _hdr.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)  # ±σ
+        _hdr.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)  # 40Ar(r)%
+        _hdr.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)  # Ca/K
+        _hdr.setSectionResizeMode(5, QtWidgets.QHeaderView.Stretch)            # Issues
+        _hdr.setStretchLastSection(True)
+        self.tbl.setWordWrap(True)
+        self.tbl.verticalHeader().setSectionResizeMode(
+            QtWidgets.QHeaderView.ResizeToContents)
+        self.tbl.setTextElideMode(QtCore.Qt.ElideNone)
         self.tbl.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.tbl.setStyleSheet(
             f'QTableWidget{{font-size:12px;gridline-color:{BRD};font-family:"Courier New",monospace;}}'
+            f'QTableWidget::item{{padding:3px 6px;}}'
             f'QHeaderView::section{{font-size:11px;background:#eeede8;border:1px solid {BRD2};padding:4px;}}')
         table_vl.addWidget(self.tbl, 1)
         splitter.addWidget(table_w)
@@ -3983,10 +3999,17 @@ class AgeCalcPage(QtWidgets.QWidget):
             ar40pct=_sf(ar[50])*100  if len(ar)>50 else 0.0
             cak = _sf(ar[23]) if len(ar)>24 else 0.0
             issues=', '.join(step.get('neg_datum',[])) or '—'
-            vals=[step['name'],f'{age_Ma:.4f}',f'{age_std:.4f}',
-                 f'{ar40pct:.1f}%',f'{cak:.3f}',issues]
+            # v3.8.29: strip redundant "Temperature " prefix so the temperature
+            # number is what user actually sees. Full name kept as tooltip.
+            full_name = step['name']
+            short_name = full_name.replace('Temperature ', '').strip()
+            vals=[short_name, f'{age_Ma:.4f}', f'{age_std:.4f}',
+                 f'{ar40pct:.1f}%', f'{cak:.3f}', issues]
+            tooltips=[full_name, '', '', '', '', issues]  # show full text on hover
             for c,v in enumerate(vals):
                 item=QtWidgets.QTableWidgetItem(v)
+                if tooltips[c]:
+                    item.setToolTip(tooltips[c])
                 if c==5 and v!='—':
                     item.setForeground(QtGui.QColor('#b41a1a'))
                 self.tbl.setItem(r,c,item)

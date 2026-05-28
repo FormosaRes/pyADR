@@ -1,8 +1,77 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29
 最後整理日期：2026-05-28
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.29（2026-05-28）— AgeCalcPage Results per Step 表格欄寬修正
+
+### 問題
+
+`AgeCalcPage` 的 "Results per Step" 表格用 `setSectionResizeMode(Stretch)` 把所有欄位均分寬度。結果：
+- Step 欄全部顯示 "Temperature ..." 看不到溫度數字
+- Issues 欄長字串被 elide ("40Ar(r)=-1.58...", "36Ar(air)=-9...")
+
+兩欄都被自動 ellipsis 截斷，看不出 step 是哪個溫度、issues 具體是什麼。
+
+### 修法
+
+`CalcT0Page`→`AgeCalcPage._build` 的表格區段三處改動：
+
+**1. Per-column resize mode**
+
+```python
+_hdr.setSectionResizeMode(0, ResizeToContents)  # Step       自適應內容
+_hdr.setSectionResizeMode(1, ResizeToContents)  # Age (Ma)
+_hdr.setSectionResizeMode(2, ResizeToContents)  # ±σ (Ma)
+_hdr.setSectionResizeMode(3, ResizeToContents)  # ⁴⁰Ar(r)%
+_hdr.setSectionResizeMode(4, ResizeToContents)  # Ca/K
+_hdr.setSectionResizeMode(5, Stretch)           # Issues       吃剩餘寬度
+self.tbl.setWordWrap(True)
+self.tbl.verticalHeader().setSectionResizeMode(ResizeToContents)
+self.tbl.setTextElideMode(QtCore.Qt.ElideNone)
+```
+
+Step + 4 個數值欄按內容寬度顯示，Issues 拿剩餘空間 + 換行；row 高度自適應，長 Issues 變多行不再被砍。
+
+**2. Step 名稱顯示砍 prefix**
+
+```python
+short_name = full_name.replace('Temperature ', '').strip()
+# "Temperature 1100°C" → "1100°C"
+```
+
+每個 row 都是 "Temperature X°C"，前綴重複沒資訊量，砍掉只留溫度數字。Full name 改放 tooltip（hover 看完整）。
+
+**3. Issues hover tooltip**
+
+```python
+tooltips=[full_name, '', '', '', '', issues]
+if tooltips[c]: item.setToolTip(tooltips[c])
+```
+
+長 issues string 滑鼠停上去可以看完整內容。
+
+### 影響
+
+- 純 UI 改動，無數值變化
+- CSV export (`_export` summary table) 仍用原始 `step['name']` (含 "Temperature " 前綴)，不受影響
+
+### 驗證 checklist
+
+- [ ] 跑 Run Pipeline → 進 AgeCalcPage
+- [ ] Results per Step 表格 Step 欄應該顯示 "600°C" / "700°C" / ... 而非 "Temperature ..."
+- [ ] Step 欄滑鼠 hover 應該 tooltip 顯示完整 "Temperature 1100°C"
+- [ ] Issues 欄長 string 應該換行而非 ellide，hover 也顯示 tooltip
+- [ ] AgeCalc_summary.csv (export) 仍保留 "Temperature 1100°C" 完整名稱
+
+### 檔案改動
+
+- `AutoPipeline.py`：`AgeCalcPage._build` 表格設定 + populate row 邏輯
+- `.work/.app_info.txt`：3.8.28 → 3.8.29
+- `CHANGELOG.md`：本段
 
 ---
 
