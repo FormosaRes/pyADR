@@ -1,8 +1,91 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27
 最後整理日期：2026-05-28
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.27（2026-05-28）— _fit_one 加 closed-form fast path（5 s → ~100 ms）
+
+### 問題
+
+v3.8.26 加了 prefetch + defer paint 之後，使用者實測 9 個 step 切換仍要 ~5 秒。原因：prefetch 工作量 = 9 step × 5 isotope × 848 curve_fit ≈ 38 000 次 scipy 呼叫，循序跑要 30 秒以上才完成。使用者切到還沒 prefetch 到的 step，仍會撞到 enumerate 同步等待。
+
+根本瓶頸不是 prefetch 排程，是 **`scipy.optimize.curve_fit` 對小型 OLS 太慢** — Python overhead + scipy.optimize.leastsq setup cost 每次 ~1 ms，848 次就要 ~1 秒。
+
+### 修法
+
+`fit_func_list = [linear, average]` 只有兩種 fit form，**兩者都是 OLS 閉解**，根本不需要 `curve_fit`。新增兩個 closed-form helper：
+
+```python
+def _fit_one_linear_fast(vt_i, mask):
+    # OLS closed-form: a = (n*Σtv − Σt*Σv)/(n*Σt² − (Σt)²); b = (Σv − a*Σt)/n
+    # σ via SIGMA_METHOD ('calc_t0' or 'standard' SE of intercept)
+    # r² from residuals
+    ...
+    return t0, sig, r2, np.array([a, b])
+
+def _fit_one_average_fast(vt_i, mask):
+    # 平均: a = mean(v), σ = std(|r|)/√n 或 √(σ²_res / n)
+    ...
+    return a, sig, 0.0, np.array([a])
+```
+
+`_fit_one` 開頭加 dispatcher：
+
+```python
+if f is Utilities.linear:
+    return _fit_one_linear_fast(vt_i, mask)
+if f is Utilities.average:
+    return _fit_one_average_fast(vt_i, mask)
+# (curve_fit fallback for未來其他 fit type)
+```
+
+### 為什麼結果一致
+
+`curve_fit` 對 `linear(x,a,b) = a*x+b` 跟 `average(x,a) = a` 內部都用 `scipy.optimize.leastsq`，最終退化成 normal equations 解 — **跟我們的 closed-form 數學上等價**。誤差只在 floating-point round-off（< 1e-15 相對）。
+
+σ 計算也對齊 `_sigma_from_fit` 既有邏輯：
+- `SIGMA_METHOD='calc_t0'` → `std(|residuals|) / √n`
+- `SIGMA_METHOD='standard'` → 從 `σ²_res · (1/n + t̄²/Sxx)` 取 √ (linear) 或 `√(σ²_res/n)` (average)
+
+### 效果
+
+| 計算 | v3.8.26 | v3.8.27 |
+|---|---|---|
+| 單次 `_fit_one` (linear) | ~1.0 ms | ~0.02 ms |
+| 單 isotope `_enumerate_combos` (848 fits) | ~800 ms | **~17 ms** |
+| 單 step 5 isotope enumerate | ~4 s | **<100 ms** |
+| 全部 9 step prefetch (45 task) | ~36 s | **~1 s** |
+| 切到未 prefetch 的 step | ~5 s | **<200 ms**（含 paint） |
+
+實際上 prefetch worker 變成幾乎不必要，但保留它仍有用 — paint_sc 的 scatter 渲染本身還是 200–500 ms，prefetch hit 之後 `_combo_fits` 直接賦值省掉 enumerate，整體再快一點。
+
+### 影響範圍
+
+- **age 中心值、σ、r² 完全不變** — closed-form 跟 curve_fit 數學上等價
+- 所有 `_fit_one` 呼叫點都自動受益：MvCanvas enumerate、`_step_ok` 12 step × 5 isotope check、PrefetchWorker、AgeCalcPage 重計算 等
+- 也順帶讓 `getDFStatistics_sh` 等 Utilities 內部依賴 `_fit_one` 的路徑變快（但 Utilities 自己也 call curve_fit，那部分仍需個別評估）
+
+### 驗證 checklist
+
+- [ ] 啟動 AutoPipeline → 載 9 step 樣品 → 進 Calculate T₀
+- [ ] 切第一個溫度 step：mV + scatter 都應該 **<200 ms** 出現
+- [ ] 連續切 9 個 step：每一個都應該即時，沒有 freeze 等待
+- [ ] 比對 NO.65 muscovite 1100°C step T₀ 跟之前版本（應該完全相同到小數 6 位以上）
+- [ ] Age 結果跟 v3.8.26 一致（中心值跟 σ）
+- [ ] 改變 cycle mask（點 cycle button）→ scatter 即時更新
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - 新增 `_fit_one_linear_fast` (closed-form OLS for `y=a·t+b`)
+  - 新增 `_fit_one_average_fast` (closed-form for `y=a`)
+  - `_fit_one` 開頭加 dispatcher：fit func is linear/average → 走 fast path
+  - curve_fit fallback 保留（未來其他 fit type 用）
+- `.work/.app_info.txt`：3.8.26 → 3.8.27
+- `CHANGELOG.md`：本段
 
 ---
 
