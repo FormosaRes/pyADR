@@ -516,7 +516,7 @@ def load_session_adr(path):
 # Load Blank / Load Sample switch back to CalcT0Page (stack index 0) and
 # fire the corresponding file dialog. Save/Open Session delegate to
 # CalcT0Page's session methods (single source of truth).
-def _build_minimal_sidebar(page, save_handler, save_label='Save To'):
+def _build_minimal_sidebar(page, save_handler, save_label='Save'):
     """Return a QWidget sidebar to be placed on the left of MassRatioPage /
     AgeCalcPage. `page` is the host widget (used to walk up the parent
     chain to find AutoPipelineWindow). `save_handler` is bound at call
@@ -577,7 +577,8 @@ def _build_minimal_sidebar(page, save_handler, save_label='Save To'):
             win.t0Page._open_session()
     btnOpenSess.clicked.connect(_on_open_session)
 
-    for b in (btnReturn, btnSave, btnLdBlank, btnLdSig, btnSaveSess, btnOpenSess):
+    # v3.8.35: Open Session above Save Session (user-requested swap)
+    for b in (btnReturn, btnSave, btnLdBlank, btnLdSig, btnOpenSess, btnSaveSess):
         sbl.addWidget(b)
     sbl.addStretch()
     return sb
@@ -2041,9 +2042,10 @@ class CalcT0Page(QtWidgets.QWidget):
         self.btnL = QtWidgets.QPushButton(); self.btnL.hide()
         self.btnA = QtWidgets.QPushButton(); self.btnA.hide()
 
+        # v3.8.35: Open Session above Save Session (user-requested swap)
         for b in (self.returnBtn, self.saveBtn, self.btnLdBlank, self.btnLdSig,
                   self.btnAB, self.btnAS, self.btnM,
-                  self.btnSaveSession, self.btnOpenSession):
+                  self.btnOpenSession, self.btnSaveSession):
             sbl.addWidget(b)
 
         # v3.8.18: Δt label moved out of sidebar into the top nav bar (chip
@@ -3554,7 +3556,7 @@ class MassRatioPage(QtWidgets.QWidget):
         outer = QtWidgets.QHBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0); outer.setSpacing(0)
         self._sidebar = _build_minimal_sidebar(self, lambda: self._save(),
-                                               save_label='Save To')
+                                               save_label='Save')
         outer.addWidget(self._sidebar)
         _content = QtWidgets.QWidget()
         outer.addWidget(_content, 1)
@@ -3871,7 +3873,7 @@ class AgeCalcPage(QtWidgets.QWidget):
         outer = QtWidgets.QHBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0); outer.setSpacing(0)
         self._sidebar = _build_minimal_sidebar(self, lambda: self._export(),
-                                               save_label='Save To')
+                                               save_label='Save')
         outer.addWidget(self._sidebar)
         _content = QtWidgets.QWidget()
         outer.addWidget(_content, 1)
@@ -4417,20 +4419,60 @@ class AgeCalcPage(QtWidgets.QWidget):
             self._refresh_diagrams()
     
     def _refresh_diagrams(self):
-        """Regenerate diagrams with current axis ranges and temp labels."""
-        # Signal to parent/worker to regenerate diagrams
-        # For now just reload existing PNGs (actual regeneration needs matplotlib hook into Utilities)
-        if hasattr(self, '_on_refresh_request'):
-            self._on_refresh_request(self._daxis, self.tempLabelCB.isChecked(),
-                                    self._get_atm_ratio())
-        # Reload images
-        for key,lbl in self._dlbls.items():
-            src=os.path.join(self._work_dir,'.work',key+'.png')
+        """v3.8.35: actually regenerate diagrams with Show Temp labels + axis
+        ranges + atm ratio. Previously this was a stub that only reloaded
+        existing PNGs without calling Utilities.getDFStatistics_sh — so the
+        Show Temp checkbox and the per-diagram ⚙ axis dialog did nothing.
+
+        Now: call getDFStatistics_sh with xlim/ylim/show_temp/atm_ratio
+        derived from the current UI state, then reload the regenerated PNGs.
+
+        Note: getDFStatistics_sh takes a single (xlim, ylim) pair that
+        applies to the isochron diagrams (the main ones with adjustable
+        axes). DFN axis is used as the canonical source since both isochron
+        diagrams are typically adjusted together.
+        """
+        if not getattr(self, '_datum_csv', None) or not getattr(self, '_consts', None):
+            return
+        try:
+            method = self._isochron_method_combo.itemData(
+                self._isochron_method_combo.currentIndex()) or 'ols'
+        except Exception:
+            method = 'ols'
+        show_temp = self.tempLabelCB.isChecked() if hasattr(self, 'tempLabelCB') else False
+        atm_ratio = self._get_atm_ratio()
+
+        # Use DFN (Normal Isochron) axis as the primary xlim/ylim source.
+        dfn = self._daxis.get('DFN', {}) if hasattr(self, '_daxis') else {}
+        _xmin, _xmax = dfn.get('xmin'), dfn.get('xmax')
+        _ymin, _ymax = dfn.get('ymin'), dfn.get('ymax')
+        xlim = (_xmin, _xmax) if _xmin is not None and _xmax is not None else None
+        ylim = (_ymin, _ymax) if _ymin is not None and _ymax is not None else None
+
+        try:
+            mask_all = np.ones(len(self._steps))
+            Utilities.getDFStatistics_sh(self._datum_csv, mask_all, self._consts,
+                                         'b', 'o',
+                                         xlim=xlim, ylim=ylim,
+                                         show_temp=show_temp,
+                                         atm_ratio=atm_ratio,
+                                         isochron_method=method)
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(
+                self, 'Refresh diagrams failed',
+                f'getDFStatistics_sh failed:\n{e}')
+            return
+
+        # Reload regenerated PNGs into the small thumbnail labels.
+        for key, lbl in self._dlbls.items():
+            src = os.path.join(self._work_dir, '.work', key + '.png')
             if os.path.exists(src):
-                pm=QtGui.QPixmap(src)
+                pm = QtGui.QPixmap(src)
                 if not pm.isNull():
-                    lbl.setPixmap(pm.scaled(lbl.size(),
-                        QtCore.Qt.KeepAspectRatio,QtCore.Qt.SmoothTransformation))
+                    lbl.setPixmap(pm.scaled(
+                        lbl.size(),
+                        QtCore.Qt.KeepAspectRatio,
+                        QtCore.Qt.SmoothTransformation))
     
     def _get_atm_ratio(self):
         """Get current atm ratio from input."""

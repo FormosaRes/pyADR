@@ -1,8 +1,100 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35
 最後整理日期：2026-05-28
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.35（2026-05-28）— Sidebar 統一 Save 命名 / Session 對調 / 修 Show Temp 跟 axis 失效
+
+### 問題
+
+使用者在 AgeCalc+Datum 介面回饋四件事：
+
+1. Sidebar 的 `Save To` 跟 CalcT0Page 的 `Save` 不一致 → 統一叫 `Save`
+2. `Save Session` 在上、`Open Session` 在下 → 對調（Open 在上）
+3. `Show Temp labels on Isochron` checkbox 勾了沒反應、每張圖 ⚙ 齒輪 axis dialog 設了 XY range 也沒效果
+4. （大改動）AgeCalc+Datum 介面加 Excel-style 底部 tabs 顯示 Datum data；抄 DiagramPlot 功能進來
+
+本版只做 1、2、3。4 是大改動先報告再做。
+
+### 修法
+
+#### 1. Sidebar `Save To` → `Save`
+
+`_build_minimal_sidebar(page, save_handler, save_label='Save')` default label 從 `Save To` 改 `Save`。兩個 caller (`MassRatioPage._build` / `AgeCalcPage._build`) 對應 `save_label='Save To'` 也一起拿掉 → 三個 page (CalcT0 / MassRatio / AgeCalc) sidebar 第二顆按鈕全部叫 `Save`。
+
+#### 2. Open Session / Save Session 上下對調
+
+兩處 sidebar 排列順序：
+
+- `CalcT0Page._build`：`..., self.btnSaveSession, self.btnOpenSession` → `..., self.btnOpenSession, self.btnSaveSession`
+- `_build_minimal_sidebar`：`..., btnSaveSess, btnOpenSess` → `..., btnOpenSess, btnSaveSess`
+
+#### 3. 修 Show Temp labels + axis 失效
+
+定位：`AgeCalcPage._refresh_diagrams`（line 4419）之前只是 stub：
+
+```python
+# 之前
+if hasattr(self, '_on_refresh_request'):
+    self._on_refresh_request(self._daxis, self.tempLabelCB.isChecked(), self._get_atm_ratio())
+# Reload existing PNGs   ← 但 PNG 從來沒被重新產生
+```
+
+只 reload disk 上的 PNG，**沒呼叫 `Utilities.getDFStatistics_sh` 真的重產 PNG**。所以 Show Temp checkbox / ⚙ axis dialog 設了值都 dead code。
+
+`Utilities.getDFStatistics_sh` 簽名 (line 557) 早就支援這些參數：
+
+```python
+def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
+                       xlim=None, ylim=None, ...
+                       show_temp=False, atm_ratio=298.56,
+                       isochron_method='ols'):
+```
+
+修法 — 改 `_refresh_diagrams` 成跟 `_on_isochron_method_changed` 同樣 pattern：
+
+```python
+xlim = (xmin, xmax) if 都 not None else None
+ylim = (ymin, ymax) if 都 not None else None   # 從 self._daxis['DFN'] 取
+Utilities.getDFStatistics_sh(self._datum_csv, mask_all, self._consts,
+                             'b', 'o',
+                             xlim=xlim, ylim=ylim,
+                             show_temp=show_temp,
+                             atm_ratio=atm_ratio,
+                             isochron_method=method)
+# 然後 reload PNG
+```
+
+Axis 從 DFN (Normal Isochron) 取因為兩張 isochron diagram 一般一起調，DFN 的設定當 canonical。
+
+### 驗證 checklist
+
+- [ ] 三個 page sidebar 第二顆按鈕現在都是 `Save`（不是 `Save To`）
+- [ ] 三個 page sidebar：`Open Session` 在 `Save Session` 上方
+- [ ] AgeCalc+Datum 勾掉 `Show Temp labels on Isochron` → Normal/Inverse Isochron PNG 應該真的沒了溫度標籤
+- [ ] 點某張 isochron ⚙ → 設 X min/max → Apply → diagram 真的調 X 軸範圍
+- [ ] 改 `40Ar/36Ar atm` 值 → Recalculate → 應該影響 isochron fit
+
+### 待做（不在本版）
+
+| 項目 | 規模 | 備註 |
+|---|---|---|
+| AgeCalc+Datum 底部 Excel-style tabs（Summary / output data / 各 chart） | 大 | 要先確認 tabs 內容 + 順序 |
+| 把計算好的 datum data 在介面內顯示（output data tab） | 中 | 依賴 tabs 架構 |
+| 抄 DiagramPlot 哪些功能 | 大 | 要先列清單問哪些值得搬 |
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - `_build_minimal_sidebar` default `save_label`：`Save To` → `Save`，buttons 排列對調 Open/Save Session
+  - `CalcT0Page._build` sidebar 排列對調 Open/Save Session
+  - `MassRatioPage / AgeCalcPage` caller 拿掉 `save_label='Save To'`
+  - `AgeCalcPage._refresh_diagrams` 重寫，真正呼叫 `Utilities.getDFStatistics_sh` 帶 axis / show_temp / atm_ratio 參數
+- `.work/.app_info.txt`：3.8.34 → 3.8.35
+- `CHANGELOG.md`：本段
 
 ---
 
