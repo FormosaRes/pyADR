@@ -2189,7 +2189,9 @@ class CalcT0Page(QtWidgets.QWidget):
         self._degas_ax2 = self._degas_fig.add_subplot(212)
         QtWidgets.QApplication.processEvents()
         self.cv_degas   = _FigCanvas(self._degas_fig)
-        self.cv_degas.setFixedSize(480, 280)
+        # v3.8.39: enlarged from 480×280 → 720×440 per user feedback (charts
+        # were too small to read at typical full-screen window width).
+        self.cv_degas.setFixedSize(720, 440)
         p5l.addWidget(self.cv_degas)
 
         # v3.8.23: yield panel — side-by-side with degassing pattern.
@@ -2202,7 +2204,8 @@ class CalcT0Page(QtWidgets.QWidget):
         self._yield_fig = _mfig.Figure(facecolor='white')
         self._yield_ax  = self._yield_fig.add_subplot(111)
         self.cv_yield   = _FigCanvas(self._yield_fig)
-        self.cv_yield.setFixedSize(480, 280)
+        # v3.8.39: enlarged to match cv_degas (720×440)
+        self.cv_yield.setFixedSize(720, 440)
         p5yl.addWidget(self.cv_yield)
 
         degas_center = QtWidgets.QHBoxLayout()
@@ -2213,7 +2216,8 @@ class CalcT0Page(QtWidgets.QWidget):
         degas_center.addStretch()
         guide_vl.addLayout(degas_center)
 
-        guide_container.setFixedHeight(300)
+        # v3.8.39: container height 300 → 460 to fit the enlarged 720×440 canvases
+        guide_container.setFixedHeight(460)
         left_vb.addWidget(guide_container)
         
         # Hidden tables used by _refresh_sum / _refresh_prev (no UI surface)
@@ -2691,35 +2695,36 @@ class CalcT0Page(QtWidgets.QWidget):
         self._apply_manual_style()
 
     def _auto_blank(self):
-        """v3.8.37: wrap Utilities.calculateT0 in try/except. The internal
-        `plt.tight_layout()` (Utilities.py line 284) can raise on the
-        matplotlib mathtext parser bug (same as v3.8.30) when rendering
-        the per-axis '$T_{0}$' LaTeX titles. Crash there used to kill the
-        whole GUI; now we show a clean warning dialog and let the user
-        continue with manual mask selection."""
+        """v3.8.39: real root cause — Utilities.calculateT0 expects v_t as a
+        3D ndarray shape (5, nc, 2) for the multi-axis indexing v_t[i,:,1]
+        (Utilities.py line 239-240). self._bvt is a list of 5 (nc,2) arrays
+        (parse_dat / session load both return list-of-arrays), so the
+        v_t[i,:,1] expression raised 'list indices must be integers or
+        slices, not tuple'. np.asarray() stacks the list into the 3D ndarray
+        the function actually needs.
+
+        try/except kept as safety net for other matplotlib edge cases."""
         if self._bvt is None: return
         self.statusLbl.setText('Auto blank...')
         QtWidgets.QApplication.processEvents()
         try:
+            v_t_3d = np.asarray(self._bvt)
             result, self._bmask = Utilities.calculateT0(
-                self._fit, self._bvt, np.ones((5, self._nc)), self._nc)
+                self._fit, v_t_3d, np.ones((5, self._nc)), self._nc)
         except Exception as e:
             self.statusLbl.setText('✗ Auto blank failed')
             QtWidgets.QMessageBox.warning(
                 self, 'Auto Blank failed',
                 f'Utilities.calculateT0 raised:\n{e}\n\n'
-                'Often a matplotlib mathtext parser glitch on '
-                'Anaconda Py 3.13. Try manual cycle selection '
-                '(or click Auto Blank again).')
+                'Try manual cycle selection (or click Auto Blank again).')
             return
         self._bT0, self._bSIG = result[1], result[2]
         self._refresh_blank()
         self.statusLbl.setText('✓ Blank done')
 
     def _auto_signal(self):
-        """v3.8.37: same try/except wrap as _auto_blank. Also reports
-        per-step which steps failed so the user knows which to fix
-        manually."""
+        """v3.8.39: same root cause as _auto_blank — wrap each step's vt
+        with np.asarray before passing to Utilities.calculateT0."""
         if not self._svt: return
         self._calc_blank_t0()
         failed = []
@@ -2727,9 +2732,10 @@ class CalcT0Page(QtWidgets.QWidget):
             self.statusLbl.setText(f'Auto {nm}...')
             QtWidgets.QApplication.processEvents()
             try:
+                vt_3d = np.asarray(vt)
                 # calculateT0 auto-detects outliers and returns updated mask
                 result, new_mask = Utilities.calculateT0(
-                    self._fit, vt, np.ones((5, self._nc)), self._nc)
+                    self._fit, vt_3d, np.ones((5, self._nc)), self._nc)
                 self._smask[nm] = new_mask
             except Exception as e:
                 failed.append((nm, str(e)))
@@ -2741,8 +2747,7 @@ class CalcT0Page(QtWidgets.QWidget):
             msg = 'Some steps failed Auto Signal:\n\n' + '\n'.join(
                 f'• {nm}: {err}' for nm, err in failed)
             msg += ('\n\nThese steps keep their existing mask (manual '
-                    'selection still works). Often a matplotlib '
-                    'mathtext glitch on Anaconda Py 3.13.')
+                    'selection still works).')
             QtWidgets.QMessageBox.warning(self, 'Auto Signal — partial', msg)
         else:
             self.statusLbl.setText('✓ Signal done')
@@ -3105,10 +3110,11 @@ class CalcT0Page(QtWidgets.QWidget):
                            linestyle='--', linewidth=0.8, alpha=0.3)
         
         # v3.8.30: $T_0$ LaTeX instead of unicode T₀ — Arial lacks U+2080
-        ax1.set_ylabel('$T_0$ signal (mV)', fontsize=8)
-        ax1.tick_params(labelsize=7)
+        # v3.8.39: fonts 8/7/6 → 11/10/9 to match the enlarged 720×440 canvas
+        ax1.set_ylabel('$T_0$ signal (mV)', fontsize=11)
+        ax1.tick_params(labelsize=10)
         ax1.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
-        ax1.legend(fontsize=6, ncol=5, framealpha=0.8, loc='upper left')
+        ax1.legend(fontsize=9, ncol=5, framealpha=0.8, loc='upper left')
         ax1.grid(True, alpha=0.2)
         
         # Plot: CV
@@ -3119,11 +3125,12 @@ class CalcT0Page(QtWidgets.QWidget):
                 ax2.plot(valid_temps, valid_cvs, marker='s', markersize=3,
                         color=iso_colors[ai], label=iso_names[ai], linewidth=1.5, alpha=0.8)
         
-        ax2.set_xlabel('Temperature (°C)', fontsize=8)
+        # v3.8.39: fonts enlarged to match bigger canvas
+        ax2.set_xlabel('Temperature (°C)', fontsize=11)
         # v3.8.30: $T_0$ LaTeX instead of unicode T₀
-        ax2.set_ylabel('CV ($\\sigma/T_0$ %)', fontsize=8)
+        ax2.set_ylabel('CV ($\\sigma/T_0$ %)', fontsize=11)
         ax2.set_ylim(-2, 20)
-        ax2.tick_params(labelsize=7)
+        ax2.tick_params(labelsize=10)
         ax2.grid(True, alpha=0.2)
         
         # Mark current step with vertical line
@@ -3252,11 +3259,12 @@ class CalcT0Page(QtWidgets.QWidget):
                     ax.axvline(cum_ar39k[idx], color='#e67e00', linestyle=':',
                                linewidth=1.2, alpha=0.7, zorder=0)
 
-        ax.set_xlabel('cumulative ³⁹Ar(K) (%)', fontsize=8)
-        ax.set_ylabel('% of Σ(³⁶+³⁷+³⁸+³⁹+⁴⁰)', fontsize=8)
+        # v3.8.39: fonts enlarged to match 720×440 canvas
+        ax.set_xlabel('cumulative ³⁹Ar(K) (%)', fontsize=11)
+        ax.set_ylabel('% of Σ(³⁶+³⁷+³⁸+³⁹+⁴⁰)', fontsize=11)
         ax.set_xlim(-2, 102)
-        ax.tick_params(labelsize=7)
-        ax.legend(fontsize=7, framealpha=0.8, loc='best')
+        ax.tick_params(labelsize=10)
+        ax.legend(fontsize=10, framealpha=0.8, loc='best')
         ax.grid(True, alpha=0.2)
 
         # v3.8.30: defensive tight_layout

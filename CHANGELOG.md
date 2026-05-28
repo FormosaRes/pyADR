@@ -1,8 +1,97 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39
 最後整理日期：2026-05-28
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.39（2026-05-28）— 修 Auto Blank/Signal 真正 bug + Degassing/Yield 圖放大
+
+### 問題
+
+1. v3.8.37 以為 Auto Blank/Signal 閃退是 matplotlib mathtext bug，加 try/except 後仍然失敗，dialog 顯示真正錯誤：
+
+   ```
+   list indices must be integers or slices, not tuple
+   ```
+
+   每個 step 都同樣錯誤。**根本不是 mathtext 問題**。
+
+2. Degassing Pattern + Yield panel 兩張圖各 480×280，使用者反映在全螢幕看起來太小、字太擠。
+
+### 根因 1: Auto Blank/Signal
+
+`Utilities.calculateT0` (Utilities.py line 205) 內部：
+
+```python
+def calculateT0(fit_function_type, v_t, mask, num):
+    for i in range(5):
+        t = v_t[i, :, 1]      # ← 多軸 numpy indexing，要 3D ndarray
+        v = v_t[i, :, 0]
+```
+
+`v_t[i, :, 1]` 是 numpy 風格的多軸切片，**只能用在 3D ndarray**。
+
+但 `self._bvt` 是 **list of 5 個 (nc, 2) ndarrays**，不是 stacked 3D ndarray：
+
+- `parse_dat` 返回 list
+- `session load` (`load_session_adr`) 也是 `[npz[f'ar{i+36}'] for i in range(5)]` → list
+- `_refresh_blank` / `_refresh_signal` 用 `self._bvt[ai]` 是因為 Python list 也支援 single-axis `[ai]` indexing
+
+對 Python list 寫 `v_t[i, :, 1]` 等價於 `v_t[(i, slice, 1)]`，list 不接受 tuple 索引 → raise `list indices must be integers or slices, not tuple`。
+
+### 修法 1
+
+`_auto_blank` / `_auto_signal` 傳給 `Utilities.calculateT0` 之前先 `np.asarray()` stack 成 3D：
+
+```python
+v_t_3d = np.asarray(self._bvt)     # shape (5, nc, 2)
+result, self._bmask = Utilities.calculateT0(
+    self._fit, v_t_3d, np.ones((5, self._nc)), self._nc)
+```
+
+每個 step 跑 Auto Signal 時對 `self._svt[nm]` 同樣處理。
+
+如果原本就是 3D ndarray（NTNU sub-program 路徑可能），`np.asarray` 直接 return 原物件，no-op。雙路徑都 work。
+
+### 修法 2: Degassing / Yield 放大
+
+- `cv_degas` 480×280 → **720×440**
+- `cv_yield` 480×280 → **720×440**
+- `guide_container.setFixedHeight` 300 → **460**
+- Font sizes 對應放大：
+  - ylabel / xlabel: 8 → **11**
+  - tick labels: 7 → **10**
+  - legend (degassing): 6 → **9**
+  - legend (yield): 7 → **10**
+
+整個 panel 區域寬約 1460 px（720+720+spacing），全螢幕下 fit 沒問題。
+
+### 影響
+
+- Auto Blank / Auto Signal 真的能跑了
+- Degassing + Yield 圖視覺面積 ×2.4 (480×280 ≈ 134k px² → 720×440 ≈ 317k px²)
+- Font scaling 後文字清晰可讀，圖例不再重疊
+- 數值結果不變
+
+### 驗證 checklist
+
+- [ ] 載入 blank + signal → Calculate T₀
+- [ ] 點 Auto Blank → 5 個 mV chart 應該更新，無 error dialog
+- [ ] 點 Auto Signal → 所有 step 跑完，無 error dialog（之前每個 step 都失敗）
+- [ ] Degassing Pattern + Yield panel 兩張圖明顯比之前大
+- [ ] 字體大小可讀，圖例不擠在角落
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - `_auto_blank` / `_auto_signal` 加 `np.asarray()` stack
+  - `cv_degas` / `cv_yield` `setFixedSize(720, 440)`
+  - `guide_container.setFixedHeight(460)`
+  - `_paint_degas_pattern` / `_paint_yield_pattern` font sizes 全面 +3pt
+- `.work/.app_info.txt`：3.8.38 → 3.8.39
+- `CHANGELOG.md`：本段
 
 ---
 
