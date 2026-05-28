@@ -1,8 +1,88 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32
 最後整理日期：2026-05-28
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.32（2026-05-28）— AgeCalc per-step CSV 對齊 NTNU 子程式 AC_save 格式
+
+### 問題
+
+子程式 `NTNU_DataReduction.AC_save`（line 2879）每按一次儲存會把當前 step 的 AgeCalc 結果寫成一個 CSV：
+
+```
+Samp#, t, Min, iradiation PK 90%, Variable, Value, Sigma
+0621-01C, 1100, Muscovite, NTNU-2, Ar_36_m, 1.23e-05, 2.5e-07
+0621-01C, 1100, Muscovite, NTNU-2, Ar_36_Air, ..., ...
+...
+0621-01C, 1100, Muscovite, NTNU-2, J_int, 1e-06, N/A
+```
+
+AutoPipeline PipelineWorker 在 Pipeline 跑完時也會寫 `Data/Agecalc/{step}.csv`，但格式不對：每個變數跟 std 各佔一 row，Sigma 欄永遠空白。使用者要求 AutoPipeline AgeCalc+Datum export 能輸出**子程式格式**的 per-step CSV，**不同溫度也不同檔案**。
+
+### 修法
+
+#### 1. 新 helper `_write_agecalc_csv_subprog(path, vnm, ar, sid, t, mn, irr)`
+
+掃描 `vnm` list，若 `vnm[i+1] == vnm[i] + '_std'`，把 (value, sigma) 合成一個 row；單值 entry（J_int / T_int / Ar_40_r_ratio / C1..C4）沒有 `_std` twin，Sigma 欄填 `N/A`。
+
+```python
+while i < n:
+    if vnm[i+1] == vnm[i] + '_std':
+        w.writerow([sid, t, mn, irr, vnm[i], _fmt(ar[i]), _fmt(ar[i+1])])
+        i += 2
+    else:
+        w.writerow([sid, t, mn, irr, vnm[i], _fmt(ar[i]), 'N/A'])
+        i += 1
+```
+
+Header 對齊子程式：`Samp#, t, Min, iradiation PK 90%, Variable, Value, Sigma` (用 `iradiation PK 90%` 不是 `IRR`)。
+
+#### 2. PipelineWorker 改用新 helper
+
+`_run` 內既存 ac_csv 寫法（每變數獨立 row、Sigma 空白）整段替換成 `_write_agecalc_csv_subprog(...)` 一行 call。原本 ~7 行寫入邏輯 → 1 行。
+
+#### 3. AgeCalcPage._export dialog 加 checkbox
+
+```python
+cb_agecalc = QtWidgets.QCheckBox('AgeCalc CSV per temperature (sub-program format)')
+cb_agecalc.setChecked(True)
+```
+
+勾選後 export 時新建 `<save_dir>/Agecalc/` 子資料夾，把每個 step 的 `ac_csv`（PipelineWorker 寫的）`shutil.copy` 過去。每個溫度一個 CSV，命名跟 step name 相同（例如 `Temperature 1100°C.csv`）。
+
+Export dialog 現在有 4 個 checkbox：
+- Datum CSV
+- Summary table (Results per Step)
+- All diagrams (PNG)
+- **AgeCalc CSV per temperature** (新)
+
+### 影響
+
+- 數值內容完全不變 — 只改 row 格式 (value/std 合併成 value+sigma 兩欄)
+- `Data/Agecalc/{step}.csv` 從 ~55 row 縮到 ~30 row（合併後）
+- 外部 tool 讀 ac_csv 時格式跟子程式 AC_save 完全一致，可以無縫互換
+
+### 驗證 checklist
+
+- [ ] 跑 Run Pipeline → 進 AgeCalc + Datum page
+- [ ] 點 Save To（或 header Export）→ dialog 應該有 4 個 checkbox
+- [ ] 全部勾選 → 選目標資料夾
+- [ ] 確認 `<save_dir>/Agecalc/` 內有每個 step 一個 CSV（檔名 `Temperature X°C.csv`）
+- [ ] 打開其中一個 CSV，header 應該是 `Samp#, t, Min, iradiation PK 90%, Variable, Value, Sigma`
+- [ ] 確認 Ar_36_m 那 row 的 Sigma 欄有數值（不是空白）
+- [ ] 確認 J_int / T_int / Ar_40_r_ratio / C1..C4 那些 row 的 Sigma 欄是 `N/A`
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - 加 module-level `_write_agecalc_csv_subprog(path, vnm, ar, sid, t, mn, irr)` helper
+  - `PipelineWorker._run` ac_csv 寫法改用 helper（內聯 7 行 → 1 行）
+  - `AgeCalcPage._export` dialog 加 `cb_agecalc` checkbox + copy logic
+- `.work/.app_info.txt`：3.8.31 → 3.8.32
+- `CHANGELOG.md`：本段
 
 ---
 

@@ -4506,14 +4506,21 @@ class AgeCalcPage(QtWidgets.QWidget):
         cb_datum = QtWidgets.QCheckBox('Datum CSV')
         cb_datum.setChecked(True)
         vl.addWidget(cb_datum)
-        
+
         cb_summary = QtWidgets.QCheckBox('Summary table (Results per Step)')
         cb_summary.setChecked(True)
         vl.addWidget(cb_summary)
-        
+
         cb_figs = QtWidgets.QCheckBox('All diagrams (PNG)')
         cb_figs.setChecked(True)
         vl.addWidget(cb_figs)
+
+        # v3.8.32: per-step AgeCalc CSV (one file per temperature, matches
+        # NTNU_DataReduction.AC_save format). Defaults on so user gets the
+        # full set without having to think about it.
+        cb_agecalc = QtWidgets.QCheckBox('AgeCalc CSV per temperature (sub-program format)')
+        cb_agecalc.setChecked(True)
+        vl.addWidget(cb_agecalc)
         
         btn_box = QtWidgets.QHBoxLayout()
         okBtn = QtWidgets.QPushButton('Export')
@@ -4569,10 +4576,27 @@ class AgeCalcPage(QtWidgets.QWidget):
                         dest = os.path.join(save_dir, f'{title}.png')
                         shutil.copy(src, dest)
                         exported.append(f'{title}.png')
-            
+
+            # v3.8.32: per-step AgeCalc CSVs (one per temperature, sub-prog
+            # AC_save format). PipelineWorker writes these to Data/Agecalc/
+            # during the pipeline run; here we just copy them to the export
+            # destination so the user gets a self-contained bundle.
+            if cb_agecalc.isChecked():
+                ac_subdir = os.path.join(save_dir, 'Agecalc')
+                os.makedirs(ac_subdir, exist_ok=True)
+                copied = 0
+                for step in self._steps:
+                    src = step.get('ac_csv')
+                    if src and os.path.exists(src):
+                        dest = os.path.join(ac_subdir, os.path.basename(src))
+                        shutil.copy(src, dest)
+                        copied += 1
+                if copied:
+                    exported.append(f'Agecalc/ ({copied} per-step CSV)')
+
             QtWidgets.QMessageBox.information(
                 self, 'Export Complete',
-                f'Exported {len(exported)} file(s) to:\n{save_dir}\n\n' +
+                f'Exported {len(exported)} item(s) to:\n{save_dir}\n\n' +
                 '\n'.join(exported))
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, 'Error', f'Export failed:\n{e}')
@@ -4691,6 +4715,44 @@ def _build_datum_row(ar, info, temperature, params, pnames, ar39pct, ar40pct):
 # ═══════════════════════════════════════════════════════════
 #  PrefetchWorker — background combo-fit pre-computation
 # ═══════════════════════════════════════════════════════════
+def _write_agecalc_csv_subprog(path, vnm, ar, sid, t, mn, irr):
+    """v3.8.32: write per-step AgeCalc CSV in NTNU_DataReduction.AC_save format.
+
+    Layout matches AC_save (NTNU line 2879):
+        Header: Samp#, t, Min, iradiation PK 90%, Variable, Value, Sigma
+        Body  : one row per Variable; if vnm[i] has a paired vnm[i+1] named
+                f'{vnm[i]}_std', the two collapse into one (Value, Sigma) row.
+                Single-value entries (no _std twin) write 'N/A' in Sigma.
+
+    Compared to v3.8.31 ac_csv format which wrote every value/std as its own
+    row with Sigma column blank — the sub-program format is more compact and
+    matches AC_save downstream tooling expectations.
+    """
+    with open(path, 'w', newline='', encoding='utf-8') as f:
+        w = csv.writer(f, lineterminator='\n')
+        w.writerow(['Samp#', 't', 'Min', 'iradiation PK 90%',
+                    'Variable', 'Value', 'Sigma'])
+
+        def _fmt(v):
+            return ('{:.6e}'.format(float(v))
+                    if isinstance(v, (int, float)) else str(v))
+
+        i = 0
+        n = len(vnm)
+        while i < n:
+            name = vnm[i]
+            # Peek next entry: if it's `<name>_std`, treat as paired
+            has_std = (i + 1 < n) and (vnm[i + 1] == name + '_std')
+            val = ar[i] if i < len(ar) else 0
+            if has_std:
+                std = ar[i + 1] if (i + 1) < len(ar) else 0
+                w.writerow([sid, t, mn, irr, name, _fmt(val), _fmt(std)])
+                i += 2
+            else:
+                w.writerow([sid, t, mn, irr, name, _fmt(val), 'N/A'])
+                i += 1
+
+
 class PrefetchWorker(QtCore.QThread):
     """v3.8.26: background QThread that pre-computes combo enumeration for
     every (step, isotope) pair after blank+signal load. Each emitted result
@@ -4868,13 +4930,12 @@ class PipelineWorker(QtCore.QThread):
             # 'Muscovite'.
             mn=mineral_from_csv if mineral_from_csv else (ar[-3] if len(ar)>57 else '')
             irr=ar[-1] if len(ar)>57 else ''
-            with open(ac_csv,'w',newline='',encoding='utf-8') as f:
-                w=csv.writer(f,lineterminator='\n')
-                w.writerow(['Samp#','t','Min','IRR','Variable','Value','Sigma'])
-                for i,nm_ in enumerate(vnm):
-                    val=ar[i] if i<len(ar) else 0
-                    w.writerow([sid,temperature,mn,irr,nm_,
-                                 '{:.6e}'.format(float(val)) if isinstance(val,(int,float)) else str(val),''])
+            # v3.8.32: write ac_csv in NTNU_DataReduction.AC_save format
+            # (value + sigma collapsed into one row, single-value entries
+            # get 'N/A' in Sigma column). Previous format wrote every value
+            # and std as separate rows with blank Sigma — less convenient
+            # for downstream tooling.
+            _write_agecalc_csv_subprog(ac_csv, vnm, ar, sid, temperature, mn, irr)
             step['ac_csv']=ac_csv
             ar39p=_sf(ar[18])/s39*100; ar40p=_sf(ar[24])/s40*100
             info_t=(str(sid),str(mn),'',str(temperature),str(irr))
