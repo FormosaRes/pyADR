@@ -1,8 +1,83 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31
 最後整理日期：2026-05-28
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.31（2026-05-28）— MassRatioPage / AgeCalcPage 加 sidebar
+
+### 問題
+
+使用者要求 MassRatioPage 跟 AgeCalcPage 也要有跟 CalcT0Page 一致的左側 sidebar，但**不要 Auto Blank / Auto Signal / Manual 三個 T₀ 專屬按鈕**。三個 page 之間應該都能無縫 Return / Save / 切換載檔 / 存讀 session。
+
+「Save To」按鈕在不同 page 觸發不同存檔行為：
+- MassRatio page → 存 Mass Ratio CSV
+- AgeCalc+Datum page → Export (datum CSV + summary + diagrams)
+
+### 修法
+
+#### 1. Module-level `_build_minimal_sidebar(page, save_handler, save_label)`
+
+mirror CalcT0Page sidebar (91×51 button, vertical column)，按鈕子集：
+
+| 按鈕 | 行為 |
+|---|---|
+| `Return` | walk_parent 找 AutoPipelineWindow → click `returnBtn`（回 pyADR Home） |
+| `Save To` | 呼叫傳入的 page-specific `save_handler`（MassRatio: `_save`；AgeCalc: `_export`） |
+| `Load Blank` | `stack.setCurrentIndex(0)` 跳回 CalcT0 → `t0Page._load_blank_dialog()` |
+| `Load Sample` | 同上 → `_load_signal_dialog()` |
+| `Save Session` | `t0Page._save_session()` |
+| `Open Session` | `t0Page._open_session()` |
+
+每個 handler 內用 walk_parent 找 AutoPipelineWindow，所以 page 不需要 ctor 注入 reference。
+
+#### 2. MassRatioPage / AgeCalcPage layout 重構
+
+`__init__` 開頭改成 outer `QHBoxLayout`：
+
+```python
+outer = QtWidgets.QHBoxLayout(self)
+self._sidebar = _build_minimal_sidebar(self, lambda: self._save(),  # or _export
+                                       save_label='Save To')
+outer.addWidget(self._sidebar)
+_content = QtWidgets.QWidget()
+outer.addWidget(_content, 1)
+vb = QtWidgets.QVBoxLayout(_content)   # ← 既存 vb 全部 widget 改用這個
+```
+
+既存 header / save button / table / chart layout 完全不動，只是包進 `_content` 內。
+
+#### 3. 既存 header Save / Export button 保留
+
+兩個 page 既存的 page-header Save / Export 按鈕沒拿掉，sidebar 是額外的入口。使用者習慣哪個 click 哪個。
+
+### 影響
+
+- 純 UI layout 改動，無數值變化
+- 內容區域寬度減 110 px（sidebar 寬度），但兩個 page 內容本來就有 splitter / scroll area 自適應，不影響使用
+- Sidebar Load Blank/Sample 會切回 Calculate T₀ page 後彈 file dialog — 這是合理的因為載檔後需要在 T₀ page 看資料
+
+### 驗證 checklist
+
+- [ ] 跑完 pipeline，導到 Mass Ratio page
+- [ ] 左側應該有 6 個按鈕：Return / Save To / Load Blank / Load Sample / Save Session / Open Session
+- [ ] 點 Save To → 彈 Save Mass Ratio dialog（跟 header 的 Save 按鈕一樣）
+- [ ] 點 Load Blank → 跳回 Calculate T₀ page，彈檔案選擇 dialog
+- [ ] 點 Save Session → .adr 對話框
+- [ ] 點 Return → 回 pyADR Home
+- [ ] 切到 Age Calc + Datum page → sidebar 一樣 6 個按鈕
+- [ ] 點 Save To → 彈 Export dialog（datum CSV / summary / diagrams 三選一）
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - 加 module-level `_build_minimal_sidebar(page, save_handler, save_label)` helper
+  - `MassRatioPage.__init__` 改 outer HBox（sidebar + content）
+  - `AgeCalcPage.__init__` 改 outer HBox（sidebar + content）
+- `.work/.app_info.txt`：3.8.30 → 3.8.31
+- `CHANGELOG.md`：本段
 
 ---
 

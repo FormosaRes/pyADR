@@ -504,6 +504,85 @@ def load_session_adr(path):
     return out
 
 
+# ═══════════════════════════════════════════════════════════
+#  Shared sidebar (v3.8.31) — used by MassRatioPage / AgeCalcPage
+# ═══════════════════════════════════════════════════════════
+#
+# Mirrors CalcT0Page's sidebar style (91×51 buttons, vertical column).
+# Subset of Calc-T0 sidebar: Return / Save To / Load Blank / Load Sample
+# / Save Session / Open Session. The page-specific 'Save To' handler is
+# passed in (MassRatioPage._save vs AgeCalcPage._export).
+#
+# Load Blank / Load Sample switch back to CalcT0Page (stack index 0) and
+# fire the corresponding file dialog. Save/Open Session delegate to
+# CalcT0Page's session methods (single source of truth).
+def _build_minimal_sidebar(page, save_handler, save_label='Save To'):
+    """Return a QWidget sidebar to be placed on the left of MassRatioPage /
+    AgeCalcPage. `page` is the host widget (used to walk up the parent
+    chain to find AutoPipelineWindow). `save_handler` is bound at call
+    time so the right method fires for this page."""
+    sb = QtWidgets.QWidget()
+    sb.setFixedWidth(110)
+    sbl = QtWidgets.QVBoxLayout(sb)
+    sbl.setContentsMargins(2, 4, 2, 4); sbl.setSpacing(0)
+
+    def _sb_btn(txt):
+        b = QtWidgets.QPushButton(txt)
+        b.setFixedSize(91, 51)
+        return b
+
+    def _find_window():
+        p = page.parent()
+        while p is not None and not hasattr(p, 't0Page'):
+            p = p.parent()
+        return p
+
+    btnReturn = _sb_btn('Return')
+    def _on_return():
+        win = _find_window()
+        if win is not None and hasattr(win, 'returnBtn'):
+            win.returnBtn.click()
+    btnReturn.clicked.connect(_on_return)
+
+    btnSave = _sb_btn(save_label)
+    btnSave.clicked.connect(save_handler)
+
+    btnLdBlank = _sb_btn('Load Blank')
+    def _on_load_blank():
+        win = _find_window()
+        if win is not None and hasattr(win, 't0Page'):
+            win.stack.setCurrentIndex(0)   # jump back to Calculate T₀
+            win.t0Page._load_blank_dialog()
+    btnLdBlank.clicked.connect(_on_load_blank)
+
+    btnLdSig = _sb_btn('Load Sample')
+    def _on_load_signal():
+        win = _find_window()
+        if win is not None and hasattr(win, 't0Page'):
+            win.stack.setCurrentIndex(0)
+            win.t0Page._load_signal_dialog()
+    btnLdSig.clicked.connect(_on_load_signal)
+
+    btnSaveSess = _sb_btn('Save Session')
+    def _on_save_session():
+        win = _find_window()
+        if win is not None and hasattr(win, 't0Page'):
+            win.t0Page._save_session()
+    btnSaveSess.clicked.connect(_on_save_session)
+
+    btnOpenSess = _sb_btn('Open Session')
+    def _on_open_session():
+        win = _find_window()
+        if win is not None and hasattr(win, 't0Page'):
+            win.t0Page._open_session()
+    btnOpenSess.clicked.connect(_on_open_session)
+
+    for b in (btnReturn, btnSave, btnLdBlank, btnLdSig, btnSaveSess, btnOpenSess):
+        sbl.addWidget(b)
+    sbl.addStretch()
+    return sb
+
+
 import matplotlib as _mpl
 _mpl.use('Agg')
 import matplotlib.pyplot as _plt
@@ -3470,8 +3549,17 @@ class CalcT0Page(QtWidgets.QWidget):
 class MassRatioPage(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        vb=QtWidgets.QVBoxLayout(self); vb.setContentsMargins(10,8,8,8); vb.setSpacing(6)
-        
+        # v3.8.31: outer = sidebar + content. Sidebar mirrors CalcT0Page
+        # subset (no Auto Blank / Auto Signal / Manual — those are T0-only).
+        outer = QtWidgets.QHBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0); outer.setSpacing(0)
+        self._sidebar = _build_minimal_sidebar(self, lambda: self._save(),
+                                               save_label='Save To')
+        outer.addWidget(self._sidebar)
+        _content = QtWidgets.QWidget()
+        outer.addWidget(_content, 1)
+        vb=QtWidgets.QVBoxLayout(_content); vb.setContentsMargins(10,8,8,8); vb.setSpacing(6)
+
         # Header with centered title and Save button
         hdr=QtWidgets.QHBoxLayout()
         hdr.addStretch()
@@ -3769,9 +3857,17 @@ class AgeCalcPage(QtWidgets.QWidget):
         self._work_dir = ''
         self._datum_csv = ''
         self._steps = []
-        
-        vb=QtWidgets.QVBoxLayout(self); vb.setContentsMargins(10,8,10,8); vb.setSpacing(6)
-        
+
+        # v3.8.31: outer = sidebar + content (mirrors MassRatioPage layout)
+        outer = QtWidgets.QHBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0); outer.setSpacing(0)
+        self._sidebar = _build_minimal_sidebar(self, lambda: self._export(),
+                                               save_label='Save To')
+        outer.addWidget(self._sidebar)
+        _content = QtWidgets.QWidget()
+        outer.addWidget(_content, 1)
+        vb=QtWidgets.QVBoxLayout(_content); vb.setContentsMargins(10,8,10,8); vb.setSpacing(6)
+
         # ═══ Header: centered title + Save button ═══
         hdr = QtWidgets.QHBoxLayout()
         hdr.addStretch()
