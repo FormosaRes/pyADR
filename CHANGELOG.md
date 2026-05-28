@@ -1,8 +1,77 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38
 最後整理日期：2026-05-28
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.38（2026-05-28）— 修 Manual button 文字 '✓' 不會清的 bug
+
+### 問題
+
+使用者看到 Manual button 顯示 `Manual ✓` 跟黃色背景，問為什麼會打勾。
+
+### 根因
+
+`_toggle_manual` 切換時只改**背景顏色**（amber = manual / panel-gray = auto），**不動文字**。
+
+v3.8.28 加 session load 同步時多寫了 `self.btnM.setText('Manual ✓' if self._manual else 'Manual')`（在 `_open_session` 內），結果造成兩套互相不同步的狀態指示：
+
+- 背景色 → `_toggle_manual` 會動
+- 文字 ✓ → 只有 session load 時設，之後 `_toggle_manual` 不會清掉
+
+→ 從帶 `manual=True` 的 .adr 載入後，即使再點 Manual button 切回 auto（背景變灰），文字還是顯示 `Manual ✓`。
+
+### 修法
+
+`CalcT0Page` 抽出 `_apply_manual_style()` 共用 helper：
+
+```python
+def _apply_manual_style(self):
+    col = AMB_BG if self._manual else PNL
+    tc  = '#8a5a00' if self._manual else TXT
+    bc  = '#8a5a00' if self._manual else BRD
+    self.btnM.setStyleSheet(_btn_style(col, tc, bc))
+    self.btnM.setText('Manual')   # always plain; color signals state
+    if hasattr(self, '_chips'):
+        self._chips['Mode'].setText('Manual' if self._manual else 'Auto')
+    for cv in self._cv:
+        cv._manual = self._manual
+
+def _toggle_manual(self):
+    self._manual = not self._manual
+    self._apply_manual_style()
+```
+
+`_open_session` 內也改 call 同樣 helper（不再 setText ✓）。
+
+設計決定：Button text 永遠是 plain `Manual`，**背景顏色 + Mode chip 才表示狀態**：
+- Manual mode：amber 黃底 + Mode chip 顯示 "Manual"
+- Auto mode：灰底 + Mode chip 顯示 "Auto"
+
+### 影響
+
+- Toggle / session load 兩條路徑現在用同一個 styling 邏輯，不會 drift
+- Button 文字一律 `Manual`，狀態看背景跟頂部 chip
+- 純 UI 改動，無數值變化
+
+### 驗證 checklist
+
+- [ ] 啟動 AutoPipeline 預設 → btnM 灰底 `Manual` 文字、Mode chip 顯示 `Auto`
+- [ ] 點 Manual button → btnM 黃底 `Manual` 文字、Mode chip 變 `Manual`
+- [ ] 再點 → 回灰底 `Manual` 文字、Mode chip 變 `Auto`
+- [ ] 載入 manual=True 的 .adr → btnM 黃底 `Manual` 文字（不再是 `Manual ✓`）
+- [ ] 載入後再點 toggle → 正常切換回 Auto
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - `CalcT0Page._apply_manual_style` 新 helper
+  - `_toggle_manual` 改 call helper
+  - `_open_session` 內 `btnM.setText` 改 call helper
+- `.work/.app_info.txt`：3.8.37 → 3.8.38
+- `CHANGELOG.md`：本段
 
 ---
 

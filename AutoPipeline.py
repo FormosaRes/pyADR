@@ -2671,15 +2671,24 @@ class CalcT0Page(QtWidgets.QWidget):
         except Exception as e:
             self.statusLbl.setText(f'Δt refit error: {e}')
 
-    def _toggle_manual(self):
-        self._manual = not self._manual
+    def _apply_manual_style(self):
+        """v3.8.38: single source of truth for Manual-mode UI state.
+        Background color (amber) + Mode chip text indicate manual ON;
+        button label stays plain 'Manual' to avoid a leftover '✓' after
+        toggling back (regression from v3.8.28 _open_session)."""
         col = AMB_BG if self._manual else PNL
         tc  = '#8a5a00' if self._manual else TXT
         bc  = '#8a5a00' if self._manual else BRD
         self.btnM.setStyleSheet(_btn_style(col, tc, bc))
-        self._chips['Mode'].setText('Manual' if self._manual else 'Auto')
+        self.btnM.setText('Manual')   # always plain; color signals state
+        if hasattr(self, '_chips'):
+            self._chips['Mode'].setText('Manual' if self._manual else 'Auto')
         for cv in self._cv:
             cv._manual = self._manual
+
+    def _toggle_manual(self):
+        self._manual = not self._manual
+        self._apply_manual_style()
 
     def _auto_blank(self):
         """v3.8.37: wrap Utilities.calculateT0 in try/except. The internal
@@ -3494,12 +3503,13 @@ class CalcT0Page(QtWidgets.QWidget):
             except Exception:
                 pass
 
-        # Sync Manual button state
-        if hasattr(self, 'btnM'):
-            try:
-                self.btnM.setText('Manual ✓' if self._manual else 'Manual')
-            except Exception:
-                pass
+        # v3.8.38: Sync Manual button state via shared helper. Previous
+        # version setText('Manual ✓') created an inconsistent state where
+        # the leftover '✓' never got cleared by _toggle_manual.
+        try:
+            self._apply_manual_style()
+        except Exception:
+            pass
 
         # Refresh canvases
         if self._cur == '__BLANK__' and self._bvt is not None:
