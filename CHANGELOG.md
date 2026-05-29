@@ -1,8 +1,41 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54
 最後整理日期：2026-05-29
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.54（2026-05-29）— T₀ Range 圖標題/legend 缺字 fix（□ 方塊）
+
+### 問題
+
+T₀ Range 圖的標題與 legend 出現 □ 方塊：`T□ range...`、`pick blank □ signal`。
+
+### 根因
+
+matplotlib 字型是 **Arial，缺下標 `₀`（U+2080）與 `≪`（U+226A）** → 畫成方塊。v3.8.30 早就為了 degas 圖把 unicode `T₀` 換成 mathtext `$T_0$`（見該行註解 + y 軸 label 也是 `$T_0$`，正常顯示），但 v3.8.52/53 新加的標題、legend title、`selected T₀ ± σ`、`blank T₀ (dashed)` 又用回 unicode `₀`，且 `≪` 也是 Arial 沒有的字。
+
+### 修法（`_paint_t0range_pattern`，純文字）
+
+只動 matplotlib 會 render 的 4 個字串（Qt label 用系統字型不受影響，無須改）：
+
+- `T₀` → `$T_0$`（mathtext，跟 y 軸一致）：標題 3 處、legend title、兩個 Line2D label
+- `≪` → `<<`
+- 順手把標題的 em-dash `—` 改成句號（CLAUDE.md 風格：拒用 em-dash）
+
+`±`、`σ`、`·`、`³⁷` 等 Arial 有的字維持不變（screenshot 確認正常）。
+
+### 驗證 checklist
+
+- [ ] 標題顯示 `T_0 range: Blank + per-step signal (box) · selected T_0 ± σ (dots) · blank T_0 (dashed). Pick blank << signal.`，無方塊
+- [ ] legend title、`selected T_0 ± σ`、`blank T_0 (dashed)` 下標正常
+- [ ] 無 mathtext parse 例外（字串內無 `'` 不會觸發舊 v3.8.30 bug）
+
+### 檔案改動
+
+- `AutoPipeline.py`：`_paint_t0range_pattern`（標題 + legend 字串改 mathtext / ASCII）
+- `.work/.app_info.txt`：3.8.53 → 3.8.54
 
 ---
 

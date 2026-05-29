@@ -3593,19 +3593,19 @@ class CalcT0Page(QtWidgets.QWidget):
         handles.append(Line2D([0], [0], marker='o', color='black',
                               markerfacecolor='white', markeredgecolor='black',
                               markersize=5, linestyle='none',
-                              label='selected T₀ ± σ'))
+                              label='selected $T_0$ ± σ'))
         handles.append(Line2D([0], [0], color='grey', linestyle='--',
-                              linewidth=1.3, label='blank T₀ (dashed)'))
+                              linewidth=1.3, label='blank $T_0$ (dashed)'))
         ax.legend(handles=handles, fontsize=8.5, loc='upper right',
                   framealpha=0.9, ncol=1,
-                  title='blank T₀ = dashed line per isotope',
+                  title='blank $T_0$ = dashed line per isotope',
                   title_fontsize=8.5)
         ax.grid(True, alpha=0.2, axis='y')
 
         # Title hint
         ax.set_title(
-            'T₀ range: Blank + per-step signal (box) · selected T₀ ± σ '
-            '(dots) · blank T₀ (dashed) — pick blank ≪ signal range',
+            '$T_0$ range: Blank + per-step signal (box) · selected $T_0$ ± σ '
+            '(dots) · blank $T_0$ (dashed). Pick blank << signal.',
             fontsize=10, color='#444')
 
         try: self._t0range_fig.tight_layout(pad=0.5)
