@@ -539,9 +539,16 @@ def _build_minimal_sidebar(page, save_handler, save_label='Save'):
 
     btnReturn = _sb_btn('Return')
     def _on_return():
+        # v3.8.40: AutoPipelineWindow itself has no `returnBtn` attribute;
+        # the only Return button lives on CalcT0Page sidebar (line ~2026)
+        # and is what NTNU_DataReduction connected toMain to via
+        # `self.t0Page.returnBtn.clicked.connect(self._ret)`. Fire that
+        # button instead of looking for a non-existent window-level attr.
         win = _find_window()
-        if win is not None and hasattr(win, 'returnBtn'):
-            win.returnBtn.click()
+        if win is not None and hasattr(win, 't0Page'):
+            t0 = getattr(win, 't0Page', None)
+            if t0 is not None and hasattr(t0, 'returnBtn'):
+                t0.returnBtn.click()
     btnReturn.clicked.connect(_on_return)
 
     btnSave = _sb_btn(save_label)
@@ -5617,11 +5624,16 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
         _menu_main = _mb.addMenu('Main')
         self._actGoHome = QtWidgets.QAction('Return to pyADR Home', self)
         _menu_main.addAction(self._actGoHome)
-        # Hook: NTNU_DataReduction.py wires actGoHome to toMain via returnBtn
-        # signal (existing pattern); to avoid breaking that, the menu action
-        # just emits the same signal as the existing returnBtn click.
-        self._actGoHome.triggered.connect(lambda: self.returnBtn.click()
-                                          if hasattr(self, 'returnBtn') else None)
+        # Hook: NTNU_DataReduction.py wires actGoHome to toMain via the
+        # CalcT0Page sidebar returnBtn (line 5764 of this file). The
+        # AutoPipelineWindow does not own a `returnBtn` itself — v3.8.40
+        # fix: route the menu through t0Page.returnBtn so the existing
+        # _ret slot fires.
+        def _go_home():
+            t0 = getattr(self, 't0Page', None)
+            if t0 is not None and hasattr(t0, 'returnBtn'):
+                t0.returnBtn.click()
+        self._actGoHome.triggered.connect(_go_home)
         _menu_help = _mb.addMenu('Help')
         _act_help = QtWidgets.QAction('Formulas && References', self)
         _menu_help.addAction(_act_help)

@@ -1,8 +1,79 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40
 最後整理日期：2026-05-28
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.40（2026-05-28）— 修 MassRatio / AgeCalc sidebar Return 無反應 + menu File→Home 同 bug
+
+### 問題
+
+`MassRatioPage` / `AgeCalcPage` sidebar 上的 Return 按鈕點下去無反應。Menu File → "Return to pyADR Home" 也同樣壞。
+
+### 根因
+
+`_build_minimal_sidebar` (v3.8.31) 內 `_on_return` 寫的 attribute path 錯誤：
+
+```python
+def _on_return():
+    win = _find_window()                     # 找到 AutoPipelineWindow
+    if win is not None and hasattr(win, 'returnBtn'):   # ← False, 不存在
+        win.returnBtn.click()
+```
+
+`AutoPipelineWindow` **沒有** `returnBtn` attribute。真正的 Return button 在 `CalcT0Page.returnBtn` (line 2026, sidebar 第一顆按鈕)。`AutoPipelineWindow._build` line 5764 把 `t0Page.returnBtn.clicked` 接到 `self._ret`，所以**只有 click 那顆 button 才會 trigger 返回邏輯**。
+
+`hasattr(win, 'returnBtn')` False → callback 是 no-op → 按鈕看似死的。
+
+同個 bug 也存在 menu `_actGoHome` (line 5623)：
+
+```python
+self._actGoHome.triggered.connect(lambda: self.returnBtn.click()
+                                  if hasattr(self, 'returnBtn') else None)
+```
+
+→ menu File → "Return to pyADR Home" 也是死的。
+
+### 修法
+
+兩處 callback 都改走 `t0Page.returnBtn.click()`：
+
+```python
+# _build_minimal_sidebar._on_return
+win = _find_window()
+if win is not None and hasattr(win, 't0Page'):
+    t0 = getattr(win, 't0Page', None)
+    if t0 is not None and hasattr(t0, 'returnBtn'):
+        t0.returnBtn.click()
+```
+
+```python
+# AutoPipelineWindow menu _actGoHome
+def _go_home():
+    t0 = getattr(self, 't0Page', None)
+    if t0 is not None and hasattr(t0, 'returnBtn'):
+        t0.returnBtn.click()
+self._actGoHome.triggered.connect(_go_home)
+```
+
+CalcT0Page sidebar 的 Return button 本身沒問題（v3.8.31 之前就 work），這版只修兩個 indirect 路徑。
+
+### 驗證 checklist
+
+- [ ] 進 MassRatio page → 點 sidebar **Return** → 應該回 pyADR Home
+- [ ] 進 AgeCalc + Datum page → 點 sidebar **Return** → 應該回 pyADR Home
+- [ ] 從任何 page 點 File menu → **Return to pyADR Home** → 應該回 pyADR Home
+- [ ] CalcT0Page sidebar **Return**（原本就 work）→ 確認沒被改壞
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - `_build_minimal_sidebar._on_return` 改走 `t0.returnBtn.click()`
+  - `AutoPipelineWindow` 內 `_actGoHome.triggered` lambda 改成 `_go_home` 走同樣 path
+- `.work/.app_info.txt`：3.8.39 → 3.8.40
+- `CHANGELOG.md`：本段
 
 ---
 
