@@ -4332,7 +4332,118 @@ class AgeCalcPage(QtWidgets.QWidget):
             f'QTableWidget{{font-size:12px;gridline-color:{BRD};font-family:"Courier New",monospace;}}'
             f'QTableWidget::item{{padding:3px 6px;}}'
             f'QHeaderView::section{{font-size:11px;background:#eeede8;border:1px solid {BRD2};padding:4px;}}')
-        table_vl.addWidget(self.tbl, 1)
+        # v3.8.48: table no longer takes all remaining stretch — leave room
+        # for the Plot Controls group below it.
+        table_vl.addWidget(self.tbl, 3)
+
+        # ─── Plot Controls (v3.8.48: ported subset of DiagramPlots_SH) ──
+        # State vars (used by _refresh_diagrams)
+        self._plot_show_legend = True
+        self._plot_show_group_fits = True
+        self._plot_show_overall_fit = True
+        self._plot_legend_title = ''
+
+        ctrl_box = QtWidgets.QGroupBox('Plot Controls')
+        ctrl_box.setStyleSheet(
+            f'QGroupBox{{font-weight:bold;font-size:12px;color:{TXT};'
+            f'border:1px solid {BRD};border-radius:3px;margin-top:8px;'
+            f'padding-top:10px;}}'
+            f'QGroupBox::title{{subcontrol-origin:margin;left:8px;'
+            f'padding:0 5px;}}')
+        ctrl_vl = QtWidgets.QVBoxLayout(ctrl_box)
+        ctrl_vl.setContentsMargins(8, 6, 8, 6); ctrl_vl.setSpacing(4)
+
+        # Row 1: target diagram + Apply scope
+        row_target = QtWidgets.QHBoxLayout()
+        row_target.addWidget(QtWidgets.QLabel('<b>Apply to:</b>'))
+        self._plot_target_combo = QtWidgets.QComboBox()
+        for _t in ['All diagrams', 'Age Spectrum', 'Ca/K',
+                   'Normal Isochron', 'Inverse Isochron', 'Cl/K', 'Degassing']:
+            self._plot_target_combo.addItem(_t)
+        row_target.addWidget(self._plot_target_combo, 1)
+        ctrl_vl.addLayout(row_target)
+
+        # Row 2: display options
+        opts_hl = QtWidgets.QHBoxLayout()
+        self._plot_cb_legend = QtWidgets.QCheckBox('Show Legend')
+        self._plot_cb_legend.setChecked(True)
+        self._plot_cb_group_fits = QtWidgets.QCheckBox('Group fits')
+        self._plot_cb_group_fits.setChecked(True)
+        self._plot_cb_overall_fit = QtWidgets.QCheckBox('Overall fit')
+        self._plot_cb_overall_fit.setChecked(True)
+        for _cb in (self._plot_cb_legend, self._plot_cb_group_fits,
+                    self._plot_cb_overall_fit):
+            opts_hl.addWidget(_cb)
+        opts_hl.addStretch()
+        ctrl_vl.addLayout(opts_hl)
+
+        # Row 3: legend title
+        legend_hl = QtWidgets.QHBoxLayout()
+        legend_hl.addWidget(QtWidgets.QLabel('Legend title:'))
+        self._plot_legend_edit = QtWidgets.QLineEdit()
+        self._plot_legend_edit.setPlaceholderText('(none)')
+        legend_hl.addWidget(self._plot_legend_edit, 1)
+        ctrl_vl.addLayout(legend_hl)
+
+        # Row 4: X axis range
+        xhl = QtWidgets.QHBoxLayout()
+        xhl.addWidget(QtWidgets.QLabel('<b>X:</b>'))
+        self._plot_cb_xauto = QtWidgets.QCheckBox('Auto')
+        self._plot_cb_xauto.setChecked(True)
+        xhl.addWidget(self._plot_cb_xauto)
+        xhl.addWidget(QtWidgets.QLabel('min:'))
+        self._plot_xmin = QtWidgets.QDoubleSpinBox()
+        self._plot_xmin.setRange(-1e12, 1e12); self._plot_xmin.setDecimals(4)
+        self._plot_xmin.setFixedWidth(90)
+        xhl.addWidget(self._plot_xmin)
+        xhl.addWidget(QtWidgets.QLabel('max:'))
+        self._plot_xmax = QtWidgets.QDoubleSpinBox()
+        self._plot_xmax.setRange(-1e12, 1e12); self._plot_xmax.setDecimals(4)
+        self._plot_xmax.setFixedWidth(90)
+        xhl.addWidget(self._plot_xmax)
+        xhl.addStretch()
+        ctrl_vl.addLayout(xhl)
+
+        # Row 5: Y axis range
+        yhl = QtWidgets.QHBoxLayout()
+        yhl.addWidget(QtWidgets.QLabel('<b>Y:</b>'))
+        self._plot_cb_yauto = QtWidgets.QCheckBox('Auto')
+        self._plot_cb_yauto.setChecked(True)
+        yhl.addWidget(self._plot_cb_yauto)
+        yhl.addWidget(QtWidgets.QLabel('min:'))
+        self._plot_ymin = QtWidgets.QDoubleSpinBox()
+        self._plot_ymin.setRange(-1e12, 1e12); self._plot_ymin.setDecimals(4)
+        self._plot_ymin.setFixedWidth(90)
+        yhl.addWidget(self._plot_ymin)
+        yhl.addWidget(QtWidgets.QLabel('max:'))
+        self._plot_ymax = QtWidgets.QDoubleSpinBox()
+        self._plot_ymax.setRange(-1e12, 1e12); self._plot_ymax.setDecimals(4)
+        self._plot_ymax.setFixedWidth(90)
+        yhl.addWidget(self._plot_ymax)
+        yhl.addStretch()
+        ctrl_vl.addLayout(yhl)
+
+        # Row 6: Apply / Auto / Reset
+        btn_hl = QtWidgets.QHBoxLayout()
+        applyBtn = QtWidgets.QPushButton('Apply')
+        applyBtn.setStyleSheet(_btn_style('#1a5fb4', 'white', '#1a5fb4') +
+                               'QPushButton{font-weight:bold;padding:5px 14px;}')
+        applyBtn.clicked.connect(self._plot_apply)
+        autoBtn = QtWidgets.QPushButton('Auto')
+        autoBtn.setStyleSheet(_btn_style('#888', 'white', '#888') +
+                              'QPushButton{padding:5px 12px;}')
+        autoBtn.clicked.connect(self._plot_auto)
+        resetBtn = QtWidgets.QPushButton('Reset')
+        resetBtn.setStyleSheet(_btn_style('#888', 'white', '#888') +
+                               'QPushButton{padding:5px 12px;}')
+        resetBtn.clicked.connect(self._plot_reset)
+        btn_hl.addStretch()
+        btn_hl.addWidget(applyBtn)
+        btn_hl.addWidget(autoBtn)
+        btn_hl.addWidget(resetBtn)
+        ctrl_vl.addLayout(btn_hl)
+
+        table_vl.addWidget(ctrl_box, 0)
         splitter.addWidget(table_w)
         
         # Right: Diagrams (clickable to enlarge, with axis controls)
@@ -4772,6 +4883,65 @@ class AgeCalcPage(QtWidgets.QWidget):
             }
             self._refresh_diagrams()
     
+    # ── Plot Controls (v3.8.48) ───────────────────────────────────
+    def _plot_apply(self):
+        """Apply current Plot Controls state to selected diagram(s)."""
+        # Capture all state vars
+        self._plot_show_legend     = self._plot_cb_legend.isChecked()
+        self._plot_show_group_fits = self._plot_cb_group_fits.isChecked()
+        self._plot_show_overall_fit= self._plot_cb_overall_fit.isChecked()
+        self._plot_legend_title    = self._plot_legend_edit.text().strip()
+
+        # X/Y axis: write into self._daxis[<key>] for selected target
+        target = self._plot_target_combo.currentText()
+        x_auto = self._plot_cb_xauto.isChecked()
+        y_auto = self._plot_cb_yauto.isChecked()
+        xmin = None if x_auto else self._plot_xmin.value()
+        xmax = None if x_auto else self._plot_xmax.value()
+        ymin = None if y_auto else self._plot_ymin.value()
+        ymax = None if y_auto else self._plot_ymax.value()
+
+        target_keys = {
+            'All diagrams':     None,    # write to DFN as canonical (the only one Utilities accepts)
+            'Age Spectrum':     'DFW',
+            'Ca/K':             'DFA',
+            'Normal Isochron':  'DFN',
+            'Inverse Isochron': 'DFI',
+            'Cl/K':             'DFC',
+            'Degassing':        'DFD',
+        }
+        key = target_keys.get(target)
+        # Always write to DFN since Utilities.getDFStatistics_sh's xlim/ylim
+        # applies to isochrons. Per-tab axis still works through tab UI.
+        write_key = key if key else 'DFN'
+        if hasattr(self, '_daxis'):
+            self._daxis[write_key] = {
+                'xmin': xmin, 'xmax': xmax,
+                'ymin': ymin, 'ymax': ymax,
+            }
+
+        # Trigger regen via existing refresh path
+        self._refresh_diagrams()
+
+    def _plot_auto(self):
+        """Reset X/Y to Auto without touching the other settings."""
+        self._plot_cb_xauto.setChecked(True)
+        self._plot_cb_yauto.setChecked(True)
+        self._plot_apply()
+
+    def _plot_reset(self):
+        """Restore all Plot Controls to defaults."""
+        self._plot_cb_legend.setChecked(True)
+        self._plot_cb_group_fits.setChecked(True)
+        self._plot_cb_overall_fit.setChecked(True)
+        self._plot_cb_xauto.setChecked(True)
+        self._plot_cb_yauto.setChecked(True)
+        self._plot_xmin.setValue(0); self._plot_xmax.setValue(0)
+        self._plot_ymin.setValue(0); self._plot_ymax.setValue(0)
+        self._plot_legend_edit.clear()
+        self._plot_target_combo.setCurrentIndex(0)
+        self._plot_apply()
+
     def _refresh_diagrams(self):
         """v3.8.35: actually regenerate diagrams with Show Temp labels + axis
         ranges + atm ratio. Previously this was a stub that only reloaded
@@ -4780,6 +4950,9 @@ class AgeCalcPage(QtWidgets.QWidget):
 
         Now: call getDFStatistics_sh with xlim/ylim/show_temp/atm_ratio
         derived from the current UI state, then reload the regenerated PNGs.
+
+        v3.8.48: also reads Plot Controls state (Show Legend, Group fits,
+        Overall fit, Legend title) and passes them to Utilities.
 
         Note: getDFStatistics_sh takes a single (xlim, ylim) pair that
         applies to the isochron diagrams (the main ones with adjustable
@@ -4795,6 +4968,11 @@ class AgeCalcPage(QtWidgets.QWidget):
             method = 'ols'
         show_temp = self.tempLabelCB.isChecked() if hasattr(self, 'tempLabelCB') else False
         atm_ratio = self._get_atm_ratio()
+        # v3.8.48: Plot Controls state
+        show_legend     = getattr(self, '_plot_show_legend', True)
+        show_group_fits = getattr(self, '_plot_show_group_fits', True)
+        show_overall    = getattr(self, '_plot_show_overall_fit', True)
+        legend_title    = getattr(self, '_plot_legend_title', '') or None
 
         # Use DFN (Normal Isochron) axis as the primary xlim/ylim source.
         dfn = self._daxis.get('DFN', {}) if hasattr(self, '_daxis') else {}
@@ -4810,7 +4988,11 @@ class AgeCalcPage(QtWidgets.QWidget):
                                          xlim=xlim, ylim=ylim,
                                          show_temp=show_temp,
                                          atm_ratio=atm_ratio,
-                                         isochron_method=method)
+                                         isochron_method=method,
+                                         show_legend=show_legend,
+                                         show_group_fits=show_group_fits,
+                                         show_overall_fit=show_overall,
+                                         legend_name=legend_title)
         except Exception as e:
             QtWidgets.QMessageBox.warning(
                 self, 'Refresh diagrams failed',

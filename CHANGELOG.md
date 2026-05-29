@@ -1,8 +1,91 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48
 最後整理日期：2026-05-28
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.48（2026-05-28）— AgeCalcPage 加 Plot Controls 區（移植自 DiagramPlots_SH 子程式）
+
+### 修法
+
+使用者要求把 DiagramPlots_SH 的「Plot Controls」面板移到 AutoPipeline AgeCalc + Datum 左下空白處（Results per Step 表格下方），改圖功能要一樣。
+
+#### 1. 表格下方加 QGroupBox "Plot Controls"
+
+`AgeCalcPage._build` 內 splitter 左半 (`table_w`) 改 layout：
+
+- `table_vl.addWidget(self.tbl, 1)` → `(self.tbl, 3)`：給表格 stretch=3，留 25% 空間給下方 controls
+- 加 `ctrl_box = QtWidgets.QGroupBox('Plot Controls')`
+- `table_vl.addWidget(ctrl_box, 0)`：controls 不 stretch，自然高度
+
+#### 2. Controls 內容（子程式 Plot Controls 的核心子集）
+
+| Row | Widget | 對應子程式 |
+|---|---|---|
+| 1 | **Apply to** dropdown：All / Age Spectrum / Ca/K / Normal/Inverse Isochron / Cl/K / Degassing | 子程式 "Panel" |
+| 2 | **Show Legend / Group fits / Overall fit** 3 個 checkbox | 同子程式 |
+| 3 | **Legend title** QLineEdit | 子程式 "Legend" |
+| 4 | **X axis**：Auto checkbox + min/max QDoubleSpinBox | 同子程式 |
+| 5 | **Y axis**：Auto checkbox + min/max QDoubleSpinBox | 同子程式 |
+| 6 | **Apply / Auto / Reset** 三顆按鈕 | 同子程式 |
+
+預設：所有 checkbox 打勾、Auto X/Y 打勾、legend title 空白、target = All diagrams。
+
+#### 3. 新 state vars
+
+```python
+self._plot_show_legend     = True
+self._plot_show_group_fits = True
+self._plot_show_overall_fit= True
+self._plot_legend_title    = ''
+```
+
+#### 4. `_refresh_diagrams` 傳新 params 到 Utilities
+
+```python
+Utilities.getDFStatistics_sh(...,
+                             show_legend=show_legend,
+                             show_group_fits=show_group_fits,
+                             show_overall_fit=show_overall,
+                             legend_name=legend_title)
+```
+
+`getDFStatistics_sh` 簽名（Utilities line 585-586）已經支援這四個 param，本來就沒接而已，現在串起來。
+
+#### 5. 三個按鈕對應動作
+
+- **Apply** → 把當前 controls state 寫進 `_plot_*` vars + `_daxis['DFN']`（給 isochrons 用），call `_refresh_diagrams`
+- **Auto** → X/Y 都設 Auto，call Apply
+- **Reset** → 全 controls 回預設，call Apply
+
+### 限制（v3.8.49+ 補）
+
+子程式 Plot Controls 還有以下功能，**本版未做**（需要更大改動）：
+
+- **Group 1-5 buttons**：step grouping。AutoPipeline 目前沒有 step grouping 概念，做這個要先加 data structure
+- **Layout dropdown** (Vertical stack / 2-column grid)：給 Summary multi-panel figure 用，跟 Stack/Summary dialog 一起做（v3.8.49 預告）
+- **Per-panel xlim/ylim 獨立**：Utilities `getDFStatistics_sh` 只接單一 `xlim`/`ylim`（套用在 isochrons），其他 panel (Age Spectrum, Ca/K, Cl/K) 的 axis 用 `_make_diagram_tab` 每個 tab 自己的 axis controls
+- **Isochron method dropdown**：既存 summary banner 已有，不重複
+
+### 驗證 checklist
+
+- [ ] 跑 Run Pipeline → 進 AgeCalc + Datum page
+- [ ] Summary tab 左半下方應該有 "Plot Controls" 群組框
+- [ ] 取消 Show Legend → Apply → 4 個 isochron/spectrum PNG legend 消失
+- [ ] 設 Legend title = "NO.65 muscovite" → Apply → 圖右上應該顯示這個 title
+- [ ] X min/max 設值 → 取消 X Auto → Apply → Isochron diagrams (DFN/DFI) 的 x 軸限制變動
+- [ ] Reset → 全部回預設
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - `AgeCalcPage._build`：splitter 左半 table 下方加 QGroupBox "Plot Controls" 含 6 行 widget
+  - 加 `_plot_apply` / `_plot_auto` / `_plot_reset` 三個 method
+  - `_refresh_diagrams` 加 `show_legend` / `show_group_fits` / `show_overall_fit` / `legend_name` 四個 param 傳給 `Utilities.getDFStatistics_sh`
+- `.work/.app_info.txt`：3.8.47 → 3.8.48
+- `CHANGELOG.md`：本段
 
 ---
 
