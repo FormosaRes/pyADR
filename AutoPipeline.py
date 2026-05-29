@@ -2257,23 +2257,24 @@ class CalcT0Page(QtWidgets.QWidget):
         self.cv_t0range.setFixedSize(1450, 360)   # 380 → 360 (toggle row 上方占 20)
         p5tl.addWidget(self.cv_t0range)
 
-        degas_center = QtWidgets.QHBoxLayout()
-        degas_center.addStretch()
-        degas_center.addWidget(p5)
-        degas_center.addSpacing(10)
-        degas_center.addWidget(p5_yield)
-        degas_center.addStretch()
-        guide_vl.addLayout(degas_center)
+        # v3.8.47: removed Degassing Pattern + Yield Panel per user — both
+        # widgets stay instantiated (paint methods still callable, hidden
+        # from UI) so any code that still touches self.cv_degas /
+        # self.cv_yield / self._degas_fig / self._yield_fig won't crash.
+        # The two QWidget containers (p5, p5_yield) are never added to
+        # any visible layout, so they take no screen space.
+        self.cv_degas.hide()
+        self.cv_yield.hide()
 
-        # v3.8.44: second row — T₀ range chart centered
+        # T₀ Range chart is now the only panel in this area
         t0r_center = QtWidgets.QHBoxLayout()
         t0r_center.addStretch()
         t0r_center.addWidget(p5_t0r)
         t0r_center.addStretch()
         guide_vl.addLayout(t0r_center)
 
-        # v3.8.44: container height 460 → 860 (440 row1 + 380 row2 + spacing)
-        guide_container.setFixedHeight(860)
+        # v3.8.47: container height 860 → 420 (toggle 32 + chart 360 + margins)
+        guide_container.setFixedHeight(420)
         left_vb.addWidget(guide_container)
         
         # Hidden tables used by _refresh_sum / _refresh_prev (no UI surface)
@@ -3079,13 +3080,11 @@ class CalcT0Page(QtWidgets.QWidget):
                     item.setForeground(QtGui.QColor('#1c7a3a'))
                 self.prevTbl.setItem(ri, ci, item)
 
-    # ── Guide panel (only ⑤ Degassing kept in v3.8.10) ─────────────────────
+    # ── Guide panel (T₀ Range only in v3.8.47) ─────────────────────────────
     def _refresh_guide(self):
-        if not hasattr(self, 'cv_degas'): return
-        self._paint_degas_pattern()
-        if hasattr(self, 'cv_yield'):
-            self._paint_yield_pattern()
-        # v3.8.44: third panel — T₀ range distribution (³⁶/³⁷/³⁸Ar)
+        # v3.8.47: skip paint_degas / paint_yield — those widgets are
+        # hidden (no UI surface), saving CPU on every step switch.
+        # T₀ Range chart is the only visible panel left here.
         if hasattr(self, 'cv_t0range'):
             self._paint_t0range_pattern()
 

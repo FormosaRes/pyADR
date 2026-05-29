@@ -1,8 +1,54 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47
 最後整理日期：2026-05-28
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.47（2026-05-28）— 拿掉 Degassing Pattern + Yield Panel，只留 T₀ Range
+
+### 修法
+
+使用者要求：刪掉 Degassing Pattern Overview 跟 Yield Panel 兩張上排圖（圖內容跟挑 blank 沒幫助），只留 T₀ Range（v3.8.44 加的）。
+
+`CalcT0Page._build` Degassing 區段：
+
+```python
+# 之前：3 個 panel 兩排
+# Row 1: degas (720×440) | yield (720×440)
+# Row 2: t0range (1450×360)
+
+# 之後：只剩 T₀ Range，無 row 1
+# t0range_center = HBox 居中 p5_t0r
+```
+
+- `cv_degas` / `cv_yield` 物件仍然 instantiate（保留 `_degas_fig`/`_yield_fig` reference 防 method 引用炸），但**不 `addWidget` 到任何 visible layout**，並 `.hide()`
+- `degas_center` HBox 完全砍掉
+- `guide_container.setFixedHeight(860 → 420)`：toggle row 32 + chart 360 + margins
+
+`_refresh_guide` 也拿掉 `_paint_degas_pattern` / `_paint_yield_pattern` 兩個 call — hidden widget 不該浪費 CPU 重畫。
+
+### 影響
+
+- Calculate T₀ 介面下方只剩 T₀ Range chart，layout 緊湊
+- Yield panel 的 「%⁴⁰Ar(r) + %³⁹Ar(K) vs cum ³⁹Ar」資訊還是有用（v3.8.23 加的），但既然 user 覺得不夠 actionable，砍掉
+- Degassing Pattern Overview 內的 T₀ signal + CV 資訊在 mV chart 已經能看，砍掉沒損失
+- `cv_degas` / `cv_yield` / `_paint_degas_pattern` / `_paint_yield_pattern` 程式碼仍保留作為 hidden module，如果以後要恢復只要 unhide + 加 addWidget 回去即可
+
+### 下版（v3.8.48）做剩餘需求
+
+- Overlay mode（疊圖看重疊區）
+- Signal-blank distance picker（plateau cycle 挑選）
+- ³⁶Ar × 298.56 vs ⁴⁰Ar 1-2 個數量級指標
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - `CalcT0Page._build`：`degas_center` HBox layout 整個移除；`cv_degas` / `cv_yield` 加 `.hide()`；`guide_container.setFixedHeight(860 → 420)`
+  - `_refresh_guide`：拿掉 `_paint_degas_pattern` / `_paint_yield_pattern` 兩個 call
+- `.work/.app_info.txt`：3.8.46 → 3.8.47
+- `CHANGELOG.md`：本段
 
 ---
 
