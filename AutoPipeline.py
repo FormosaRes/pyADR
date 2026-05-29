@@ -2216,6 +2216,19 @@ class CalcT0Page(QtWidgets.QWidget):
         self.cv_yield.setFixedSize(720, 440)
         p5yl.addWidget(self.cv_yield)
 
+        # v3.8.44: third panel — T₀ range distribution from all 4..10 cycle
+        # combos of ³⁶/³⁷/³⁸Ar across every signal step. Helps the user
+        # gauge the blank T₀ target range (blank should be << min signal T₀)
+        # before picking blank cycles. Wide chart, sits in a second row
+        # below the two square ones.
+        p5_t0r = QtWidgets.QWidget()
+        p5tl = QtWidgets.QVBoxLayout(p5_t0r); p5tl.setContentsMargins(0,0,0,0); p5tl.setSpacing(1)
+        self._t0range_fig = _mfig.Figure(facecolor='white')
+        self._t0range_ax  = self._t0range_fig.add_subplot(111)
+        self.cv_t0range   = _FigCanvas(self._t0range_fig)
+        self.cv_t0range.setFixedSize(1450, 380)
+        p5tl.addWidget(self.cv_t0range)
+
         degas_center = QtWidgets.QHBoxLayout()
         degas_center.addStretch()
         degas_center.addWidget(p5)
@@ -2224,8 +2237,15 @@ class CalcT0Page(QtWidgets.QWidget):
         degas_center.addStretch()
         guide_vl.addLayout(degas_center)
 
-        # v3.8.39: container height 300 → 460 to fit the enlarged 720×440 canvases
-        guide_container.setFixedHeight(460)
+        # v3.8.44: second row — T₀ range chart centered
+        t0r_center = QtWidgets.QHBoxLayout()
+        t0r_center.addStretch()
+        t0r_center.addWidget(p5_t0r)
+        t0r_center.addStretch()
+        guide_vl.addLayout(t0r_center)
+
+        # v3.8.44: container height 460 → 860 (440 row1 + 380 row2 + spacing)
+        guide_container.setFixedHeight(860)
         left_vb.addWidget(guide_container)
         
         # Hidden tables used by _refresh_sum / _refresh_prev (no UI surface)
@@ -2553,6 +2573,14 @@ class CalcT0Page(QtWidgets.QWidget):
         if hasattr(self, 'footMsg'):
             self.footMsg.setText('✓ Pre-compute done — step switch is now instant')
         self._prefetch_worker = None
+        # v3.8.44: T₀ range chart needs the prefetch cache to render —
+        # repaint when all combos are ready so the user doesn't have to
+        # manually switch step to see it populate.
+        if hasattr(self, 'cv_t0range'):
+            try:
+                self._paint_t0range_pattern()
+            except Exception:
+                pass
 
     def _mask_changed(self):
         # Sync canvas masks back to _bmask / _smask before recalculating
@@ -3029,6 +3057,9 @@ class CalcT0Page(QtWidgets.QWidget):
         self._paint_degas_pattern()
         if hasattr(self, 'cv_yield'):
             self._paint_yield_pattern()
+        # v3.8.44: third panel — T₀ range distribution (³⁶/³⁷/³⁸Ar)
+        if hasattr(self, 'cv_t0range'):
+            self._paint_t0range_pattern()
 
     # New advanced analysis panels (⑤⑥⑦⑧)
     # ══════════════════════════════════════════════════════════
@@ -3279,6 +3310,133 @@ class CalcT0Page(QtWidgets.QWidget):
         try: self._yield_fig.tight_layout(pad=0.5)
         except Exception: pass
         self.cv_yield.draw()
+
+    def _paint_t0range_pattern(self):
+        """v3.8.44: T₀ range distribution per (signal step, isotope).
+
+        For every signal step and every of ³⁶/³⁷/³⁸Ar, fetch ALL combo
+        T₀ values from the v3.8.26 prefetch cache (~848 combos per
+        isotope/step) and draw a box plot. The user sees:
+
+          - min / max range of T₀ for each (step, isotope)
+          - where the bulk sits (Q1–Q3 box + median line)
+          - a grey reference line at 0
+
+        Use it to pick a sensible blank cycle subset:
+        blank T₀ should be **well below the min of every signal step's
+        T₀ range** for that isotope (otherwise blank correction either
+        over-shoots or flips sign).
+
+        Cache source: parent's `_prefetch_cache` (populated by
+        PrefetchWorker after load_signal). If prefetch not finished,
+        only the partial set so far is shown.
+        """
+        ax = self._t0range_ax
+        ax.clear()
+        self._t0range_fig.patch.set_facecolor('white')
+
+        cache = getattr(self, '_prefetch_cache', None)
+        if not self._svt or not cache:
+            ax.text(0.5, 0.5,
+                    'Pre-computing combos…\n(load signal files, '
+                    'then wait for prefetch in footer)',
+                    ha='center', va='center', transform=ax.transAxes,
+                    color='grey', fontsize=11)
+            try: self._t0range_fig.tight_layout(pad=0.5)
+            except Exception: pass
+            self.cv_t0range.draw()
+            return
+
+        import re
+        iso_colors = ['#1a5fb4', '#1c7a3a', '#8a5a00']   # ³⁶ ³⁷ ³⁸
+        iso_names  = ['³⁶Ar', '³⁷Ar', '³⁸Ar']
+
+        # Sort steps by temperature
+        temp_pairs = []
+        for nm in self._svt.keys():
+            m = re.search(r'(\d+)', nm)
+            if m:
+                temp_pairs.append((int(m.group(1)), nm))
+        temp_pairs.sort()
+        if not temp_pairs:
+            return
+
+        # Build box-plot data: x positions grouped per step
+        bar_w = 0.65
+        gap_in = 0.05   # spacing between Ar36/37/38 within a step
+        gap_out = 0.6   # spacing between steps
+        positions = []
+        all_t0s = []
+        all_colors = []
+        group_centers = []
+        group_labels = []
+        x = 0.0
+        for temp_val, nm in temp_pairs:
+            vt_list = self._svt[nm]
+            step_xs = []
+            for ai in range(3):   # Ar36, Ar37, Ar38
+                key = (id(vt_list[ai]), self._fit, self._nc)
+                cached_fits = cache.get(key)
+                if cached_fits:
+                    t0s = [c[0] for c in cached_fits]
+                    if t0s:
+                        positions.append(x)
+                        all_t0s.append(t0s)
+                        all_colors.append(iso_colors[ai])
+                        step_xs.append(x)
+                x += bar_w + gap_in
+            if step_xs:
+                group_centers.append(sum(step_xs) / len(step_xs))
+                group_labels.append(str(temp_val))
+            x += gap_out
+
+        if not positions:
+            ax.text(0.5, 0.5, 'Prefetch cache empty — wait a few seconds',
+                    ha='center', va='center', transform=ax.transAxes,
+                    color='grey', fontsize=11)
+            try: self._t0range_fig.tight_layout(pad=0.5)
+            except Exception: pass
+            self.cv_t0range.draw()
+            return
+
+        bp = ax.boxplot(all_t0s, positions=positions, widths=bar_w,
+                        patch_artist=True, showfliers=False,
+                        medianprops=dict(color='black', linewidth=1.0),
+                        whiskerprops=dict(linewidth=0.8),
+                        capprops=dict(linewidth=0.8))
+        for patch, col in zip(bp['boxes'], all_colors):
+            patch.set_facecolor(col)
+            patch.set_alpha(0.55)
+            patch.set_edgecolor(col)
+
+        # Reference at 0
+        ax.axhline(0, color='grey', linestyle=':', linewidth=0.9, alpha=0.7)
+
+        # x-axis: temperature labels at group centers
+        ax.set_xticks(group_centers)
+        ax.set_xticklabels(group_labels, fontsize=9)
+        ax.set_xlabel('Temperature (°C)', fontsize=11)
+        ax.set_ylabel('$T_0$ range (mV)', fontsize=11)
+        ax.tick_params(axis='y', labelsize=10)
+        ax.ticklabel_format(style='sci', axis='y', scilimits=(0, 0),
+                            useMathText=False)
+
+        # Legend (iso color swatches)
+        from matplotlib.patches import Patch
+        handles = [Patch(facecolor=c, alpha=0.55, label=n)
+                   for c, n in zip(iso_colors, iso_names)]
+        ax.legend(handles=handles, fontsize=10, loc='best', framealpha=0.85)
+        ax.grid(True, alpha=0.2, axis='y')
+
+        # Title hint
+        ax.set_title(
+            'Signal T₀ range (all C(10, 4..10) combos per isotope) — '
+            'pick blank T₀ ≪ min of these',
+            fontsize=10, color='#444')
+
+        try: self._t0range_fig.tight_layout(pad=0.5)
+        except Exception: pass
+        self.cv_t0range.draw()
 
 
     # ── Save ─────────────────────────────────────────────────

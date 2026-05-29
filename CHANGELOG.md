@@ -1,8 +1,78 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44
 最後整理日期：2026-05-28
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.44（2026-05-28）— CalcT0Page 新增 Signal T₀ Range 第三 panel（給 blank 挑 cycle 用）
+
+### 需求
+
+使用者在挑 Blank 的時候，不知道 Signal 各個溫度 step 的 ³⁶/³⁷/³⁸Ar T₀ 大概在什麼範圍，所以也不知道 Blank T₀ 應該壓在多少才合理（blank 應 ≪ signal）。要在 Degassing Pattern Overview 區加一張圖顯示「signal 各 step 跑所有 C(10, 4..10) cycle combos 的 T₀ 分佈」。
+
+### 修法
+
+#### 1. 新 wide chart 加在 Degassing/Yield 下方
+
+`CalcT0Page._build` Degassing 區改成兩排：
+
+```
+┌────────────── guide_container (860 px tall) ───────────────┐
+│  [Degassing 720×440]  [Yield 720×440]      ← row 1         │
+│         [T₀ Range 1450×380]                ← row 2 (NEW)   │
+└────────────────────────────────────────────────────────────┘
+```
+
+`guide_container.setFixedHeight(460 → 860)`。
+
+#### 2. `_paint_t0range_pattern()` 新方法
+
+對每個 signal step、每個 ³⁶/³⁷/³⁸Ar isotope，從 v3.8.26 加的 `_prefetch_cache` 拿全部 C(10, 4..10) ≈ 848 個 combos 的 T₀ 值，畫 matplotlib `boxplot`：
+
+- box = Q1–Q3 範圍
+- median 黑色橫線
+- 鬚 = min/max (no fliers)
+- 顏色：藍 ³⁶Ar / 綠 ³⁷Ar / 棕 ³⁸Ar
+- 灰虛線 reference at y=0
+- 標題：「Signal T₀ range (all C(10, 4..10) combos per isotope) — pick blank T₀ ≪ min of these」
+
+每個溫度 step 三個 box 並排（³⁶/³⁷/³⁸ 一組），step 之間留 gap。x 軸 label 是溫度數字。
+
+#### 3. Prefetch finished 自動 trigger refresh
+
+`_on_prefetch_finished` 加 `self._paint_t0range_pattern()` call，使用者不用切 step 就能看到 chart 自動 populate。
+
+`_refresh_guide` 也加這張 paint call，跟 Degassing / Yield 同步刷新。
+
+### 怎麼用
+
+1. 載入 sample signal 之後 sidebar status 會顯示 `Pre-computing: 12/45...`
+2. 等到 `✓ Pre-compute done` （v3.8.27 closed-form fast path 後 < 5 秒）
+3. T₀ Range chart 自動顯示：每個 step 三個 box，標出 ³⁶/³⁷/³⁸Ar 的 T₀ 範圍
+4. 切到 Blank tab → 看自己挑的 cycle 算出來的 blank T₀，比照 chart 上 signal 範圍：
+   - 如果 |blank T₀| > 某些 step 的 min signal T₀ → blank correction 過頭，要重挑
+   - 如果 blank T₀ << min signal T₀（差 1 個數量級以上）→ OK
+
+### 驗證 checklist
+
+- [ ] 載入 NO.65 muscovite blank + 多個溫度 sample → Calculate T₀
+- [ ] 等 footer 顯示 `✓ Pre-compute done`
+- [ ] 下方第二排（Degassing / Yield 之下）應該有第三 panel，標題 "Signal T₀ range..."
+- [ ] 每個 step 三個 colored box (³⁶ ³⁷ ³⁸Ar)
+- [ ] 切到 Blank tab → 看 mV chart 顯示的 blank T₀ 跟 T₀ range chart 對照
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - `CalcT0Page._build` Degassing 區段加第三個 canvas `cv_t0range` (1450×380)
+  - `guide_container.setFixedHeight(460 → 860)`
+  - `_paint_t0range_pattern()` 新方法（box plot from prefetch cache）
+  - `_refresh_guide()` 加 t0range paint call
+  - `_on_prefetch_finished()` 加 t0range repaint trigger
+- `.work/.app_info.txt`：3.8.43 → 3.8.44
+- `CHANGELOG.md`：本段
 
 ---
 
