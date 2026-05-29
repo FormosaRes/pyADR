@@ -6316,6 +6316,10 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
         # so _refresh_pipe_visuals iteration logic doesn't need conditionals.
         self._pipe_status  = []
         self._state_done = {0: False, 1: False, 2: False}
+        # v3.8.51: signature of the T0 input state at the last successful
+        # pipeline run. Stepper clicks compare against it to decide
+        # navigate-only vs recompute (see _pipe_click / _pipeline_input_sig).
+        self._last_run_sig = None
 
         BLUE = '#1a5fb4'
         GREY = '#bbbbbb'
@@ -6459,11 +6463,52 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
                 line_col = BLUE if (is_blue[i] and is_blue[i + 1]) else GREY
                 self._pipe_lines[i].setStyleSheet(f'background:{line_col};')
 
+    def _pipeline_input_sig(self):
+        """v3.8.51: cheap signature of every T0-page input that feeds the
+        pipeline (raw blank/signal cycle data, cycle-selection masks, fit
+        type, cycle count). Used by _pipe_click to tell whether the user
+        actually changed anything since the last successful run. Returns a
+        hex digest, or None if it can't be computed (caller then treats the
+        state as 'unchanged' so a plain page switch never forces a recompute)."""
+        import hashlib
+        t0 = self.t0Page
+        try:
+            h = hashlib.md5()
+
+            def upd(a):
+                h.update(np.ascontiguousarray(np.asarray(a, dtype=float)).tobytes())
+
+            bvt = getattr(t0, '_bvt', None)
+            if bvt is not None:
+                for a in bvt:
+                    upd(a)
+            svt = getattr(t0, '_svt', {}) or {}
+            for k in sorted(svt.keys()):
+                h.update(str(k).encode('utf-8'))
+                for a in svt[k]:
+                    upd(a)
+            bmask = getattr(t0, '_bmask', None)
+            if bmask is not None:
+                for a in bmask:
+                    upd(a)
+            smask = getattr(t0, '_smask', {}) or {}
+            for k in sorted(smask.keys()):
+                h.update(str(k).encode('utf-8'))
+                for a in smask[k]:
+                    upd(a)
+            h.update(str(getattr(t0, '_fit', '')).encode('utf-8'))
+            h.update(str(getattr(t0, '_nc', '')).encode('utf-8'))
+            return h.hexdigest()
+        except Exception:
+            return None
+
     def _pipe_click(self, idx):
-        """Pipeline circle/card clicked. v3.8.20: navigate AND recompute.
-          • idx 0: just navigate to T₀ page (interactive page, no auto-recompute)
-          • idx 1: run pipeline → land on Mass Ratio page
-          • idx 2: run pipeline → land on Age Calc page
+        """Pipeline circle/card clicked.
+          • idx 0: just navigate to T₀ page (interactive page, no recompute)
+          • idx 1/2: v3.8.51 — navigate-only if that stage already has
+            results AND nothing feeding the pipeline changed since the last
+            successful run. Otherwise run the pipeline and land there.
+        Explicit recompute is always available via the ↻ Next button.
         Requires t0Page to have data loaded; otherwise shows a warning."""
         if idx == 0:
             self._go(0)
@@ -6478,6 +6523,14 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
         if getattr(self, '_worker', None) is not None and \
            self._worker.isRunning():
             self.statusBar().showMessage('Pipeline already running…')
+            return
+        # v3.8.51: skip the recompute when results exist and inputs are
+        # unchanged — switching pages should not silently re-run the
+        # pipeline. (cur_sig is None → can't tell → treat as unchanged.)
+        cur_sig = self._pipeline_input_sig()
+        if self._state_done.get(idx) and (
+                cur_sig is None or cur_sig == self._last_run_sig):
+            self._go(idx)
             return
         self._target_after_run = idx
         self._run_pipeline()
@@ -6548,6 +6601,9 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
         # (set by _pipe_click or _next_action) instead of always landing on MR.
         self._state_done[1] = True
         self._state_done[2] = True
+        # v3.8.51: remember the input state that produced these results so a
+        # later stepper click with no changes navigates instead of recomputing.
+        self._last_run_sig = self._pipeline_input_sig()
         target = getattr(self, '_target_after_run', 1)
         self._go(target)
         # Reset target so a stale value doesn't carry over to the next run

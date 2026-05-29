@@ -1,8 +1,74 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51
 最後整理日期：2026-05-29
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.51（2026-05-29）— 切換 stepper 頁面不再無謂重算
+
+### 問題
+
+使用者在 Calculate T₀ / Mass Ratio / Age Calc + Datum 之間用上方 stepper 圓圈切換時，明明沒有改任何輸入，每次都重跑整條 pipeline。
+
+### 根因
+
+stepper 圓圈的 `_pipe_click(idx)` 對 idx 1（Mass Ratio）/ idx 2（Age Calc）**無條件**呼叫 `_run_pipeline()`（v3.8.20 當時設計成「導覽即重算」）。`_go()` 本身是純切換不重算，但 stepper 點擊沒走 `_go`，所以每次切頁都重算。
+
+### 修法
+
+stepper 圓圈改成「輸入沒變就只切換」：
+
+#### 1. 新增 `_pipeline_input_sig()`
+
+對所有會影響 pipeline 輸出的 T0-page 輸入算一個 md5 signature：
+
+- `_bvt`（blank 原始 cycle 資料）
+- `_svt`（signal 原始 cycle 資料，per step）
+- `_bmask` / `_smask`（cycle 選擇 mask）
+- `_fit`（fit 類型）、`_nc`（cycle 數）
+
+算不出來（例外）回傳 None，呼叫端視為「沒變」，確保單純切頁絕不會意外觸發重算。
+
+#### 2. `_pipe_click` 加判斷
+
+```python
+cur_sig = self._pipeline_input_sig()
+if self._state_done.get(idx) and (cur_sig is None or cur_sig == self._last_run_sig):
+    self._go(idx)      # 已算過且輸入沒變 → 只切換
+    return
+self._target_after_run = idx
+self._run_pipeline()   # 沒結果或輸入有變 → 才重算
+```
+
+#### 3. `_on_done` 記錄 signature
+
+成功計算後存 `self._last_run_sig = self._pipeline_input_sig()`，下次切頁比對。初始化 `self._last_run_sig = None`（在 `_state_done` 初始化旁）。
+
+### 行為矩陣
+
+| 操作 | 結果 |
+|---|---|
+| 跑完 pipeline → stepper 切來切去 | 只切換，不重算 |
+| 改 T0 輸入（換檔/改 cycle 選擇/改 fit）→ 點 stepper | 重算（sig 不符） |
+| ↻ Next 按鈕 | 永遠重算（明確動作，維持原行為） |
+| 載入 .adr 存檔 → 第一次點 MR/Age | 算一次（`_state_done` 仍 False）→ 之後切換不重算 |
+| idx 0（T₀ 頁） | 一律 `_go(0)`，本來就不重算 |
+
+QStackedWidget 不會銷毀分頁，mrPage/agePage 上次 populate 的表格與圖都還在，純切換直接顯示既有結果。
+
+### 驗證 checklist
+
+- [ ] 跑完 pipeline，反覆點 3 個 stepper 圓圈：狀態列不再出現「Running pipeline...」，瞬間切換
+- [ ] 在 T₀ 頁改 cycle 選擇或 fit → 點 Mass Ratio 圓圈：會重算（正確）
+- [ ] ↻ Next 仍可強制重算
+- [ ] NO.65：跑一次得 9.77 ± 0.28 Ma 後，來回切頁數值不變
+
+### 檔案改動
+
+- `AutoPipeline.py`：`_pipeline_input_sig`（新）、`_pipe_click`（加 sig 判斷）、`_on_done`（存 sig）、`__init__` 加 `_last_run_sig`
+- `.work/.app_info.txt`：3.8.50 → 3.8.51
 
 ---
 
