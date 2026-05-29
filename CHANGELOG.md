@@ -1,8 +1,63 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52
 最後整理日期：2026-05-29
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.52（2026-05-29）— T₀ Range 圖加 blank 實際位置 + 各 step 選定 T₀ ± σ
+
+### 需求
+
+Calculate T₀ 頁的 T₀ Range 盒鬚圖，加上：
+1. blank 的實際 T₀ 位置（不只是 legend 給的 target 估計）。
+2. 各 step 選定的 T₀（± σ）用點標在該 step 的盒子上。
+
+### 修法（`_paint_t0range_pattern`）
+
+box 圖原本只畫各 step×isotope 所有 C(10,4..10) combo 的 T₀ 分布。新增兩層 overlay：
+
+#### Overlay 1：選定 T₀ ± σ 點
+
+- box 迴圈多收一個 `box_meta`（與 positions 平行的 `(step_name, isotope_idx)`）
+- 畫完 box 後，對每個 box 用**當前 cycle mask** 算選定值：
+  `t0, sig, _, _ = _fit_one(fit_func, self._svt[nm][ai], self._smask[nm][ai])`
+- `ax.errorbar(positions, t0s, yerr=sig)` 黑邊白心圓點 + 垂直 σ bar，zorder 6（蓋在 box 上）
+- 意義：box 是全 combo 範圍，點是「實際選用的那組 cycle」落在分布何處
+
+#### Overlay 2：blank T₀ 實際位置
+
+- 先 `_calc_blank_t0()` 確保 `self._bT0` 為當前 mask/fit 的值
+- 每個啟用同位素畫一條該色虛線在 `self._bT0[ai]`（zorder 4）
+- 乾淨的 blank 應 ≈ 0 / 遠低於 signal 盒子
+
+#### y 軸夾制
+
+overlay 前先抓 box 的 ylim，overlay 後 `set_ylim` 只納入 box 範圍 + 選定點中心 + blank 線（padding 6%），讓某個 step 的超大 σ bar 被裁切而非把整張圖壓扁。
+
+#### Legend / 標題
+
+- 每個同位素 swatch 標籤改成嵌入**實際 blank 值** `³⁶Ar blank=2.1e-04`（沒載 blank 才 fallback 回 target）
+- 加兩個 legend 項目：`selected T₀ ± σ`（圓點）、`blank T₀ (dashed)`（虛線）
+- 標題改 `Signal T₀ range per step (box) · selected T₀ ± σ (dots) · blank T₀ (dashed)`
+
+#### Manual 模式也即時刷新
+
+`_mask_changed` 原本只在 Auto 模式 debounce 刷新 guide（舊註解：Degassing 用 cache 所以 Manual 跳過）。Degassing 已於 v3.8.47 移除，現在只剩 T₀ Range 圖且 repaint 便宜（box 取自 cache + 每盒一次 `_fit_one`）。改成**兩種模式都 schedule** 300 ms debounce 刷新，讓使用者手動點選 cycle 時 selected 點 + blank 線即時跟動。
+
+### 驗證 checklist
+
+- [ ] T₀ Range 圖每個盒子上有黑邊白心點（選定 T₀）+ 垂直 σ bar
+- [ ] 每個啟用同位素一條該色虛線在 blank T₀；blank ≈ 0 時貼著 0 參考線
+- [ ] legend 顯示各同位素實際 blank 值 + selected / blank 兩個說明項
+- [ ] Manual 模式改 cycle 選擇 → 約 0.3s 後該 step 的點跟著移動
+- [ ] 某 step σ 很大時整張圖不會被壓扁（被裁切）
+
+### 檔案改動
+
+- `AutoPipeline.py`：`_paint_t0range_pattern`（box_meta + 兩層 overlay + ylim 夾制 + legend/title）、`_mask_changed`（Manual 也刷新）
+- `.work/.app_info.txt`：3.8.51 → 3.8.52
 
 ---
 

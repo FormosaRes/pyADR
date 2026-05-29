@@ -2626,10 +2626,12 @@ class CalcT0Page(QtWidgets.QWidget):
         # Always do fast summary update
         self._refresh_sum_only()
         self._update_step_colors()
-        # Auto mode: debounced guide (Degassing) refresh after 300ms idle.
-        # Manual mode: skip (Degassing pattern uses cache so refresh is cheap on next step click).
-        if not self._manual:
-            self._schedule_guide_refresh()
+        # v3.8.52: always do the debounced guide refresh (300 ms idle), in
+        # BOTH Auto and Manual modes. Only the T₀ Range chart remains here
+        # (Degassing/Yield removed in v3.8.47); its repaint is cheap (boxes
+        # from cache + per-box selected-T₀ fits), and the user wants the
+        # selected-T₀ dots + blank line to track their cycle picks live.
+        self._schedule_guide_refresh()
 
     def _schedule_guide_refresh(self):
         """Debounced refresh: triggers guide update only after user pauses clicking."""
@@ -3409,6 +3411,7 @@ class CalcT0Page(QtWidgets.QWidget):
         all_colors = []
         group_centers = []
         group_labels = []
+        box_meta = []   # v3.8.52: parallel to positions — (step_name, isotope_idx)
         # Also collect per-isotope T₀ pool for blank-target strategy
         per_iso_t0s = [[] for _ in range(5)]
         x = 0.0
@@ -3428,6 +3431,7 @@ class CalcT0Page(QtWidgets.QWidget):
                         all_colors.append(iso_colors[ai])
                         step_xs.append(x)
                         per_iso_t0s[ai].extend(t0s)
+                        box_meta.append((nm, ai))   # v3.8.52
                 x += bar_w + gap_in
             if step_xs:
                 group_centers.append(sum(step_xs) / len(step_xs))
@@ -3455,6 +3459,57 @@ class CalcT0Page(QtWidgets.QWidget):
 
         # Reference at 0
         ax.axhline(0, color='grey', linestyle=':', linewidth=0.9, alpha=0.7)
+
+        # Capture the box/whisker y-range BEFORE overlays so a single large
+        # σ error bar can't squash the whole view.
+        _ybox_lo, _ybox_hi = ax.get_ylim()
+
+        # ── v3.8.52 overlay 1: selected T₀ ± σ per box ──────────────
+        # The box shows the FULL T₀ range across all C(10,4..10) combos.
+        # This dot marks the T₀ actually selected for that step+isotope
+        # (current cycle mask), with a vertical bar = ±σ_T0. Lets the user
+        # see where their pick sits within the combo distribution.
+        f = Utilities.fit_func_list[self._fit]
+        sel_xs, sel_ys, sel_err = [], [], []
+        for pos, (nm, ai) in zip(positions, box_meta):
+            try:
+                mask = self._smask[nm][ai]
+                t0, sig, _, _ = _fit_one(f, self._svt[nm][ai], mask)
+                sel_xs.append(pos); sel_ys.append(t0)
+                sel_err.append(sig if (sig == sig and sig > 0) else 0.0)
+            except Exception:
+                pass
+        if sel_xs:
+            ax.errorbar(sel_xs, sel_ys, yerr=sel_err, fmt='o', ms=4.5,
+                        mfc='white', mec='black', mew=1.0,
+                        ecolor='black', elinewidth=0.8, capsize=2.5,
+                        linestyle='none', zorder=6)
+
+        # ── v3.8.52 overlay 2: blank T₀ actual position per isotope ──
+        # Horizontal dashed line per enabled isotope at its blank T₀ (the
+        # value subtracted from every signal step). Should sit ≈ 0 / well
+        # below the signal boxes for a clean blank.
+        blank_ys = []
+        if self._bvt is not None:
+            try:
+                self._calc_blank_t0()   # ensure _bT0 reflects current mask/fit
+            except Exception:
+                pass
+            for ai in range(5):
+                if not enabled[ai]:
+                    continue
+                by = float(self._bT0[ai])
+                blank_ys.append(by)
+                ax.axhline(by, color=iso_colors[ai], linestyle='--',
+                           linewidth=1.3, alpha=0.9, zorder=4)
+
+        # Clamp y-range: include box range, selected-T₀ centers and blank
+        # lines, but let oversized σ bars clip rather than rescale everything.
+        _lo = min([_ybox_lo] + sel_ys + blank_ys)
+        _hi = max([_ybox_hi] + sel_ys + blank_ys)
+        if _hi > _lo:
+            _pad = (_hi - _lo) * 0.06
+            ax.set_ylim(_lo - _pad, _hi + _pad)
 
         # x-axis: temperature labels at group centers
         ax.set_xticks(group_centers)
@@ -3490,25 +3545,37 @@ class CalcT0Page(QtWidgets.QWidget):
             else:
                 targets.append(sig_min / 10.0)
 
-        # Legend labels with embedded target ranges.
-        # v3.8.46: only show legend rows for enabled isotopes.
+        # Legend: per-isotope swatch (with ACTUAL blank T₀ value now that we
+        # draw the blank line), plus entries for the two overlays.
+        # v3.8.46: only show rows for enabled isotopes.
+        # v3.8.52: embed actual blank T₀ (falls back to target if no blank).
         from matplotlib.patches import Patch
+        from matplotlib.lines import Line2D
         handles = []
         for ai, (c, n, tgt) in enumerate(zip(iso_colors, iso_names, targets)):
             if not enabled[ai]:
                 continue
-            lbl = f'{n}  blank {_fmt_target(tgt)}'
+            if self._bvt is not None:
+                lbl = f'{n}  blank={self._bT0[ai]:.1e}'
+            else:
+                lbl = f'{n}  blank {_fmt_target(tgt)}'
             handles.append(Patch(facecolor=c, alpha=0.55, label=lbl))
-        ax.legend(handles=handles, fontsize=9, loc='upper right',
+        handles.append(Line2D([0], [0], marker='o', color='black',
+                              markerfacecolor='white', markeredgecolor='black',
+                              markersize=5, linestyle='none',
+                              label='selected T₀ ± σ'))
+        handles.append(Line2D([0], [0], color='grey', linestyle='--',
+                              linewidth=1.3, label='blank T₀ (dashed)'))
+        ax.legend(handles=handles, fontsize=8.5, loc='upper right',
                   framealpha=0.9, ncol=1,
-                  title='Blank T₀ target (= signal min / 10)',
-                  title_fontsize=9)
+                  title='blank T₀ = dashed line per isotope',
+                  title_fontsize=8.5)
         ax.grid(True, alpha=0.2, axis='y')
 
         # Title hint
         ax.set_title(
-            'Signal T₀ range (all C(10, 4..10) combos per isotope) — '
-            'pick blank T₀ ≪ min of each isotope\'s range',
+            'Signal T₀ range per step (box) · selected T₀ ± σ (dots) · '
+            'blank T₀ (dashed) — pick blank ≪ signal range',
             fontsize=10, color='#444')
 
         try: self._t0range_fig.tight_layout(pad=0.5)
