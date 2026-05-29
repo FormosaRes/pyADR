@@ -2217,16 +2217,44 @@ class CalcT0Page(QtWidgets.QWidget):
         p5yl.addWidget(self.cv_yield)
 
         # v3.8.44: third panel — T₀ range distribution from all 4..10 cycle
-        # combos of ³⁶/³⁷/³⁸Ar across every signal step. Helps the user
+        # combos of every isotope across every signal step. Helps the user
         # gauge the blank T₀ target range (blank should be << min signal T₀)
         # before picking blank cycles. Wide chart, sits in a second row
         # below the two square ones.
+        # v3.8.46: added per-isotope checkboxes so ³⁹/⁴⁰Ar can be hidden
+        # (their strong signals compress the ³⁶/³⁷/³⁸ ranges to be unreadable).
         p5_t0r = QtWidgets.QWidget()
-        p5tl = QtWidgets.QVBoxLayout(p5_t0r); p5tl.setContentsMargins(0,0,0,0); p5tl.setSpacing(1)
+        p5tl = QtWidgets.QVBoxLayout(p5_t0r); p5tl.setContentsMargins(0,0,0,0); p5tl.setSpacing(2)
+
+        # Toggle row above the chart
+        toggle_hl = QtWidgets.QHBoxLayout(); toggle_hl.setSpacing(8)
+        toggle_hl.addWidget(QtWidgets.QLabel('<b>Show:</b>'))
+        self._t0r_cb = {}
+        # Default: ³⁶/³⁷/³⁸ on, ³⁹/⁴⁰ off (strong signal isotopes hidden
+        # so the weaker ones remain readable on the same y-scale).
+        _iso_default = {0: True, 1: True, 2: True, 3: False, 4: False}
+        _iso_labels  = {0: '³⁶Ar', 1: '³⁷Ar', 2: '³⁸Ar', 3: '³⁹Ar', 4: '⁴⁰Ar'}
+        for ai in range(5):
+            cb = QtWidgets.QCheckBox(_iso_labels[ai])
+            cb.setChecked(_iso_default[ai])
+            cb.setStyleSheet(
+                f'QCheckBox{{color:{AR_COLS[ai]};font-weight:bold;font-size:12px;}}')
+            cb.stateChanged.connect(self._paint_t0range_pattern)
+            self._t0r_cb[ai] = cb
+            toggle_hl.addWidget(cb)
+        toggle_hl.addSpacing(15)
+        _hint = QtWidgets.QLabel(
+            '<span style="color:#666;font-size:10px;">'
+            '(strong signals ³⁹/⁴⁰Ar default off — they compress the '
+            'y-scale and hide ³⁶/³⁷/³⁸ ranges)</span>')
+        toggle_hl.addWidget(_hint)
+        toggle_hl.addStretch()
+        p5tl.addLayout(toggle_hl)
+
         self._t0range_fig = _mfig.Figure(facecolor='white')
         self._t0range_ax  = self._t0range_fig.add_subplot(111)
         self.cv_t0range   = _FigCanvas(self._t0range_fig)
-        self.cv_t0range.setFixedSize(1450, 380)
+        self.cv_t0range.setFixedSize(1450, 360)   # 380 → 360 (toggle row 上方占 20)
         p5tl.addWidget(self.cv_t0range)
 
         degas_center = QtWidgets.QHBoxLayout()
@@ -3341,11 +3369,24 @@ class CalcT0Page(QtWidgets.QWidget):
             return
 
         import re
-        # v3.8.45: 5 isotopes now (was 3). Reuse module-level AR_COLS so
-        # the colors match the cycle-button / mV-chart palette user has
-        # already learned.
+        # v3.8.45: 5 isotopes total. Reuse module-level AR_COLS so colors
+        # match the cycle-button / mV-chart palette user has learned.
         iso_colors = list(AR_COLS)                           # 36 37 38 39 40
         iso_names  = ['³⁶Ar', '³⁷Ar', '³⁸Ar', '³⁹Ar', '⁴⁰Ar']
+        # v3.8.46: read checkbox state — only paint enabled isotopes.
+        # Default: ³⁶/³⁷/³⁸ on, ³⁹/⁴⁰ off.
+        if hasattr(self, '_t0r_cb'):
+            enabled = [self._t0r_cb[ai].isChecked() for ai in range(5)]
+        else:
+            enabled = [True, True, True, False, False]
+        if not any(enabled):
+            ax.text(0.5, 0.5, 'No isotope selected — check at least one box',
+                    ha='center', va='center', transform=ax.transAxes,
+                    color='grey', fontsize=11)
+            try: self._t0range_fig.tight_layout(pad=0.5)
+            except Exception: pass
+            self.cv_t0range.draw()
+            return
 
         # Sort steps by temperature
         temp_pairs = []
@@ -3358,22 +3399,26 @@ class CalcT0Page(QtWidgets.QWidget):
             return
 
         # Build box-plot data: x positions grouped per step
-        # v3.8.45: narrower box / smaller gap_in to fit 5 isotopes per group
-        bar_w = 0.55
-        gap_in = 0.04
-        gap_out = 0.7
+        # v3.8.46: bar / spacing dynamic — wider boxes when fewer isotopes shown.
+        n_show = sum(enabled)
+        if n_show <= 3:
+            bar_w, gap_in, gap_out = 0.65, 0.05, 0.6
+        else:
+            bar_w, gap_in, gap_out = 0.55, 0.04, 0.7
         positions = []
         all_t0s = []
         all_colors = []
         group_centers = []
         group_labels = []
-        # v3.8.45: also collect per-isotope T₀ pool for strategy computation
+        # Also collect per-isotope T₀ pool for blank-target strategy
         per_iso_t0s = [[] for _ in range(5)]
         x = 0.0
         for temp_val, nm in temp_pairs:
             vt_list = self._svt[nm]
             step_xs = []
-            for ai in range(5):   # ³⁶ ³⁷ ³⁸ ³⁹ ⁴⁰
+            for ai in range(5):
+                if not enabled[ai]:
+                    continue   # v3.8.46: skip disabled isotopes
                 key = (id(vt_list[ai]), self._fit, self._nc)
                 cached_fits = cache.get(key)
                 if cached_fits:
@@ -3446,10 +3491,13 @@ class CalcT0Page(QtWidgets.QWidget):
             else:
                 targets.append(sig_min / 10.0)
 
-        # Legend labels with embedded target ranges
+        # Legend labels with embedded target ranges.
+        # v3.8.46: only show legend rows for enabled isotopes.
         from matplotlib.patches import Patch
         handles = []
-        for c, n, tgt in zip(iso_colors, iso_names, targets):
+        for ai, (c, n, tgt) in enumerate(zip(iso_colors, iso_names, targets)):
+            if not enabled[ai]:
+                continue
             lbl = f'{n}  blank {_fmt_target(tgt)}'
             handles.append(Patch(facecolor=c, alpha=0.55, label=lbl))
         ax.legend(handles=handles, fontsize=9, loc='upper right',

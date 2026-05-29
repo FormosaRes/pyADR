@@ -1,8 +1,107 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46
 最後整理日期：2026-05-28
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.46（2026-05-28）— T₀ Range chart 加 isotope toggle（³⁹/⁴⁰ 預設 off）
+
+### 需求
+
+³⁹/⁴⁰Ar 訊號比 ³⁶/³⁷/³⁸ 強約 1-2 個數量級，全部一起畫 y 軸自動 scale 會把 ³⁶/³⁷/³⁸ 的 box 壓到看不清楚。使用者要可以 toggle 開關各 isotope。
+
+完整 user request 還有：
+2. 把所有 step 的 signal 疊起來找重疊區域，反推 blank 合適值
+3. 選 cycle 組合讓 `signal T₀ ≈ blank T₀`（plateau 策略，最小化 ³⁶Ar(net)）
+4. 顯示 `³⁶Ar × 298.56 < ⁴⁰Ar` 1-2 個數量級的物理指標
+
+#1（toggle）是 #2-4 的前提，這版先做。#2-4 留下版。
+
+### 修法
+
+#### 1. Chart 上方加 5 個 QCheckBox
+
+```
+Show:  [✓] ³⁶Ar  [✓] ³⁷Ar  [✓] ³⁸Ar  [ ] ³⁹Ar  [ ] ⁴⁰Ar
+       (strong signals ³⁹/⁴⁰Ar default off — they compress y-scale)
+```
+
+每個 checkbox 顏色配 `AR_COLS[ai]` (跟 mV chart / cycle button 配色一致)。stateChanged signal 直接 trigger `_paint_t0range_pattern`。
+
+預設 state：
+- ³⁶Ar ✓ on
+- ³⁷Ar ✓ on
+- ³⁸Ar ✓ on
+- ³⁹Ar ✗ off
+- ⁴⁰Ar ✗ off
+
+#### 2. `_paint_t0range_pattern` 讀 state
+
+```python
+enabled = [self._t0r_cb[ai].isChecked() for ai in range(5)]
+if not any(enabled):
+    # 顯示 placeholder "check at least one box"
+    return
+```
+
+inner loop 內 `if not enabled[ai]: continue` 跳過 disabled isotope。
+
+#### 3. 動態 box 寬度
+
+```python
+n_show = sum(enabled)
+if n_show <= 3:
+    bar_w, gap_in, gap_out = 0.65, 0.05, 0.6   # 寬 box，少 isotope 時用
+else:
+    bar_w, gap_in, gap_out = 0.55, 0.04, 0.7   # 窄 box，4-5 isotope 時用
+```
+
+#### 4. Legend 只顯示 enabled isotope
+
+避免顯示 disable 的 isotope 的 blank target（會誤導）。
+
+### 怎麼用
+
+- 預設只看 ³⁶/³⁷/³⁸Ar，y 軸範圍合理
+- 想看 ⁴⁰Ar 範圍時勾 ⁴⁰Ar，y 軸自動 rescale（其他 3 個會變很扁，但這時專注看 ⁴⁰）
+- 也可以只勾 ³⁶Ar 一個專門盯著看 ³⁶Ar 各 step 的 range
+
+### 下版預告（v3.8.47）
+
+剩 user 要的三件事：
+
+1. **Overlay mode**：加 toggle "Boxplot per-step / Overlay all steps"
+   - Overlay = 把所有 step 同 isotope 的 T₀ pool 起來畫 violin / histogram，看跨 step 的整體分佈
+   - 跟 blank candidate 對照看重疊區域
+
+2. **Signal-blank distance picker**：
+   - 給定 blank T₀，algo 跑「對每個 step 找 cycle combo 讓 |signal_T0 − blank_T0| 最小」
+   - 動機：plateau 策略最小化 ³⁶Ar(net) = signal − blank，net 越小 atmospheric correction 越乾淨
+
+3. **³⁶Ar × 298.56 vs ⁴⁰Ar 指標**：
+   - 對每個 step 計算 `³⁶Ar_median × 298.56 / ⁴⁰Ar_median`
+   - 若 < 0.01 (差 2 個數量級) → 該 step ⁴⁰Ar(r) 訊號乾淨 ✓
+   - 若 0.01–0.1 → ⚠ 有 atmospheric contamination
+   - 若 > 0.1 → ✗ ⁴⁰Ar(r) 訊號被 atm 蓋住，這 step 應該剔除
+
+### 驗證 checklist
+
+- [ ] 載 NO.65 → Calculate T₀
+- [ ] T₀ Range chart 上方應該有 5 個 checkbox
+- [ ] 預設只 ³⁶/³⁷/³⁸Ar 勾選；chart 只顯示 3 個 box per step
+- [ ] 勾 ⁴⁰Ar → 多一個紅色 box per step，y 軸應該自動 rescale 變大
+- [ ] 取消所有 → placeholder "No isotope selected"
+- [ ] Legend 跟 enabled isotope 同步
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - `CalcT0Page._build` T₀ Range 區段加 toggle row（5 QCheckBox + hint）
+  - `_paint_t0range_pattern` 加 enabled state 讀取 + 動態 box 寬度 + legend filter
+- `.work/.app_info.txt`：3.8.45 → 3.8.46
+- `CHANGELOG.md`：本段
 
 ---
 
