@@ -4,6 +4,45 @@
 最後整理日期：2026-05-29
 整理者：Claude (based on git-style diff across all versions)
 
+GitHub Releases（tag）：v3.8.0、v3.8.1、v3.8.3、v3.8.4、v3.8.5、v3.8.6、v3.8.7、v3.8.8，最新 **v3.8.54（Latest）彙整 v3.8.9 → v3.8.54 共 46 版**。
+
+---
+
+## Release v3.8.54（2026-05-29）— 自上次 release v3.8.8 以來彙整（46 版）
+
+對應 GitHub Release v3.8.54（Latest）。逐版細節見下方各 `## V3.8.x` 區塊。
+
+主軸：把 AutoPipeline 從堪用補強到可實際跑完一整條 ⁴⁰Ar/³⁹Ar reduction（Calculate T₀ → Mass Ratio → Age Calc + Datum）。
+
+### Calculate T₀：Signal T₀ Range 圖（挑 blank cycle 輔助）
+- 5 isotope 盒鬚圖，各 step 在所有 C(10, 4..10) combo 下的 T₀ 分布（v3.8.44 / v3.8.45）
+- isotope toggle，³⁹/⁴⁰ 預設 off 避免壓縮 y 軸（v3.8.46）
+- 疊上各 step 選定 T₀ ± σ 點、blank 實際虛線、blank 自己的盒子（v3.8.52 / v3.8.53）
+
+### AgeCalc + Datum
+- Excel 風格底部分頁：Summary / Datum / Age Spectrum / Inverse / Normal / Ca/K / Cl/K / Degassing（v3.8.36 / v3.8.43 / v3.8.50）
+- diagram 分頁重設計：左圖 + 右側資訊面板（判讀說明 + plateau/isochron 統計 + 軸控制 + Save Image）（v3.8.50）
+- Plot Controls 面板（移植自 DiagramPlots_SH）（v3.8.48）
+- 輸出格式對齊 NTNU 子程式 + PNG 路徑 Data ↔ Figures 分離（v3.8.24 / v3.8.25 / v3.8.32）
+
+### Session / 效能
+- .adr 存檔 / 開檔，跳過 .dat 重新匯入（v3.8.28）
+- step 切換 defer paint + prefetch；_fit_one closed-form fast path（~5 s → ~100 ms）（v3.8.26 / v3.8.27）
+- stepper 切頁在輸入沒變時不重算（v3.8.51）
+
+### Pipeline / UI
+- pipeline stepper 重做：圓圈可點 / 可重算 / 移回 top bar / 藍灰二色 / 移除灰連接線（v3.8.20 / v3.8.21 / v3.8.50）
+- Mass Ratio / AgeCalc sidebar + Return 改「回上一步」（v3.8.31 / v3.8.40 / v3.8.42）
+
+### 重要修正
+- blank T₀ 寫檔用錯 mask 的 critical bug，影響科學輸出（v3.8.9）
+- Run Pipeline 閃退：mathtext parser + Arial 缺字 glyph（v3.8.30）
+- Auto Blank / Auto Signal 閃退（3D ndarray shape 不符）（v3.8.37 / v3.8.39）
+- Plot Controls XY 軸無反應，改 per-target dispatch（v3.8.49）
+- T₀ Range 圖標題 / legend □ 缺字（v3.8.54）
+
+驗證基準：NO.65 muscovite（irradiation 0621-01C），目標 9.77 ± 0.28 Ma。
+
 ---
 
 ## V3.8.54（2026-05-29）— T₀ Range 圖標題/legend 缺字 fix（□ 方塊）
