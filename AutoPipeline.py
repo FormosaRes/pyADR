@@ -554,21 +554,10 @@ def _build_minimal_sidebar(page, save_handler, save_label='Save'):
     btnSave = _sb_btn(save_label)
     btnSave.clicked.connect(save_handler)
 
-    btnLdBlank = _sb_btn('Load Blank')
-    def _on_load_blank():
-        win = _find_window()
-        if win is not None and hasattr(win, 't0Page'):
-            win.stack.setCurrentIndex(0)   # jump back to Calculate T₀
-            win.t0Page._load_blank_dialog()
-    btnLdBlank.clicked.connect(_on_load_blank)
-
-    btnLdSig = _sb_btn('Load Sample')
-    def _on_load_signal():
-        win = _find_window()
-        if win is not None and hasattr(win, 't0Page'):
-            win.stack.setCurrentIndex(0)
-            win.t0Page._load_signal_dialog()
-    btnLdSig.clicked.connect(_on_load_signal)
+    # v3.8.41: removed Load Blank / Load Sample from MassRatio/AgeCalc
+    # sidebar per user request — loading raw .dat only makes sense on the
+    # Calculate T₀ page (where it actually shows the mV chart). User can
+    # still trigger them from CalcT0Page's own sidebar (those stay).
 
     btnSaveSess = _sb_btn('Save Session')
     def _on_save_session():
@@ -584,8 +573,9 @@ def _build_minimal_sidebar(page, save_handler, save_label='Save'):
             win.t0Page._open_session()
     btnOpenSess.clicked.connect(_on_open_session)
 
-    # v3.8.35: Open Session above Save Session (user-requested swap)
-    for b in (btnReturn, btnSave, btnLdBlank, btnLdSig, btnOpenSess, btnSaveSess):
+    # v3.8.41: 4 buttons (Return / Save / Open Session / Save Session)
+    # — Load Blank / Load Sample dropped.
+    for b in (btnReturn, btnSave, btnOpenSess, btnSaveSess):
         sbl.addWidget(b)
     sbl.addStretch()
     return sb
