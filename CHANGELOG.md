@@ -1,8 +1,89 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45
 最後整理日期：2026-05-28
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.45（2026-05-28）— T₀ Range chart 擴成 5 isotope + legend 嵌入 blank target 策略
+
+### 需求
+
+v3.8.44 加的 T₀ Range chart 只有 ³⁶/³⁷/³⁸Ar 三個 isotope（³⁹/⁴⁰Ar 沒放）。使用者要：
+1. 加 ³⁹Ar / ⁴⁰Ar 兩個 isotope 進去
+2. 把「blank T₀ target」策略直接顯示在程式內（不只是聊天解釋）
+
+### 修法
+
+#### 1. 5 isotope 全上
+
+`_paint_t0range_pattern` 內 `range(3)` → `range(5)`。每個 step 從 3 個 box → 5 個 box。為了 fit 同樣 1450 px 寬度：
+
+- `bar_w` 0.65 → 0.55
+- `gap_in` 0.05 → 0.04
+- `gap_out` 0.6 → 0.7（步間 spacing 稍微拉開讓視覺易分組）
+
+顏色用 module-level `AR_COLS = ['#1a5fb4','#1c7a3a','#8a5a00','#b41a1a','#533ab7']`，跟 cycle button / mV chart 既存配色一致。
+
+#### 2. Per-isotope T₀ pool 計算 blank target
+
+跑 box plot 同時 build `per_iso_t0s[ai]` (5 個 list)，累積每個 isotope 跨所有 step 所有 combo 的 T₀ 值。
+
+```python
+sig_min = min(per_iso_t0s[ai])
+if sig_min <= 1e-7:
+    target = 0.0            # 訊號在 noise，建議 blank ≈ 0
+else:
+    target = sig_min / 10.0  # blank 應比 signal min 小一個數量級
+```
+
+#### 3. Legend 嵌入 target
+
+每個 isotope 的 legend label 包含 target：
+
+```
+³⁶Ar  blank < 5e-06
+³⁷Ar  blank ≈ 0 (noise)
+³⁸Ar  blank < 3e-05
+³⁹Ar  blank < 4e-04
+⁴⁰Ar  blank < 2e-03
+```
+
+legend title 寫 "Blank T₀ target (= signal min / 10)" 說明算法來源。
+
+target format：
+- `< 5e-06` 一般情況（科學記號 1 位有效數字）
+- `≈ 0 (noise)` 當 signal min ≤ 1e-7（訊號淹在底噪）
+- `no data` 當該 isotope 沒 cache 資料
+
+### 怎麼用
+
+1. 載入 sample → 等 prefetch 完成（`✓ Pre-compute done`）
+2. T₀ Range chart 顯示 5 個 isotope，legend 直接列出每個的 target
+3. 切到 Blank tab，看 5 個 mV chart titleLbl 的 T₀ 值
+4. 對照 chart legend target：
+   - 達標（|blank T₀| < target）→ OK
+   - 超標 → 排 cycle 1, 10 兩端 / 點 Best per n / Auto Blank
+5. ³⁷Ar 如果 legend 顯示 `≈ 0 (noise)`，blank ³⁷Ar 不用 fine-tune，全勾或 best per n 都 OK
+
+### 驗證 checklist
+
+- [ ] 載 NO.65 muscovite → 等 prefetch 完成
+- [ ] T₀ Range chart 應該每個 step 5 個 box（³⁶ ³⁷ ³⁸ ³⁹ ⁴⁰ 五色）
+- [ ] Legend 右上角列出 5 個 isotope 的 blank target
+- [ ] Target 數字合理（signal min 可從 chart 上 box 鬚下緣讀，target 應是其 1/10）
+- [ ] ³⁷Ar 如果 signal min ≤ 0，target 應顯示 `≈ 0 (noise)`
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - `_paint_t0range_pattern` 內 `range(3)` → `range(5)`，iso_colors 改用 `AR_COLS`，iso_names 加 ³⁹/⁴⁰Ar
+  - box 寬度 + spacing 微調容納 5 isotope
+  - 新增 `per_iso_t0s` 累積 + per-isotope target 計算
+  - Legend label 嵌 target 字串 + legend title 加說明
+- `.work/.app_info.txt`：3.8.44 → 3.8.45
+- `CHANGELOG.md`：本段
 
 ---
 

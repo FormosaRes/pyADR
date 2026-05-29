@@ -3312,24 +3312,17 @@ class CalcT0Page(QtWidgets.QWidget):
         self.cv_yield.draw()
 
     def _paint_t0range_pattern(self):
-        """v3.8.44: T₀ range distribution per (signal step, isotope).
+        """v3.8.45: T₀ range distribution per (signal step, isotope) — now
+        for ALL 5 isotopes (³⁶/³⁷/³⁸/³⁹/⁴⁰Ar). The legend embeds the
+        recommended blank T₀ target per isotope, derived from each
+        isotope's signal min across all steps:
 
-        For every signal step and every of ³⁶/³⁷/³⁸Ar, fetch ALL combo
-        T₀ values from the v3.8.26 prefetch cache (~848 combos per
-        isotope/step) and draw a box plot. The user sees:
+          target = signal_min / 10   if signal_min > 1e-7
+          target = '≈ 0 (noise)'      if signal_min ≤ 1e-7 or signal_min < 0
 
-          - min / max range of T₀ for each (step, isotope)
-          - where the bulk sits (Q1–Q3 box + median line)
-          - a grey reference line at 0
-
-        Use it to pick a sensible blank cycle subset:
-        blank T₀ should be **well below the min of every signal step's
-        T₀ range** for that isotope (otherwise blank correction either
-        over-shoots or flips sign).
-
-        Cache source: parent's `_prefetch_cache` (populated by
-        PrefetchWorker after load_signal). If prefetch not finished,
-        only the partial set so far is shown.
+        Lets the user glance at the legend and know exactly what blank
+        T₀ value they should aim for in each isotope's mV chart on
+        the Blank tab.
         """
         ax = self._t0range_ax
         ax.clear()
@@ -3348,8 +3341,11 @@ class CalcT0Page(QtWidgets.QWidget):
             return
 
         import re
-        iso_colors = ['#1a5fb4', '#1c7a3a', '#8a5a00']   # ³⁶ ³⁷ ³⁸
-        iso_names  = ['³⁶Ar', '³⁷Ar', '³⁸Ar']
+        # v3.8.45: 5 isotopes now (was 3). Reuse module-level AR_COLS so
+        # the colors match the cycle-button / mV-chart palette user has
+        # already learned.
+        iso_colors = list(AR_COLS)                           # 36 37 38 39 40
+        iso_names  = ['³⁶Ar', '³⁷Ar', '³⁸Ar', '³⁹Ar', '⁴⁰Ar']
 
         # Sort steps by temperature
         temp_pairs = []
@@ -3362,19 +3358,22 @@ class CalcT0Page(QtWidgets.QWidget):
             return
 
         # Build box-plot data: x positions grouped per step
-        bar_w = 0.65
-        gap_in = 0.05   # spacing between Ar36/37/38 within a step
-        gap_out = 0.6   # spacing between steps
+        # v3.8.45: narrower box / smaller gap_in to fit 5 isotopes per group
+        bar_w = 0.55
+        gap_in = 0.04
+        gap_out = 0.7
         positions = []
         all_t0s = []
         all_colors = []
         group_centers = []
         group_labels = []
+        # v3.8.45: also collect per-isotope T₀ pool for strategy computation
+        per_iso_t0s = [[] for _ in range(5)]
         x = 0.0
         for temp_val, nm in temp_pairs:
             vt_list = self._svt[nm]
             step_xs = []
-            for ai in range(3):   # Ar36, Ar37, Ar38
+            for ai in range(5):   # ³⁶ ³⁷ ³⁸ ³⁹ ⁴⁰
                 key = (id(vt_list[ai]), self._fit, self._nc)
                 cached_fits = cache.get(key)
                 if cached_fits:
@@ -3384,6 +3383,7 @@ class CalcT0Page(QtWidgets.QWidget):
                         all_t0s.append(t0s)
                         all_colors.append(iso_colors[ai])
                         step_xs.append(x)
+                        per_iso_t0s[ai].extend(t0s)
                 x += bar_w + gap_in
             if step_xs:
                 group_centers.append(sum(step_xs) / len(step_xs))
@@ -3421,17 +3421,47 @@ class CalcT0Page(QtWidgets.QWidget):
         ax.ticklabel_format(style='sci', axis='y', scilimits=(0, 0),
                             useMathText=False)
 
-        # Legend (iso color swatches)
+        # ── Blank target strategy per isotope ──────────────────────
+        # v3.8.45: compute signal_min per isotope and translate into a
+        # human-readable blank target. Embed in legend labels so the
+        # user sees both the colour swatch and the target in one place.
+        def _fmt_target(v):
+            if v is None:
+                return 'no data'
+            if abs(v) < 1e-7:
+                return '≈ 0 (noise)'
+            return f'< {v:.0e}'
+
+        targets = []   # parallel list to iso_names
+        for ai in range(5):
+            pool = per_iso_t0s[ai]
+            if not pool:
+                targets.append(None)
+                continue
+            sig_min = min(pool)
+            # If signal_min ≤ ~0, the isotope is in the noise floor →
+            # blank ≈ 0 advice (no fine-tune needed)
+            if sig_min <= 1e-7:
+                targets.append(0.0)
+            else:
+                targets.append(sig_min / 10.0)
+
+        # Legend labels with embedded target ranges
         from matplotlib.patches import Patch
-        handles = [Patch(facecolor=c, alpha=0.55, label=n)
-                   for c, n in zip(iso_colors, iso_names)]
-        ax.legend(handles=handles, fontsize=10, loc='best', framealpha=0.85)
+        handles = []
+        for c, n, tgt in zip(iso_colors, iso_names, targets):
+            lbl = f'{n}  blank {_fmt_target(tgt)}'
+            handles.append(Patch(facecolor=c, alpha=0.55, label=lbl))
+        ax.legend(handles=handles, fontsize=9, loc='upper right',
+                  framealpha=0.9, ncol=1,
+                  title='Blank T₀ target (= signal min / 10)',
+                  title_fontsize=9)
         ax.grid(True, alpha=0.2, axis='y')
 
         # Title hint
         ax.set_title(
             'Signal T₀ range (all C(10, 4..10) combos per isotope) — '
-            'pick blank T₀ ≪ min of these',
+            'pick blank T₀ ≪ min of each isotope\'s range',
             fontsize=10, color='#444')
 
         try: self._t0range_fig.tight_layout(pad=0.5)
