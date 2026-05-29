@@ -1,8 +1,98 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43
 最後整理日期：2026-05-28
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.43（2026-05-28）— AgeCalcPage 新增 Cl/K + Degassing tabs（Stack/Summary 留下版）
+
+### 修法
+
+使用者要求加 3 個新 chart：Degassing pattern、Cl/K spectrum、Stack/Summary。本版做前兩個（單 chart tab 形式），Stack/Summary 是 dialog 形式，下版做。
+
+#### 1. PipelineWorker 加跑 Degassing
+
+`_run` 結尾呼叫 `Utilities.getDegasPlot(datum_csv, mask_all, consts)` 產 `.work/DFD.png`。`getSHStatistics`（既有 call）本來就會產 `.work/DFC.png` (Cl/K spectrum)，不用加新 call。
+
+加入 try/except + `_warns.append` 模式（跟其他 Utilities call 一致）。
+
+#### 2. AgeCalcPage 加 2 個 tab + 2 個 thumbnail
+
+`_build` 內兩個 diagram list 都從 4 個擴成 6 個：
+
+```python
+# Tab 1 Summary 內的 4-grid thumbnail → 改成 6-grid (3x2)
+('DFW','Age Spectrum'),('DFA','Ca/K'),
+('DFN','Normal Isochron'),('DFI','Inverse Isochron'),
+('DFC','Cl/K'),('DFD','Degassing')
+
+# Bottom tabs（每個 tab 大圖 + axis controls）
+... 同樣 6 個 key/title pair
+```
+
+`_dlbls` / `_dlbls_big` / `_daxis` / `_daxis_edits` 4 個 dict 因為都用 key 自動 populate，加 2 個 key 不需要其他改動。`_reload_all_pngs` 跟 `_axis_dialog` 也都是 key-iteration，自動支援新 key。
+
+#### 3. `_refresh_diagrams` 額外跑 SH + Degassing
+
+User 在 isochron tab 改 axis 並 Apply 後，原本只重產 DFW/DFA/DFN/DFI（getDFStatistics_sh）。現在也跟著刷 DFC（getSHStatistics）+ DFD（getDegasPlot），確保 6 個 tab 同步：
+
+```python
+try: Utilities.getSHStatistics(...)
+except Exception: pass   # 非 fatal
+try: Utilities.getDegasPlot(...)
+except Exception: pass
+```
+
+#### 4. 出版資料夾也包含新 PNG
+
+`PipelineWorker._run` 結尾把 PNG copy 到 `Figures/Publish/StepHeating/` 的 list 從 4 擴成 6：
+
+```python
+for key in ['DFW','DFA','DFN','DFI','DFC','DFD']:
+```
+
+User export 時 4+2 個 PNG 都會一起出現。
+
+### 下版預告（Stack / Summary）
+
+需要實作的部分（已 audit）：
+
+- `Utilities.getStackPlot(file, mask, constants, top='Ca/K' or 'Cl/K')` → `.work/DFS.png`
+- `Utilities.getSummaryPlot(file, mask, constants, panels=[...], layout='vertical' or 'grid')` → caller 自己 savefig
+
+UI：sidebar 加 "Stack / Summary" button → 彈 dialog（按截圖）：
+- Mode (radio): Stack 2-panel / Summary multi-panel
+- Summary Panels (checkboxes): Age spectrum / %⁴⁰Ar* spectrum / Ca/K / Cl/K / Normal isochron / Inverse isochron
+- Layout (radio): Vertical stack / 2-column grid
+- Generate / Cancel
+
+Generate 後產 PNG 彈出大圖 dialog 給 user 看 / 存。
+
+### 驗證 checklist
+
+- [ ] 跑 Run Pipeline → 進 AgeCalc page
+- [ ] Summary tab 的 thumbnail grid 應該是 3×2 = 6 張（多了 Cl/K + Degassing）
+- [ ] 底部 tabs 應該有 8 個：Summary / Datum / Age Spectrum / Ca/K / Normal Isochron / Inverse Isochron / **Cl/K** / **Degassing**
+- [ ] 點 Cl/K tab → 大圖顯示 Cl/K spectrum
+- [ ] 點 Degassing tab → 大圖顯示 Degassing pattern
+- [ ] Cl/K / Degassing tab 的 axis dialog 可以調 XY range，Apply 後重產（注意：DFC / DFD 用同一個 xlim/ylim，跟 isochron 共用，不分離）
+- [ ] Sidebar Save → Export → `Agecalc/` 子資料夾應該包含 6 個 PNG 完整集（之前只有 4 個）
+
+### 已知限制（待下版）
+
+- `_refresh_diagrams` 用的是同一個 (xlim, ylim) 給所有 6 張圖，沒有 per-tab axis 獨立 — 因為 Utilities 各 function 只接單 xlim/ylim。DFW (Age) 的橫軸是 cumulative ³⁹Ar%，DFA/DFC/DFD 也類似，DFN/DFI 是 isochron ratio，邏輯上不應該共用。如果要 per-tab axis 獨立，要改 Utilities 簽名（風險高，下版討論）
+
+### 檔案改動
+
+- `AutoPipeline.py`：
+  - `PipelineWorker._run` 加 `Utilities.getDegasPlot` call
+  - `PipelineWorker._run` copy PNG list 從 4 擴成 6（加 DFC, DFD）
+  - `AgeCalcPage._build`：thumbnail grid + bottom tabs 兩處 list 從 4 擴成 6
+  - `AgeCalcPage._refresh_diagrams` 加 `getSHStatistics` + `getDegasPlot` re-call
+- `.work/.app_info.txt`：3.8.42 → 3.8.43
+- `CHANGELOG.md`：本段
 
 ---
 
