@@ -539,13 +539,24 @@ def _build_minimal_sidebar(page, save_handler, save_label='Save'):
 
     btnReturn = _sb_btn('Return')
     def _on_return():
-        # v3.8.40: AutoPipelineWindow itself has no `returnBtn` attribute;
-        # the only Return button lives on CalcT0Page sidebar (line ~2026)
-        # and is what NTNU_DataReduction connected toMain to via
-        # `self.t0Page.returnBtn.clicked.connect(self._ret)`. Fire that
-        # button instead of looking for a non-existent window-level attr.
+        # v3.8.42: Return now goes ONE PAGE BACK in the pipeline stack
+        # (Mass Ratio → Calculate T₀, Age Calc → Mass Ratio), not all the
+        # way to pyADR Home. CalcT0Page's own sidebar Return (idx=0)
+        # still goes home — that's wired separately in t0Page.returnBtn.
         win = _find_window()
-        if win is not None and hasattr(win, 't0Page'):
+        if win is None or not hasattr(win, 'stack'):
+            return
+        cur_idx = win.stack.currentIndex()
+        if cur_idx > 0:
+            target = cur_idx - 1
+            # Prefer _go() so pipeline strip + next button update too
+            if hasattr(win, '_go'):
+                win._go(target)
+            else:
+                win.stack.setCurrentIndex(target)
+        else:
+            # Fallback (shouldn't happen — this helper isn't used on
+            # CalcT0Page): go home via t0Page.returnBtn
             t0 = getattr(win, 't0Page', None)
             if t0 is not None and hasattr(t0, 'returnBtn'):
                 t0.returnBtn.click()
