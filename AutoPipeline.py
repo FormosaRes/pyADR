@@ -3414,7 +3414,37 @@ class CalcT0Page(QtWidgets.QWidget):
         box_meta = []   # v3.8.52: parallel to positions — (step_name, isotope_idx)
         # Also collect per-isotope T₀ pool for blank-target strategy
         per_iso_t0s = [[] for _ in range(5)]
+        # v3.8.53: refresh blank T₀ / σ up front so the blank box's selected
+        # dot and the blank reference line both use current values.
+        if self._bvt is not None:
+            try: self._calc_blank_t0()
+            except Exception: pass
         x = 0.0
+        # v3.8.53: leading "Blank" group — blank T₀ distribution across the
+        # same C(10,4..10) combos (one box per enabled isotope), so the user
+        # sees the blank's own spread, not only the dashed reference line.
+        # NOTE: blank T₀s are NOT added to per_iso_t0s (that pool feeds the
+        # signal-min blank-target advice and must stay signal-only).
+        if self._bvt is not None:
+            blank_step_xs = []
+            for ai in range(5):
+                if not enabled[ai]:
+                    continue
+                key = (id(self._bvt[ai]), self._fit, self._nc)
+                cached_fits = cache.get(key)
+                if cached_fits:
+                    t0s = [c[0] for c in cached_fits]
+                    if t0s:
+                        positions.append(x)
+                        all_t0s.append(t0s)
+                        all_colors.append(iso_colors[ai])
+                        blank_step_xs.append(x)
+                        box_meta.append(('__BLANK__', ai))
+                x += bar_w + gap_in
+            if blank_step_xs:
+                group_centers.append(sum(blank_step_xs) / len(blank_step_xs))
+                group_labels.append('Blank')
+                x += gap_out * 1.6   # extra gap separating blank from signal
         for temp_val, nm in temp_pairs:
             vt_list = self._svt[nm]
             step_xs = []
@@ -3473,8 +3503,11 @@ class CalcT0Page(QtWidgets.QWidget):
         sel_xs, sel_ys, sel_err = [], [], []
         for pos, (nm, ai) in zip(positions, box_meta):
             try:
-                mask = self._smask[nm][ai]
-                t0, sig, _, _ = _fit_one(f, self._svt[nm][ai], mask)
+                if nm == '__BLANK__':   # v3.8.53: blank box uses _bT0/_bSIG
+                    t0, sig = float(self._bT0[ai]), float(self._bSIG[ai])
+                else:
+                    t0, sig, _, _ = _fit_one(f, self._svt[nm][ai],
+                                             self._smask[nm][ai])
                 sel_xs.append(pos); sel_ys.append(t0)
                 sel_err.append(sig if (sig == sig and sig > 0) else 0.0)
             except Exception:
@@ -3491,10 +3524,7 @@ class CalcT0Page(QtWidgets.QWidget):
         # below the signal boxes for a clean blank.
         blank_ys = []
         if self._bvt is not None:
-            try:
-                self._calc_blank_t0()   # ensure _bT0 reflects current mask/fit
-            except Exception:
-                pass
+            # _calc_blank_t0() already refreshed _bT0 up front (v3.8.53)
             for ai in range(5):
                 if not enabled[ai]:
                     continue
@@ -3574,8 +3604,8 @@ class CalcT0Page(QtWidgets.QWidget):
 
         # Title hint
         ax.set_title(
-            'Signal T₀ range per step (box) · selected T₀ ± σ (dots) · '
-            'blank T₀ (dashed) — pick blank ≪ signal range',
+            'T₀ range: Blank + per-step signal (box) · selected T₀ ± σ '
+            '(dots) · blank T₀ (dashed) — pick blank ≪ signal range',
             fontsize=10, color='#444')
 
         try: self._t0range_fig.tight_layout(pad=0.5)

@@ -1,8 +1,46 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53
 最後整理日期：2026-05-29
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.53（2026-05-29）— T₀ Range 圖加 blank 自己的盒子
+
+### 需求
+
+v3.8.52 把 blank 畫成虛線。使用者要 blank 也有**盒鬚圖**（看 blank T₀ 在所有 combo 下的分布），不只一條線。
+
+### 修法（`_paint_t0range_pattern`）
+
+x 軸最左加一個 "Blank" group，做法跟 signal step 完全一致：
+
+- blank 的 combo 分布一樣在 prefetch cache（key `(id(self._bvt[ai]), self._fit, self._nc)`，`_start_prefetch` 本來就有排 blank task）
+- 每個啟用同位素一個 box，`box_meta` 標 `('__BLANK__', ai)`
+- 之後加 `gap_out * 1.6` 跟 signal steps 拉開距離，x tick label 標 `'Blank'`
+- **不**把 blank T₀ 加進 `per_iso_t0s`（那個池子是算 signal_min 給 blank-target 建議用的，必須維持 signal-only）
+
+selected-T₀ overlay 加 blank 分支：`('__BLANK__', ai)` 用 `self._bT0[ai]` / `self._bSIG[ai]`（blank 的選定值 + σ），其餘 step 維持用 `_smask` 經 `_fit_one` 算。
+
+`_calc_blank_t0()` 提前到 layout 前呼叫一次，blank box 的點、blank 虛線都吃同一份新值（overlay 2 的重複呼叫移除）。
+
+虛線保留（使用者說「也」要盒子，是加上去不是取代）：blank box 在左看自身分布，虛線橫貫全圖方便跟每個 signal box 比高低。
+
+標題改 `T₀ range: Blank + per-step signal (box) · selected T₀ ± σ (dots) · blank T₀ (dashed)`。
+
+### 驗證 checklist
+
+- [ ] T₀ Range 圖最左多一組 box，x label 顯示 'Blank'
+- [ ] blank box 上有選定 T₀ 點（= 虛線高度）+ σ bar
+- [ ] blank box 跟 signal step box 共用 y 軸、寬度一致
+- [ ] blank box 的分布通常很窄且接近 0（noise floor）
+- [ ] 切換同位素 checkbox：blank box 只顯示啟用的同位素
+
+### 檔案改動
+
+- `AutoPipeline.py`：`_paint_t0range_pattern`（Blank group + selected-dot blank 分支 + `_calc_blank_t0` 提前 + 標題）
+- `.work/.app_info.txt`：3.8.52 → 3.8.53
 
 ---
 
