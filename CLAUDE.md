@@ -10,7 +10,7 @@ pyADR 是 ⁴⁰Ar/³⁹Ar geochronology data reduction 工具，fork 自 NTNU C
 
 - 主要 entry point：`NTNU_DataReduction.py`（GUI，~244k 行）+ `AutoPipeline.py`（批次/自動化）
 - 數學核心：`Utilities.py`（~163k 行）
-- 目前版本：v3.8.3（2026-05-25），版本字串在 `.work/.app_info.txt`
+- 目前版本：v3.8.54（2026-05-29），版本字串在 `.work/.app_info.txt`；最新 GitHub Release 也是 v3.8.54
 - 開發者：Chi-Hsiu Pang（龐麒修，Academia Sinica PhD candidate）
 - 完整版本歷史看 `CHANGELOG.md`，數學式推導看 `FORMULAS.md`
 
@@ -92,6 +92,15 @@ C:\Users\龐麒修\iCloudDrive\claude cowork\telegram-notify\notify-queue.jsonl
 - `SIGMA_METHOD` global toggle（'standard' = pcov vs 'calc_t0' = std(|r|)/√n）
 - `_signal_out_pass` 改 serial per-isotope（Ar37 → Ar36 → Ar38/39/40，按物理依賴順序）
 - York 2004 isochron + Wendt-Carl 1991 √MSWD 修正
+
+### v3.8.4 → v3.8.54（逐版細節見 `CHANGELOG.md`，這裡只列要動 code 前該知道的）
+這段大多是 `AutoPipeline.py` 的擴充與 UI，數學核心多半沒動。要點：
+- **v3.8.9（critical，影響科學輸出）**：blank T₀ 寫檔曾用錯 mask，已修。動 blank fit / `_calc_blank_t0` / SaveT0 路徑前先看這版。
+- **效能**：`_fit_one` 有 closed-form OLS fast path（linear/average），與 curve_fit bit-identical（v3.8.27）；step 切換靠 `_prefetch_cache` + `PrefetchWorker`（v3.8.26）。動 fit 邏輯要同步維護快取 key `(id(vt), fit, nc)`。
+- **AgeCalcPage**：底部 Excel 風格 tab（Summary/Datum/Age Spectrum/Inverse/Normal/Ca/K/Cl/K/Degassing），diagram tab = 左圖 + 右側資訊面板；軸/legend 走 `_refresh_diagrams` 的 per-target dispatch（v3.8.36/43/48/49/50）。
+- **CalcT0Page**：Signal T₀ Range 盒鬚圖（挑 blank cycle 用），含 blank box + 各 step 選定 T₀ ± σ 點（v3.8.44–46/52/53）。matplotlib 字型是 Arial，缺下標 `₀`：圖上文字一律用 mathtext `$T_0$`，別用 unicode `₀`/`≪`（v3.8.30/54）。
+- **Session**：`.adr` 存檔/開檔（zip+json+npz），只還原 Calculate T₀ 狀態（v3.8.28）。
+- 輸出格式（T0/MassRatio/Datum/AgeCalc CSV、PNG 路徑 Data↔Figures）對齊 NTNU 子程式（v3.8.24/25/32）。
 
 ---
 
