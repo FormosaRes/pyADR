@@ -4462,8 +4462,10 @@ class AgeCalcPage(QtWidgets.QWidget):
         self._dlbls={}
         self._daxis={}  # Store axis ranges per diagram: {key: {'xmin':..,'xmax':..,'ymin':..,'ymax':..}}
         # v3.8.43: Summary tab 6-grid: 4 既存 + Cl/K + Degassing
-        for idx,(key,title) in enumerate([('DFW','Age Spectrum'),('DFA','Ca/K'),
-                                           ('DFN','Normal Isochron'),('DFI','Inverse Isochron'),
+        # v3.8.50: order aligned with bottom tabs (Age Spectrum, Inverse,
+        # Normal, Ca/K, Cl/K, Degassing)
+        for idx,(key,title) in enumerate([('DFW','Age Spectrum'),('DFI','Inverse Isochron'),
+                                           ('DFN','Normal Isochron'),('DFA','Ca/K'),
                                            ('DFC','Cl/K'),('DFD','Degassing')]):
             fr=QtWidgets.QFrame()
             fr.setFrameShape(QtWidgets.QFrame.Box)
@@ -4544,13 +4546,16 @@ class AgeCalcPage(QtWidgets.QWidget):
         _dw_vl.addWidget(self._datum_tbl, 1)
         tabs.addTab(_datum_w, 'Datum')
 
-        # Tabs 3-6: full-size diagram views with axis controls
+        # Tabs 3-8: full-size diagram views with axis controls
         self._dlbls_big = {}
         self._daxis_edits = {}
+        self._dinfo = {}   # v3.8.50: per-tab stats QLabel handles
         # v3.8.43: 6 full-size diagram tabs (added Cl/K + Degassing)
-        for _key, _title in [('DFW', 'Age Spectrum'), ('DFA', 'Ca/K'),
-                             ('DFN', 'Normal Isochron'),
+        # v3.8.50: order = Age Spectrum, Inverse, Normal, Ca/K, Cl/K, Degassing
+        for _key, _title in [('DFW', 'Age Spectrum'),
                              ('DFI', 'Inverse Isochron'),
+                             ('DFN', 'Normal Isochron'),
+                             ('DFA', 'Ca/K'),
                              ('DFC', 'Cl/K'), ('DFD', 'Degassing')]:
             tabs.addTab(self._make_diagram_tab(_key, _title), _title)
 
@@ -4609,8 +4614,10 @@ class AgeCalcPage(QtWidgets.QWidget):
             total_age = total_age_sum / total_age_weight
             total_sigma = (1.0 / total_age_weight) ** 0.5
             self._stat_total.setText(f'{total_age:.3f} ± {total_sigma:.3f} Ma')
+            self._info_total = (total_age, total_sigma)   # v3.8.50
         else:
             self._stat_total.setText('—')
+            self._info_total = None
         
         # Plateau, Normal/Inverse Isochron, MSWD (computed from ar_list)
         self._update_isochron_stats(steps)
@@ -4663,6 +4670,63 @@ class AgeCalcPage(QtWidgets.QWidget):
                             QtCore.Qt.KeepAspectRatio,
                             QtCore.Qt.SmoothTransformation))
                         lbl.setText('')
+        # v3.8.50: refresh the per-tab right-panel stats too
+        self._update_diagram_info()
+
+    def _update_diagram_info(self):
+        """v3.8.50: populate each diagram tab's right-panel stats QLabel from
+        the structured values stashed by _update_isochron_stats / the total
+        fusion calc. Pure presentation, no recompute."""
+        if not hasattr(self, '_dinfo') or not self._dinfo:
+            return
+        tot = getattr(self, '_info_total', None)
+        pl  = getattr(self, '_info_plateau', None)
+        nm  = getattr(self, '_info_norm', None)
+        iv  = getattr(self, '_info_inv', None)
+        n_steps = len(self._steps) if getattr(self, '_steps', None) else 0
+
+        def _row(label, value):
+            return (f"<span style='color:#888;font-size:11px;'>{label}</span><br>"
+                    f"<span style='font-size:14px;'><b>{value}</b></span>")
+
+        html = {}
+        # Age Spectrum → plateau + total fusion
+        _pl = (f"{pl[0]:.3f} ± {pl[1]:.3f} Ma" if pl else "—")
+        _plx = (f"MSWD {pl[2]:.2f} · n={pl[3]}" if (pl and pl[2] is not None)
+                else (f"n={pl[3]}" if pl else ""))
+        _tot = (f"{tot[0]:.3f} ± {tot[1]:.3f} Ma" if tot else "—")
+        html['DFW'] = (_row('Weighted plateau', _pl)
+                       + (f"<br><span style='color:#888;font-size:11px;'>{_plx}</span>" if _plx else "")
+                       + "<br><br>" + _row('Total fusion age', _tot))
+        # Normal isochron
+        if nm:
+            html['DFN'] = (_row('Isochron age', f"{nm[0]:.3f} ± {nm[1]:.3f} Ma")
+                           + f"<br><span style='color:#888;font-size:11px;'>"
+                             f"MSWD {nm[2]:.2f} · n={nm[3]}</span>"
+                           + "<br><br>" + _row('Trapped (⁴⁰/³⁶)', f"{nm[4]:.1f}"))
+        else:
+            html['DFN'] = _row('Isochron age', '— (need ≥3 steps)')
+        # Inverse isochron
+        if iv:
+            html['DFI'] = (_row('Isochron age', f"{iv[0]:.3f} ± {iv[1]:.3f} Ma")
+                           + f"<br><span style='color:#888;font-size:11px;'>"
+                             f"MSWD {iv[2]:.2f} · n={iv[3]}</span>"
+                           + "<br><br>" + _row('Trapped (⁴⁰/³⁶)', f"{iv[4]:.1f}"))
+        else:
+            html['DFI'] = _row('Isochron age', '— (need ≥3 steps)')
+        # Ca/K, Cl/K, Degassing → step count + pointer to Summary
+        html['DFA'] = (_row('Steps', f"{n_steps}")
+                       + "<br><br><span style='color:#888;font-size:11px;'>"
+                         "Per-step Ca/K values listed in the Summary tab table.</span>")
+        html['DFC'] = (_row('Steps', f"{n_steps}")
+                       + "<br><br><span style='color:#888;font-size:11px;'>"
+                         "Cl/K is small for NTNU MS data (³⁸Ar(Cl) negligible).</span>")
+        html['DFD'] = (_row('Steps', f"{n_steps}")
+                       + "<br><br><span style='color:#888;font-size:11px;'>"
+                         "5 isotopes (³⁶,³⁷,³⁸,³⁹,⁴⁰) plotted vs temperature.</span>")
+
+        for k, lbl in self._dinfo.items():
+            lbl.setText(html.get(k, '—'))
 
     def _on_isochron_method_changed(self, idx):
         """v3.8.5 (A2): user changed OLS / York dropdown. Regenerate DFI/DFN
@@ -4731,6 +4795,7 @@ class AgeCalcPage(QtWidgets.QWidget):
                     pass
 
         # --- Plateau weighted mean (with √MSWD correction) ---
+        self._info_plateau = None   # v3.8.50
         if ages:
             total_w = sum(1.0/a[1]**2 for a in ages)
             if total_w > 0:
@@ -4746,15 +4811,19 @@ class AgeCalcPage(QtWidgets.QWidget):
                     self._stat_plateau.setText(
                         f'{mean:.3f} ± {sigma_ext:.3f} Ma  (1σ, '
                         f'{"ext" if mswd > 1 else "int"})')
+                    self._info_plateau = (mean, sigma_ext, mswd, n)
                 else:
                     self._stat_mswd.setText('—')
                     self._stat_plateau.setText(f'{mean:.3f} ± {sigma_int:.3f} Ma')
+                    self._info_plateau = (mean, sigma_int, None, 1)
             else:
                 self._stat_plateau.setText('—'); self._stat_mswd.setText('—')
         else:
             self._stat_plateau.setText('—'); self._stat_mswd.setText('—')
 
         # --- Normal & Inverse isochron via York regression ---
+        self._info_norm = None   # v3.8.50
+        self._info_inv = None
         if len(iso_data) >= 3:
             try:
                 # Normal: x = 39/36, y = 40/36
@@ -4776,6 +4845,7 @@ class AgeCalcPage(QtWidgets.QWidget):
                         f'{age_n:.3f} ± {sage_n:.3f} Ma  '
                         f'(MSWD={mswd_n:.2f}, n={len(iso_data)}, '
                         f'(40/36)ₜ={b_n:.1f}±{sb_n:.1f})')
+                    self._info_norm = (age_n, sage_n, mswd_n, len(iso_data), b_n)
                 else:
                     self._stat_normiso.setText(f'(MSWD={mswd_n:.2f}, slope ≤ 0)')
 
@@ -4814,6 +4884,7 @@ class AgeCalcPage(QtWidgets.QWidget):
                             f'{age_i:.3f} ± {sage_i:.3f} Ma  '
                             f'(MSWD={mswd_i:.2f}, n={len(iso_data)}, '
                             f'(40/36)ₜ={atm_ratio:.1f})')
+                        self._info_inv = (age_i, sage_i, mswd_i, len(iso_data), atm_ratio)
                     else:
                         self._stat_invIso.setText(f'(MSWD={mswd_i:.2f}, F ≤ 0)')
                 else:
@@ -4883,16 +4954,20 @@ class AgeCalcPage(QtWidgets.QWidget):
             }
             self._refresh_diagrams()
     
-    # ── Plot Controls (v3.8.48) ───────────────────────────────────
+    # ── Plot Controls (v3.8.48, fixed in v3.8.49) ─────────────────
     def _plot_apply(self):
-        """Apply current Plot Controls state to selected diagram(s)."""
+        """Apply current Plot Controls state to selected diagram(s).
+
+        v3.8.49: write xlim/ylim to ALL keys covered by the target (was
+        only writing to 'DFN' regardless of target, so anything other
+        than Normal Isochron had no effect)."""
         # Capture all state vars
         self._plot_show_legend     = self._plot_cb_legend.isChecked()
         self._plot_show_group_fits = self._plot_cb_group_fits.isChecked()
         self._plot_show_overall_fit= self._plot_cb_overall_fit.isChecked()
         self._plot_legend_title    = self._plot_legend_edit.text().strip()
 
-        # X/Y axis: write into self._daxis[<key>] for selected target
+        # X/Y axis: write into self._daxis[<key>] per target
         target = self._plot_target_combo.currentText()
         x_auto = self._plot_cb_xauto.isChecked()
         y_auto = self._plot_cb_yauto.isChecked()
@@ -4901,24 +4976,37 @@ class AgeCalcPage(QtWidgets.QWidget):
         ymin = None if y_auto else self._plot_ymin.value()
         ymax = None if y_auto else self._plot_ymax.value()
 
-        target_keys = {
-            'All diagrams':     None,    # write to DFN as canonical (the only one Utilities accepts)
-            'Age Spectrum':     'DFW',
-            'Ca/K':             'DFA',
-            'Normal Isochron':  'DFN',
-            'Inverse Isochron': 'DFI',
-            'Cl/K':             'DFC',
-            'Degassing':        'DFD',
+        # v3.8.49: target → list of DF keys to write
+        # 'All diagrams' = all six (caveat: same xlim/ylim across plots
+        # with different x-scales — caller's responsibility)
+        target_keys_map = {
+            'All diagrams':     ['DFW', 'DFA', 'DFN', 'DFI', 'DFC', 'DFD'],
+            'Age Spectrum':     ['DFW'],
+            'Ca/K':             ['DFA'],
+            'Normal Isochron':  ['DFN'],
+            'Inverse Isochron': ['DFI'],
+            'Cl/K':             ['DFC'],
+            'Degassing':        ['DFD'],
         }
-        key = target_keys.get(target)
-        # Always write to DFN since Utilities.getDFStatistics_sh's xlim/ylim
-        # applies to isochrons. Per-tab axis still works through tab UI.
-        write_key = key if key else 'DFN'
-        if hasattr(self, '_daxis'):
-            self._daxis[write_key] = {
+        write_keys = target_keys_map.get(target, ['DFN'])
+        if not hasattr(self, '_daxis'):
+            self._daxis = {}
+        for k in write_keys:
+            self._daxis[k] = {
                 'xmin': xmin, 'xmax': xmax,
                 'ymin': ymin, 'ymax': ymax,
             }
+
+        # v3.8.49: mirror values into the matching per-tab QLineEdits so
+        # the per-tab axis controls stay in sync
+        if hasattr(self, '_daxis_edits'):
+            def _txt(v):
+                return '' if v is None else f'{v:g}'
+            for k in write_keys:
+                ed = self._daxis_edits.get(k)
+                if ed:
+                    ed[0].setText(_txt(xmin)); ed[1].setText(_txt(xmax))
+                    ed[2].setText(_txt(ymin)); ed[3].setText(_txt(ymax))
 
         # Trigger regen via existing refresh path
         self._refresh_diagrams()
@@ -4948,16 +5036,13 @@ class AgeCalcPage(QtWidgets.QWidget):
         existing PNGs without calling Utilities.getDFStatistics_sh — so the
         Show Temp checkbox and the per-diagram ⚙ axis dialog did nothing.
 
-        Now: call getDFStatistics_sh with xlim/ylim/show_temp/atm_ratio
-        derived from the current UI state, then reload the regenerated PNGs.
-
         v3.8.48: also reads Plot Controls state (Show Legend, Group fits,
         Overall fit, Legend title) and passes them to Utilities.
 
-        Note: getDFStatistics_sh takes a single (xlim, ylim) pair that
-        applies to the isochron diagrams (the main ones with adjustable
-        axes). DFN axis is used as the canonical source since both isochron
-        diagrams are typically adjusted together.
+        v3.8.49: dispatch per-target xlim/ylim. Was reading only DFN, so any
+        target other than Normal Isochron / Inverse Isochron had no axis
+        effect. Now: DFN drives isochron call; DFW/DFA/DFC drive separate
+        getSHStatistics calls with target_plot; DFD drives getDegasPlot.
         """
         if not getattr(self, '_datum_csv', None) or not getattr(self, '_consts', None):
             return
@@ -4974,18 +5059,22 @@ class AgeCalcPage(QtWidgets.QWidget):
         show_overall    = getattr(self, '_plot_show_overall_fit', True)
         legend_title    = getattr(self, '_plot_legend_title', '') or None
 
-        # Use DFN (Normal Isochron) axis as the primary xlim/ylim source.
-        dfn = self._daxis.get('DFN', {}) if hasattr(self, '_daxis') else {}
-        _xmin, _xmax = dfn.get('xmin'), dfn.get('xmax')
-        _ymin, _ymax = dfn.get('ymin'), dfn.get('ymax')
-        xlim = (_xmin, _xmax) if _xmin is not None and _xmax is not None else None
-        ylim = (_ymin, _ymax) if _ymin is not None and _ymax is not None else None
+        def _xy(key):
+            d = self._daxis.get(key, {}) if hasattr(self, '_daxis') else {}
+            x0, x1 = d.get('xmin'), d.get('xmax')
+            y0, y1 = d.get('ymin'), d.get('ymax')
+            xl = (x0, x1) if x0 is not None and x1 is not None else None
+            yl = (y0, y1) if y0 is not None and y1 is not None else None
+            return xl, yl
 
+        mask_all = np.ones(len(self._steps))
+
+        # 1. Isochron pair (DFN + DFI from a single call). DFN drives xlim/ylim.
+        iso_x, iso_y = _xy('DFN')
         try:
-            mask_all = np.ones(len(self._steps))
             Utilities.getDFStatistics_sh(self._datum_csv, mask_all, self._consts,
                                          'b', 'o',
-                                         xlim=xlim, ylim=ylim,
+                                         xlim=iso_x, ylim=iso_y,
                                          show_temp=show_temp,
                                          atm_ratio=atm_ratio,
                                          isochron_method=method,
@@ -4999,14 +5088,31 @@ class AgeCalcPage(QtWidgets.QWidget):
                 f'getDFStatistics_sh failed:\n{e}')
             return
 
-        # v3.8.43: also refresh the SH spectrum PNGs (DFW/DFA/DFC) + the
-        # Degassing PNG so all 6 diagrams stay in sync.
+        # 2. Spectrum DFW/DFA/DFC: per-target dispatch.
+        # If any target has custom xlim/ylim, call getSHStatistics once per
+        # such target (with target_plot=key). Otherwise a single default call
+        # regenerates all three with autoscaled axes.
+        sh_xy = {k: _xy(k) for k in ('DFW', 'DFA', 'DFC')}
+        custom = [(k, xl, yl) for k, (xl, yl) in sh_xy.items()
+                  if xl is not None or yl is not None]
         try:
-            Utilities.getSHStatistics(self._datum_csv, mask_all, self._consts)
+            if not custom:
+                Utilities.getSHStatistics(self._datum_csv, mask_all, self._consts,
+                                          show_legend=show_legend)
+            else:
+                for k, xl, yl in custom:
+                    Utilities.getSHStatistics(self._datum_csv, mask_all, self._consts,
+                                              xlim=xl, ylim=yl, target_plot=k,
+                                              show_legend=show_legend)
         except Exception:
-            pass   # SH already pre-generated by PipelineWorker; non-fatal
+            pass   # non-fatal: SH plots already pre-generated by worker
+
+        # 3. Degassing (DFD).
+        deg_x, deg_y = _xy('DFD')
         try:
-            Utilities.getDegasPlot(self._datum_csv, mask_all, self._consts)
+            Utilities.getDegasPlot(self._datum_csv, mask_all, self._consts,
+                                    xlim=deg_x, ylim=deg_y,
+                                    show_legend=show_legend)
         except Exception:
             pass
 
@@ -5038,65 +5144,130 @@ class AgeCalcPage(QtWidgets.QWidget):
                 'The new value will be applied to subsequent calculations.')
     
     # ── v3.8.36: bottom-tabs Excel-style diagram views ────────
+    # v3.8.50: per-diagram interpretation notes shown in the right panel.
+    _DIAG_NOTES = {
+        'DFW': 'Weighted-mean plateau from concordant steps. Box height = ±2σ. '
+               'A plateau needs ≥3 contiguous steps carrying ≥50% of ³⁹Ar.',
+        'DFA': 'Ca/K = 1.96 · ³⁷Ar(Ca)/³⁹Ar(K). Elevated Ca/K flags Ca-rich '
+               'phases (plagioclase, pyroxene) degassing in that step.',
+        'DFN': 'Normal isochron: y = ⁴⁰Ar/³⁶Ar  vs  x = ³⁹Ar/³⁶Ar. '
+               'Intercept = trapped (⁴⁰/³⁶); slope → ⁴⁰Ar*/³⁹Ar_K.',
+        'DFI': 'Inverse isochron: y = ³⁶Ar/⁴⁰Ar  vs  x = ³⁹Ar/⁴⁰Ar. '
+               'y-intercept = trapped (³⁶/⁴⁰); least error-correlation.',
+        'DFC': 'Cl/K from ³⁸Ar(Cl)/³⁹Ar(K). Marks Cl-bearing alteration '
+               'or fluid-inclusion contributions.',
+        'DFD': 'Per-step Ar amounts vs T. Low-T steps are usually atmospheric '
+               '/ loosely held; high-T steps carry the plateau.',
+    }
+
     def _make_diagram_tab(self, key, title):
-        """Build a full-size diagram tab with XY axis range controls.
-        Stores the big QLabel in self._dlbls_big[key] and the axis edit
-        QLineEdits in self._daxis_edits[key]. Apply/Reset on this tab
-        update self._daxis[key] and call self._refresh_diagrams() so all
-        diagrams regenerate with the new axis range."""
+        """v3.8.50 redesign: plot fills the LEFT column; a fixed-width RIGHT
+        panel holds the interpretation note, key stats for that diagram,
+        the axis-range controls, and Save Image. Replaces the old
+        full-width plot-only tab whose 8:6 figure left large L/R white
+        margins in a wide window.
+
+        Stores big QLabel in self._dlbls_big[key], axis QLineEdits in
+        self._daxis_edits[key], and the stats QLabel in self._dinfo[key]."""
         w = QtWidgets.QWidget()
-        vl = QtWidgets.QVBoxLayout(w)
-        vl.setContentsMargins(8, 6, 8, 6); vl.setSpacing(4)
+        root = QtWidgets.QHBoxLayout(w)
+        root.setContentsMargins(8, 6, 8, 6); root.setSpacing(8)
 
-        # Header row: title (small) + axis controls
-        ctrl_hl = QtWidgets.QHBoxLayout()
-        ctrl_hl.setSpacing(4)
-        _title_lbl = QtWidgets.QLabel(f'<b>{title}</b>')
-        _title_lbl.setStyleSheet(f'font-size:13px;color:{TXT};')
-        ctrl_hl.addWidget(_title_lbl)
-        ctrl_hl.addSpacing(20)
-
-        def _lbl(s):
-            l = QtWidgets.QLabel(s); l.setStyleSheet('font-size:11px;')
-            return l
-
-        def _edit():
-            e = QtWidgets.QLineEdit()
-            e.setPlaceholderText('auto')
-            e.setFixedWidth(80)
-            return e
-
-        xmin_e = _edit(); xmax_e = _edit(); ymin_e = _edit(); ymax_e = _edit()
-        ctrl_hl.addWidget(_lbl('X min:')); ctrl_hl.addWidget(xmin_e)
-        ctrl_hl.addWidget(_lbl('X max:')); ctrl_hl.addWidget(xmax_e)
-        ctrl_hl.addSpacing(10)
-        ctrl_hl.addWidget(_lbl('Y min:')); ctrl_hl.addWidget(ymin_e)
-        ctrl_hl.addWidget(_lbl('Y max:')); ctrl_hl.addWidget(ymax_e)
-        ctrl_hl.addSpacing(10)
-
-        applyBtn = QtWidgets.QPushButton('Apply')
-        applyBtn.setStyleSheet(_btn_style('#1a5fb4', 'white', '#1a5fb4') +
-                               'QPushButton{font-size:11px;padding:3px 12px;}')
-        ctrl_hl.addWidget(applyBtn)
-        resetBtn = QtWidgets.QPushButton('Reset')
-        resetBtn.setStyleSheet(_btn_style('#888', 'white', '#888') +
-                               'QPushButton{font-size:11px;padding:3px 10px;}')
-        ctrl_hl.addWidget(resetBtn)
-        ctrl_hl.addStretch()
-        vl.addLayout(ctrl_hl)
-
-        # Big diagram label (fills tab)
+        # ── LEFT: plot ──
+        plot_frame = QtWidgets.QFrame()
+        plot_frame.setFrameShape(QtWidgets.QFrame.Box)
+        plot_frame.setStyleSheet(f'QFrame{{border:1px solid {BRD};background:white;}}')
+        pf_vl = QtWidgets.QVBoxLayout(plot_frame)
+        pf_vl.setContentsMargins(4, 4, 4, 4)
         big_lbl = QtWidgets.QLabel('(pending — Run Pipeline first)')
         big_lbl.setAlignment(QtCore.Qt.AlignCenter)
-        big_lbl.setMinimumSize(600, 400)
-        big_lbl.setStyleSheet(f'border:1px solid {BRD};background:white;color:#888;')
-        vl.addWidget(big_lbl, 1)
+        big_lbl.setMinimumSize(520, 380)
+        big_lbl.setStyleSheet('border:none;background:white;color:#888;')
+        pf_vl.addWidget(big_lbl, 1)
+        root.addWidget(plot_frame, 1)
+
+        # ── RIGHT: info + controls panel ──
+        panel = QtWidgets.QFrame()
+        panel.setFixedWidth(330)
+        panel.setStyleSheet(
+            f'QFrame#diagPanel{{background:#f7f6f2;border:1px solid {BRD};'
+            f'border-radius:4px;}}')
+        panel.setObjectName('diagPanel')
+        pvl = QtWidgets.QVBoxLayout(panel)
+        pvl.setContentsMargins(12, 12, 12, 12); pvl.setSpacing(9)
+
+        _t = QtWidgets.QLabel(f'<b>{title}</b>')
+        _t.setStyleSheet(f'font-size:15px;color:{TXT};background:transparent;border:none;')
+        pvl.addWidget(_t)
+
+        _note = QtWidgets.QLabel(self._DIAG_NOTES.get(key, ''))
+        _note.setWordWrap(True)
+        _note.setStyleSheet('font-size:11px;color:#666;background:transparent;border:none;')
+        pvl.addWidget(_note)
+
+        def _hsep():
+            s = QtWidgets.QFrame(); s.setFrameShape(QtWidgets.QFrame.HLine)
+            s.setStyleSheet(f'background:{BRD};max-height:1px;border:none;')
+            return s
+        pvl.addWidget(_hsep())
+
+        stats_lbl = QtWidgets.QLabel('—')
+        stats_lbl.setWordWrap(True)
+        stats_lbl.setTextFormat(QtCore.Qt.RichText)
+        stats_lbl.setStyleSheet(
+            f'font-size:13px;color:{TXT};background:transparent;border:none;'
+            f'font-family:"Courier New",monospace;')
+        pvl.addWidget(stats_lbl)
+
+        pvl.addStretch(1)
+        pvl.addWidget(_hsep())
+
+        _ax_hdr = QtWidgets.QLabel('<b>Axis range</b>  '
+                                   '<span style="font-size:10px;color:#888;">'
+                                   '(blank = auto)</span>')
+        _ax_hdr.setStyleSheet(f'font-size:11px;color:{TXT3};background:transparent;border:none;')
+        pvl.addWidget(_ax_hdr)
+
+        def _edit():
+            e = QtWidgets.QLineEdit(); e.setPlaceholderText('auto')
+            e.setStyleSheet(f'QLineEdit{{background:white;border:1px solid {BRD};'
+                            f'padding:2px 4px;font-size:11px;}}')
+            return e
+        xmin_e = _edit(); xmax_e = _edit(); ymin_e = _edit(); ymax_e = _edit()
+
+        def _gl(s):
+            l = QtWidgets.QLabel(s)
+            l.setStyleSheet('font-size:11px;background:transparent;border:none;')
+            return l
+        grid = QtWidgets.QGridLayout(); grid.setSpacing(4)
+        grid.addWidget(_gl('X min'), 0, 0); grid.addWidget(xmin_e, 0, 1)
+        grid.addWidget(_gl('X max'), 0, 2); grid.addWidget(xmax_e, 0, 3)
+        grid.addWidget(_gl('Y min'), 1, 0); grid.addWidget(ymin_e, 1, 1)
+        grid.addWidget(_gl('Y max'), 1, 2); grid.addWidget(ymax_e, 1, 3)
+        pvl.addLayout(grid)
+
+        btn_hl = QtWidgets.QHBoxLayout(); btn_hl.setSpacing(6)
+        applyBtn = QtWidgets.QPushButton('Apply')
+        applyBtn.setStyleSheet(_btn_style('#1a5fb4', 'white', '#1a5fb4') +
+                               'QPushButton{font-size:11px;padding:4px 14px;font-weight:bold;}')
+        resetBtn = QtWidgets.QPushButton('Reset')
+        resetBtn.setStyleSheet(_btn_style('#888', 'white', '#888') +
+                               'QPushButton{font-size:11px;padding:4px 10px;}')
+        saveBtn = QtWidgets.QPushButton('Save Image')
+        saveBtn.setStyleSheet(_btn_style('#888', 'white', '#888') +
+                              'QPushButton{font-size:11px;padding:4px 10px;}')
+        btn_hl.addWidget(applyBtn); btn_hl.addWidget(resetBtn)
+        btn_hl.addWidget(saveBtn); btn_hl.addStretch()
+        pvl.addLayout(btn_hl)
+
+        root.addWidget(panel, 0)
 
         # Store handles
         self._dlbls_big[key] = big_lbl
         self._daxis_edits[key] = (xmin_e, xmax_e, ymin_e, ymax_e)
+        self._dinfo[key] = stats_lbl
 
-        # Wire Apply / Reset
+        # Wire Apply / Reset / Save
         def _on_apply():
             def _p(e):
                 t = e.text().strip()
@@ -5117,6 +5288,14 @@ class AgeCalcPage(QtWidgets.QWidget):
                                  'ymin': None, 'ymax': None}
             self._refresh_diagrams()
         resetBtn.clicked.connect(_on_reset)
+
+        def _on_save(_=False, k=key, t=title):
+            src = os.path.join(self._work_dir, '.work', k + '.png')
+            if not os.path.exists(src):
+                QtWidgets.QMessageBox.information(self, 'Info', f'{t} not available yet.')
+                return
+            self._save_single_diagram(src, t)
+        saveBtn.clicked.connect(_on_save)
 
         return w
 
@@ -6151,17 +6330,10 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
         for i, name in enumerate(step_names):
             x = i * (card_w + card_gap)
 
-            # ── Connector line to NEXT step (draw before circles so circles overlap) ──
-            if i < 2:
-                ln = QtWidgets.QLabel('', pipe_container)
-                ln.setGeometry(
-                    x + card_w // 2 + circle_size // 2,
-                    line_y,
-                    (card_w + card_gap) - circle_size,
-                    2,
-                )
-                ln.setStyleSheet(f'background:{GREY};')
-                self._pipe_lines.append(ln)
+            # v3.8.50: connector lines removed (user disliked the grey lines
+            # under the circles / text). Stepper is now 3 standalone dots +
+            # labels. _pipe_lines stays empty so _refresh_pipe_visuals's
+            # guarded iteration is a no-op.
 
             # ── Circle indicator ──
             circle = QtWidgets.QLabel('●', pipe_container)
@@ -6282,7 +6454,8 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
             name_lbl.setStyleSheet(
                 f'color:{text_col};font-size:12px;font-weight:bold;'
                 f'background:transparent;')
-            if i < 2:
+            # v3.8.50: connector lines removed — guard kept for back-compat
+            if i < 2 and i < len(self._pipe_lines):
                 line_col = BLUE if (is_blue[i] and is_blue[i + 1]) else GREY
                 self._pipe_lines[i].setStyleSheet(f'background:{line_col};')
 

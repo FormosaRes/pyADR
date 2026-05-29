@@ -1,8 +1,163 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48
-最後整理日期：2026-05-28
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50
+最後整理日期：2026-05-29
 整理者：Claude (based on git-style diff across all versions)
+
+---
+
+## V3.8.50（2026-05-29）— Stepper 灰線移除 + bottom tab 重排 + diagram tab 重新設計
+
+### 需求（使用者三項）
+
+1. 頂部 stepper（Calculate T₀ → Mass Ratio → Age Calc + Datum）圓圈與文字下方的灰色連接線不喜歡，去掉。
+2. Bottom tab 順序改成 Summary → Age Spectrum → Inverse → Normal → Ca/K → Cl/K → Degassing。
+3. Diagram tab（如 Age Spectrum）左右大量留白，重新設計頁面。
+
+### 修法
+
+#### 1. Stepper 灰線移除
+
+`AutoPipelineWindow._build` 內 stepper 的 connector line（`_pipe_lines`，灰色 2px QLabel）整段移除，只留 3 個圓點 + 標籤。`_refresh_pipe_visuals` 的著色迴圈加 `i < len(self._pipe_lines)` guard（list 現恆空，迴圈 no-op），保留 back-compat。
+
+#### 2. Bottom tab + Summary 縮圖九宮格重排
+
+兩處 list 順序統一改成 DFW(Age Spectrum) → DFI(Inverse) → DFN(Normal) → DFA(Ca/K) → DFC(Cl/K) → DFD(Degassing)：
+
+- Summary tab 的 6-grid 縮圖（`_build` 內 `for idx,(key,title)...`）
+- Bottom tabs（`for _key,_title...` → `tabs.addTab`）
+
+Datum tab 使用者未提及，保留在 Summary 之後（它是 datum 資料表，非 diagram）。
+
+#### 3. Diagram tab 重新設計（`_make_diagram_tab`）
+
+根因：圖 8:6、QLabel 佔滿整頁寬 → KeepAspectRatio 後左右大片留白。
+
+舊版：純全寬大圖 + 頂部一排軸控制。
+新版：QHBoxLayout 兩欄
+
+- **左欄**（stretch）：圖（外加 1px border 當畫布框）
+- **右欄**（固定 330px）：資訊 + 控制面板
+  - diagram 標題
+  - 判讀說明（`_DIAG_NOTES` per-key：plateau 定義 / isochron 軸定義 / Ca,Cl/K 意義 / degassing）
+  - 關鍵統計（`_dinfo[key]` QLabel，由 `_update_diagram_info` 填）
+    - Age Spectrum：Weighted plateau age ± σ、MSWD、n、Total fusion age
+    - Normal / Inverse Isochron：Isochron age ± σ、MSWD、n、trapped (⁴⁰/³⁶)
+    - Ca/K, Cl/K, Degassing：step 數 + 指向 Summary 表的說明
+  - 軸範圍控制（X/Y min/max grid）+ Apply / Reset / Save Image
+
+新增 instance 結構化統計（給右欄面板，避免重算）：
+
+- `_info_total`（total fusion）：populate 內 total 計算後存
+- `_info_plateau` / `_info_norm` / `_info_inv`：`_update_isochron_stats` 內各分支存 tuple
+- `_update_diagram_info()`：純呈現，從上述 `_info_*` 組 HTML 塞進 `_dinfo[key]`，在 `_reload_all_pngs` 末尾呼叫（populate 與每次 axis/method 變更都會刷新）
+
+### 已知保留
+
+圖**畫布內**的 matplotlib 天生白邊仍在（figure 8:6）。要讓圖本身更寬需改 `Utilities.py` figsize，會連動 NTNU_DataReduction / DiagramPlots_SH 出圖比例，等使用者確認後再加 optional `figsize` 參數（其他 caller 維持預設）。
+
+### 驗證 checklist
+
+- [ ] 頂部 stepper 只剩 3 個圓點 + 文字，無灰線
+- [ ] Bottom tab 順序 = Summary, Datum, Age Spectrum, Inverse Isochron, Normal Isochron, Ca/K, Cl/K, Degassing
+- [ ] Summary 縮圖九宮格順序與上一致
+- [ ] 每個 diagram tab 右側面板顯示對應統計（Age Spectrum 顯 plateau + total；isochron 顯 age + MSWD + trapped）
+- [ ] 右側 Apply 改軸範圍 → 該圖重畫（沿用 v3.8.49 per-target dispatch）
+- [ ] 右側 Save Image 可存該圖 PNG
+
+### 檔案改動
+
+- `AutoPipeline.py`：stepper（移除 `_pipe_lines` 建立 + guard refresh）、tab/grid 重排、`_make_diagram_tab` 重寫、`_DIAG_NOTES`、`_update_diagram_info`、`_info_*` 儲存
+- `.work/.app_info.txt`：3.8.49 → 3.8.50
+
+---
+
+## V3.8.49（2026-05-29）— Plot Controls XY 軸無反應 fix
+
+### 問題
+
+v3.8.48 加的 Plot Controls 面板，使用者調整 XY 軸 → Apply 後沒反應。
+
+### 根因
+
+`_plot_apply` 寫到 `self._daxis[write_key]`（write_key 來自 target dropdown），但實作裡所有非 'Normal Isochron' 的 target 都被 force 寫到 `'DFN'`：
+
+```python
+write_key = key if key else 'DFN'
+```
+
+更嚴重的是 `_refresh_diagrams` 只讀 `_daxis['DFN']` 然後 pass 給 `getDFStatistics_sh`，`getSHStatistics`／`getDegasPlot` 完全沒收到 xlim/ylim。所以：
+
+| Target | 寫入 | refresh 讀 | 實際 |
+|---|---|---|---|
+| All diagrams | DFN | DFN | 只動 isochron |
+| Age Spectrum / Ca/K / Cl/K | DFW/DFA/DFC（**bug：實際寫 DFN**） | DFN | 動 isochron（錯！）|
+| Inverse Isochron | DFI（**bug：實際寫 DFN**） | DFN | 動 isochron |
+| Degassing | DFD（**bug：實際寫 DFN**） | DFN | 動 isochron |
+
+### 修法
+
+#### 1. `_plot_apply` 改寫 per-target keys
+
+```python
+target_keys_map = {
+    'All diagrams':     ['DFW', 'DFA', 'DFN', 'DFI', 'DFC', 'DFD'],
+    'Age Spectrum':     ['DFW'],
+    'Ca/K':             ['DFA'],
+    'Normal Isochron':  ['DFN'],
+    'Inverse Isochron': ['DFI'],
+    'Cl/K':             ['DFC'],
+    'Degassing':        ['DFD'],
+}
+write_keys = target_keys_map.get(target, ['DFN'])
+for k in write_keys:
+    self._daxis[k] = {...}
+```
+
+並 mirror 值到 per-tab `_daxis_edits[k]` QLineEdit，保持 sidebar 跟 per-tab 控制同步。
+
+#### 2. `_refresh_diagrams` per-target dispatch
+
+```python
+def _xy(key):
+    d = self._daxis.get(key, {}) ...
+    return xl, yl
+
+# Isochron pair: DFN drives
+iso_x, iso_y = _xy('DFN')
+Utilities.getDFStatistics_sh(..., xlim=iso_x, ylim=iso_y, ...)
+
+# Spectrum: per-target dispatch with target_plot=key
+sh_xy = {k: _xy(k) for k in ('DFW','DFA','DFC')}
+custom = [(k, xl, yl) for k, (xl, yl) in sh_xy.items()
+          if xl is not None or yl is not None]
+if not custom:
+    Utilities.getSHStatistics(..., show_legend=show_legend)
+else:
+    for k, xl, yl in custom:
+        Utilities.getSHStatistics(..., xlim=xl, ylim=yl, target_plot=k, ...)
+
+# Degassing
+deg_x, deg_y = _xy('DFD')
+Utilities.getDegasPlot(..., xlim=deg_x, ylim=deg_y, show_legend=show_legend)
+```
+
+`getSHStatistics` 內部 `apply_controls` 用 `(target_plot is None or target_plot == 'DFW')` 等三條 guard，傳對 target_plot 就只動該 subplot 的 xlim/ylim，其他兩個 spectrum 維持 autoscale。
+
+### 驗證 checklist
+
+- [ ] AgeCalcPage 跑完 Pipeline 後，左下 Plot Controls：
+  - Target = 'Age Spectrum'，X min=0, X max=80, Apply → DFW (Age Spectrum tab) X 軸變 0–80，其他 diagram 不變
+  - Target = 'Ca/K'，Y min=0, Y max=5, Apply → DFA Y 軸變 0–5
+  - Target = 'Normal Isochron'，X min=0, X max=2000, Apply → DFN/DFI 都動（共用 call）
+  - Target = 'Degassing'，Apply log → DFD 重畫
+- [ ] Apply 後 per-tab 的 4 個 QLineEdit (xmin/xmax/ymin/ymax) 也填上對應數字
+- [ ] Show Legend uncheck → 所有 diagram legend 消失（之前已 OK，這次只是順手把 show_legend 傳給 SHStats + Degas）
+
+### 檔案改動
+
+- `AutoPipeline.py`：`_plot_apply`（target_keys_map per-key write）、`_refresh_diagrams`（per-target dispatch）
+- `.work/.app_info.txt`：3.8.48 → 3.8.49
 
 ---
 
