@@ -1,10 +1,60 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55
 最後整理日期：2026-05-29
 整理者：Claude (based on git-style diff across all versions)
 
 GitHub Releases（tag）：v3.8.0、v3.8.1、v3.8.3、v3.8.4、v3.8.5、v3.8.6、v3.8.7、v3.8.8，最新 **v3.8.54（Latest）彙整 v3.8.9 → v3.8.54 共 46 版**。
+
+---
+
+## V3.8.55（2026-05-29）— AgeCalc 加「³⁶Ar blank ×k 試算」按鈕（大氣校正敏感度檢查）
+
+### 需求
+
+使用者想檢查：是不是把 ³⁶Ar **blank** 挑太小，造成 plateau age 太集中漂亮、其實大氣校正沒做足。要一個能依比例縮放 ³⁶Ar blank 並重算 age 的按鈕。
+
+**注意**：調的是 ³⁶Ar **blank**（使用者實際在 Calculate T₀ 挑的東西），不是直接動 net。blank 變 → ³⁶ net 變 → 大氣校正變。（初版誤做成縮放 net，使用者糾正後改成 blank。）
+
+### 修法（`AgeCalcPage`）
+
+summary 控制列（atm ratio 旁）新增：`³⁶Ar blank ×` QDoubleSpinBox（預設 1.00，範圍 0–10）+ `試算` 按鈕 + 結果 label。
+
+`_apply_ar36_scale()`：從已存的 `age_result` component **post-hoc 重算**，不重跑 pipeline、不動 baseline（`self._steps` 原封不動，k=1 完全還原）。
+
+公式（reduction：`Ar40_air = Ar36_air · R_40_36a`、`Ar36_air = ³⁶net`，blank 共用所以每個 step 的 ⁴⁰Ar* 平移同一個量）：
+```
+⁴⁰Ar*(k) = ⁴⁰Ar*₀ + (⁴⁰/³⁶)atm · (k − 1) · ³⁶blank₀
+age(k)   = ln(1 + J·⁴⁰Ar*(k)/³⁹Ar_K) / λ_eff
+```
+- `⁴⁰Ar*₀=ar[24]`、`³⁹Ar_K=ar[18]`、`⁴⁰Ar_m=ar[10]`、`J=ar[44]`、`age₀=ar[46]`
+- `³⁶blank₀` = pipeline 跑當下用的 blank ³⁶Ar T₀，`_on_done` 從 `t0Page._bT0[0]` 抓給 `agePage._blank_t0`
+- **k>1（blank 變大）→ net ³⁶ 變小 → 少扣大氣 → age 偏老**；k<1 反之偏年輕
+- **λ_eff 從每個 step baseline age 反推**（`ln(1+J·F₀)/age₀`），保證 age(k=1)=存檔值，不受 `LAMBDA_K`(5.49e-10) 與 Utilities 實際 λ 不一致影響
+- σ_age 維持 baseline，所以重算 plateau MSWD 反映 age 中心隨 k 是擠（MSWD≪1 = 假漂亮 / 大氣扣不夠）還是散
+
+按鈕行為：重算各 step age 寫回 Results 表（k≠1 數字轉藍 = what-if）、算 plateau weighted mean + MSWD、label 顯示 `³⁶blk b₀×k=b' → plateau X ± Y (MSWD Z) | k=1: baseline`。populate 清殘留 preview + spin 歸 1。blank ³⁶≈0 或沒跑 pipeline 時提示先跑。
+
+### 用法（敏感度檢查）
+
+1. 跑完 pipeline，先 `×1.00 試算` 確認 = baseline（self-check）。
+2. 逐步加大 k（blank 放大）→ age 偏老；或減小 → 偏年輕。看 plateau / MSWD / ⁴⁰Ar(r)% 怎麼動。
+3. 對照 Summary 的 **Inverse Isochron age**（不假設 298.56，當真值基準）與 **NO.65 = 9.77 Ma**。
+4. 若要 k<1（blank 更小、多扣大氣）才讓 plateau 對上 isochron / 9.77 → 證實原本 blank 挑太大；反之要 k>1 → 原本 blank 挑太小。
+
+### 驗證 checklist
+
+- [ ] k=1 試算 = baseline（age 不變、label 標 [baseline]）
+- [ ] k=2（blank 加倍）各 step age 變老、⁴⁰Ar(r)% 上升
+- [ ] ⁴⁰Ar*(k) ≤ 0 的 step 顯示 '—' 不當機
+- [ ] 沒跑 pipeline 就按 → 提示「需先跑 pipeline 取得 ³⁶Ar blank」
+- [ ] 重跑 pipeline 後 preview 清空、spin 回 1.00
+- [ ] NO.65：找出讓 plateau ≈ 9.77 Ma 的 k
+
+### 檔案改動
+
+- `AutoPipeline.py`：`AgeCalcPage` summary 列加 UI、`_apply_ar36_scale`（blank-scaling）、populate 清 preview、`_on_done` 把 blank T₀ 交給 agePage
+- `.work/.app_info.txt`：3.8.54 → 3.8.55
 
 ---
 

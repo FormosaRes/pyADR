@@ -4387,7 +4387,37 @@ class AgeCalcPage(QtWidgets.QWidget):
             'QPushButton{font-size:11px;padding:3px 10px;}')
         self.recalcBtn.clicked.connect(self._recalculate_with_atm)
         ctrl_hl.addWidget(self.recalcBtn)
-        
+
+        # v3.8.55: ³⁶Ar sensitivity preview — scale the atmospheric ³⁶Ar by k
+        # and recompute ages on the fly (non-destructive; k=1 restores).
+        ctrl_hl.addSpacing(20)
+        ctrl_hl.addWidget(QtWidgets.QLabel(
+            '<span style="font-size:11px;color:#444;">³⁶Ar blank ×</span>'))
+        self.ar36ScaleSpin = QtWidgets.QDoubleSpinBox()
+        self.ar36ScaleSpin.setRange(0.0, 10.0)
+        self.ar36ScaleSpin.setSingleStep(0.1)
+        self.ar36ScaleSpin.setDecimals(2)
+        self.ar36ScaleSpin.setValue(1.00)
+        self.ar36ScaleSpin.setFixedWidth(64)
+        self.ar36ScaleSpin.setStyleSheet(
+            f'QDoubleSpinBox{{background:white;border:1px solid {BRD};'
+            f'padding:1px 4px;font-size:11px;}}')
+        ctrl_hl.addWidget(self.ar36ScaleSpin)
+        self.ar36ScaleBtn = QtWidgets.QPushButton('試算')
+        self.ar36ScaleBtn.setToolTip(
+            '把扣掉的 ³⁶Ar blank ×k 重算 age（不動存檔，k=1 還原）。\n'
+            'k>1 = blank 變大 → net ³⁶ 變小 → 少扣大氣 → age 偏老。\n'
+            'k<1 = blank 變小 → 多扣大氣 → age 偏年輕。\n'
+            '看 plateau age / MSWD / ⁴⁰Ar(r)% 隨 k 怎麼變，對照 isochron 與 9.77 Ma。')
+        self.ar36ScaleBtn.setStyleSheet(
+            _btn_style('#8a5a00','white','#8a5a00') +
+            'QPushButton{font-size:11px;padding:3px 10px;}')
+        self.ar36ScaleBtn.clicked.connect(self._apply_ar36_scale)
+        ctrl_hl.addWidget(self.ar36ScaleBtn)
+        self.ar36ScaleLbl = QtWidgets.QLabel('')
+        self.ar36ScaleLbl.setStyleSheet('font-size:11px;color:#8a5a00;')
+        ctrl_hl.addWidget(self.ar36ScaleLbl)
+
         ctrl_hl.addStretch()
         sf_vl.addLayout(ctrl_hl)
         
@@ -4664,6 +4694,11 @@ class AgeCalcPage(QtWidgets.QWidget):
         self._work_dir = work_dir
         self._datum_csv = datum_csv
         self._consts = consts
+        # v3.8.55: clear any stale ³⁶Ar-scale preview from a previous run
+        if hasattr(self, 'ar36ScaleLbl'):
+            self.ar36ScaleLbl.setText('')
+        if hasattr(self, 'ar36ScaleSpin'):
+            self.ar36ScaleSpin.setValue(1.00)
         # v3.8.5 (A2): wire dropdown change → regen diagrams with new method
         try:
             self._isochron_method_combo.currentIndexChanged.disconnect()
@@ -5239,6 +5274,108 @@ class AgeCalcPage(QtWidgets.QWidget):
                 f'Atm ratio updated to {atm:.2f}.\n\n'
                 'Note: full recalculation requires re-running the Age Calc pipeline.\n'
                 'The new value will be applied to subsequent calculations.')
+
+    def _apply_ar36_scale(self):
+        """v3.8.55: ³⁶Ar BLANK sensitivity preview. Recompute every step's age
+        as if the ³⁶Ar blank that was subtracted were scaled by k (the
+        spinbox), WITHOUT re-running the pipeline and WITHOUT touching the
+        stored baseline (self._steps intact). k=1 restores baseline exactly.
+
+        Scaling the blank by k shifts the net (atmospheric) ³⁶Ar of EVERY
+        step by the same Δ = (k−1)·³⁶blank₀, hence every ⁴⁰Ar* by a common
+        atm·Δ (reduction: Ar40_air = Ar36_air · R_40_36a, Ar36_air = ³⁶net):
+
+            ⁴⁰Ar*(k) = ⁴⁰Ar*₀ + (⁴⁰/³⁶)atm · (k − 1) · ³⁶blank₀
+            age(k)   = ln(1 + J·⁴⁰Ar*(k)/³⁹Ar_K) / λ_eff   [Ma]
+
+        k>1 (bigger blank) → less net ³⁶ → less atm correction → OLDER age.
+        σ_age held at baseline, so the recomputed plateau MSWD reveals
+        whether age centres cluster (MSWD ≪ 1 = 'too pretty / atm
+        under-corrected') or spread. λ_eff is back-derived per step from the
+        stored baseline age so age(k=1) == stored age exactly.
+
+        ³⁶blank₀ = blank ³⁶Ar T₀ the pipeline used (self._blank_t0[0], grabbed
+        from the Calculate-T₀ page at run time). age_result indices:
+        ar[24]=⁴⁰Ar*, ar[18]=³⁹Ar_K, ar[10]=⁴⁰Ar_m, ar[44]=J,
+        ar[46]=age(yr), ar[47]=σ_age(yr)."""
+        if not getattr(self, '_steps', None):
+            return
+        try:
+            k = float(self.ar36ScaleSpin.value())
+        except Exception:
+            return
+        atm = self._get_atm_ratio()
+        lam = LAMBDA_K
+        bt = getattr(self, '_blank_t0', None)
+        blank36 = float(bt[0]) if (bt is not None and len(bt) > 0) else 0.0
+        if not blank36:
+            self.ar36ScaleLbl.setText(
+                '需先跑 pipeline 取得 ³⁶Ar blank（或 blank ³⁶ ≈ 0，調整無效）')
+            return
+        is_base = abs(k - 1.0) < 1e-9
+        col_clr = None if is_base else QtGui.QColor('#1a5fb4')
+        shift = atm * (k - 1.0) * blank36   # common Δ⁴⁰Ar* applied to every step
+        pl_ages = []
+        for r, step in enumerate(self._steps):
+            ar = step.get('age_result', [])
+            if len(ar) <= 47:
+                continue
+            A40r0 = _sf(ar[24]); A39K = _sf(ar[18])
+            A40m  = _sf(ar[10]); J = _sf(ar[44]); sig = _sf(ar[47]) / 1e6
+            age1_yr = _sf(ar[46])
+            A40r_k = A40r0 + shift
+            ok = (A40r_k > 0 and A39K > 0 and J > 0)
+            if ok:
+                # Back-derive the pipeline's effective λ from this step's
+                # baseline age so age(k=1) == stored age exactly, regardless
+                # of which λ Utilities used (avoids a constant offset).
+                F1 = A40r0 / A39K
+                base_ln = math.log1p(J * F1) if (1.0 + J * F1) > 0 else 0.0
+                lam_eff = (base_ln / age1_yr) if (age1_yr > 0 and base_ln > 0) else lam
+                try:
+                    age_k = (math.log1p(J * (A40r_k / A39K)) / lam_eff) / 1e6
+                except Exception:
+                    age_k, ok = float('nan'), False
+            else:
+                age_k = float('nan')
+            pct_k = (A40r_k / A40m * 100.0) if A40m else 0.0
+            # update table cells (display only — baseline ar untouched)
+            if r < self.tbl.rowCount():
+                cells = {1: (f'{age_k:.4f}' if ok else '—'),
+                         2: (f'{sig:.4f}' if ok else '—'),
+                         3: f'{pct_k:.1f}%'}
+                for c, v in cells.items():
+                    it = QtWidgets.QTableWidgetItem(v)
+                    if col_clr is not None:
+                        it.setForeground(col_clr)
+                    self.tbl.setItem(r, c, it)
+            if ok and sig > 0 and age_k == age_k:
+                pl_ages.append((age_k, sig))
+        # plateau weighted mean + MSWD from the scaled ages
+        if pl_ages:
+            tw = sum(1.0 / s**2 for _, s in pl_ages)
+            mean = sum(a / s**2 for a, s in pl_ages) / tw
+            n = len(pl_ages)
+            if n > 1:
+                mswd = sum(((a - mean) / s)**2 for a, s in pl_ages) / (n - 1)
+                sig_int = (1.0 / tw) ** 0.5
+                sig_ext = sig_int * math.sqrt(mswd) if mswd > 1 else sig_int
+                txt = (f'³⁶blk {blank36:.2e}×{k:.2f}={k*blank36:.2e} → '
+                       f'plateau {mean:.3f} ± {sig_ext:.3f} Ma '
+                       f'(MSWD {mswd:.2f}, n={n})')
+            else:
+                txt = f'³⁶blk ×{k:.2f} → {mean:.3f} Ma (n=1)'
+        else:
+            txt = f'³⁶blk ×{k:.2f} → 無有效 step（⁴⁰Ar* ≤ 0）'
+        base = getattr(self, '_info_plateau', None)
+        if base:
+            _b = f' | k=1: {base[0]:.3f} ± {base[1]:.3f} Ma'
+            if base[2] is not None:
+                _b += f', MSWD {base[2]:.2f}'
+            txt += _b
+        if is_base:
+            txt += '  [baseline]'
+        self.ar36ScaleLbl.setText(txt)
     
     # ── v3.8.36: bottom-tabs Excel-style diagram views ────────
     # v3.8.50: per-diagram interpretation notes shown in the right panel.
@@ -6692,6 +6829,12 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
         self.mrPage.populate(res['steps'])
         self.agePage.populate(res['steps'],res['datum_csv'],res['work_dir'],
                               consts=res.get('consts'))
+        # v3.8.55: hand the blank T₀ vector (used by this run) to AgeCalcPage so
+        # its "³⁶Ar blank ×k" preview knows the baseline ³⁶ blank to scale.
+        try:
+            self.agePage._blank_t0 = [float(v) for v in self.t0Page._bT0]
+        except Exception:
+            self.agePage._blank_t0 = None
         self.statusBar().showMessage('✓ Done — '+res['datum_csv'])
         # v3.8.20: pipeline computes T0, MR, and Age all in one shot — mark all
         # three as done. Navigate to the target page the caller requested
