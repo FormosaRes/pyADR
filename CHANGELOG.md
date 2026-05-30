@@ -1,58 +1,60 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 → V3.8.56
-最後整理日期：2026-05-29
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57
+最後整理日期：2026-05-31
 整理者：Claude (based on git-style diff across all versions)
 
 GitHub Releases（tag）：v3.8.0、v3.8.1、v3.8.3、v3.8.4、v3.8.5、v3.8.6、v3.8.7、v3.8.8，最新 **v3.8.54（Latest）彙整 v3.8.9 → v3.8.54 共 46 版**。
 
 ---
 
-## V3.8.56（2026-05-29）— T₀ Range 圖互動選 cycle（drill-down）+ 盒子改 1/σ² 加權
+## V3.8.57（2026-05-31）— 撤回 T₀ Range 自動選 cycle，改 ³⁶Ar blank → Age Spectrum 即時敏感度
 
-### 需求
+### 緣由（策略轉向）
 
-使用者要 T₀ Range 圖可互動：點圖自動選 cycle（挑 error 小的）。並指出**不同 cycle 數造成權重偏移**：C(10,4..10) 全部等權倒進一個盒子，k=4/5/6 佔 ~79%（672/848），少-cycle 噪音組合主導盒子，median/寬度失真。
+v3.8.56 把 T₀ Range 圖做成「點 box → drill-down 自動選 cycle」。使用者判定**根本策略不可行**：per-isotope 自動選 cycle 變數太多（³⁶ 的 Ca 校正依賴 ³⁷Ar，³⁶/³⁷ 耦合），不該用分佈圖自動挑。決定**維持人工選 cycle**，改從另一角度：固定人工選擇後，把 **³⁶Ar blank 依比例縮小（net ³⁶ 變大）**，**從 Age Spectrum 圖看效應**。
 
-### 修法（`CalcT0Page`，全在 Calculate T₀ 頁）
+### 修法
 
-#### 1. 主圖盒子改 1/σ² 加權（去 cycle 數偏移）
+#### 1. 撤回 v3.8.56（`git revert`）
 
-`ax.boxplot`（等權）→ `ax.bxp` + 自算加權分位數。新 module helper：
-- `_wq(vals, wts, qs)`：加權分位數（midpoint convention）
-- `_wbox_stats(t0s, sigs)`：每個 box 用 `w=1/σ²` 算加權 q1/med/q3 + Tukey 1.5·IQR whisker，回傳 bxp dict
+移除 drill-down 點選、`_on_t0range_click`/`_best_per_cycle`/`_show_cycle_drilldown`/`_apply_cycle_combo`、canvas click 綁定、positions/meta stash、box 的 1/σ² 加權（回到原 `ax.boxplot`）。T₀ Range 圖回到純視覺化，不介入選 cycle。
 
-少-cycle 組合 σ 大 → 權重小 → 被壓下去，盒子變成「高精度（多-cycle）可達的 T₀ 分佈」。組合數 artifact 消除。
+#### 2. 新增「Age 譜敏感度」即時視窗（`AgeCalcPage`）
 
-#### 2. 點 box → drill-down「T₀ vs cycle 數」
+³⁶blk 那排加按鈕 `Age 譜敏感度` → `_show_ar36_spectrum_dialog`：
 
-`cv_t0range.mpl_connect('button_press_event', _on_t0range_click)`（建 canvas 時接一次）。
-- `_on_t0range_click`：click x → 最近的 box（用 `_t0r_positions`/`_t0r_box_meta`，paint 時存）→ `(nm, ai)`
-- `_best_per_cycle(nm, ai)`：cache 內每個 cycle 數 k 取**最低-σ 組合** `{k:(t0,σ,mask)}`
-- `_show_cycle_drilldown`：modal 畫 T₀±σ vs k(4..10)（每個 k 只一點，**等權無偏移**）+ 當前選擇虛線。看 T₀ 隨 k 收斂/漂移、σ 隨 k 變小
-- 套用：每個 k 一顆按鈕、或點圖上的點、或 **Auto (min σ)**（= 使用者要的「自動選 error 小」）
+- 拉桿 k（0.00–1.50，預設 1.00）縮放 ³⁶Ar blank
+- matplotlib Age Spectrum：x = 累積 ³⁹Ar 釋放 %、各 step age±σ 階梯盒；**scaled（藍）疊 baseline k=1（灰）**對照
+- 即時：拉桿動 → 重畫 + 顯示該 k 的 plateau ± σ (MSWD, n)
+- 純 what-if，不動存檔 / 選擇
 
-#### 3. 套用選擇
+公式同 v3.8.55（`_ar36_scaled_ages(k)` helper，與 `_apply_ar36_scale` 共用物理）：
+```
+⁴⁰Ar*(k) = ⁴⁰Ar*₀ + (⁴⁰/³⁶)atm·(k−1)·³⁶blank₀
+age(k)   = ln(1 + J·⁴⁰Ar*(k)/³⁹Ar_K) / λ_eff
+```
+³⁹Ar_K (ar[18]) 不受 ³⁶ 縮放影響，直接當 spectrum x 權重。k<1 → blank 小 → net ³⁶ 大 → 多扣大氣 → age 年輕。
 
-`_apply_cycle_combo(nm, ai, mask)`：寫回 `_smask[nm][ai]`（blank 寫 `_bmask[ai]` + `_calc_blank_t0`），refresh 對應 canvas、`_broadcast_t0_net_37`、`_refresh_sum_only`、`_update_step_colors`，重畫 T₀ Range（白點/blank 線跟著動）。
+### 用法
 
-### 設計理由
-
-點 box 不直接套用，而是先開 drill-down，是刻意的：使用者要先**看 cycle 數對 T₀ 的影響**（收斂還漂移）再決定，不盲選。Auto (min σ) 給想快的人。`cached_fits` 結構本來就是 `(t0, σ, k, mask)`，mask 直接拿來套。
+跑完 pipeline → AgeCalc → 按「Age 譜敏感度」→ 拉桿從 1.0 往 0 拉，看 spectrum：
+- plateau 是否一路保持平（穩健）還是塌陷/翹起（³⁶ 敏感）
+- 跟 baseline 灰線比，哪個 k 的 spectrum 形狀 + plateau age 對得上 inverse isochron / NO.65 9.77 Ma
 
 ### 驗證 checklist
 
-- [ ] 主圖盒子比舊版窄（噪音少-cycle 被加權壓掉）
-- [ ] 點任一 box（含 Blank）→ 跳 drill-down，x=cycle 數、y=T₀±σ
-- [ ] drill-down 點 k 或 Auto → 該 step/isotope 選擇更新、白點移動
-- [ ] 點 Blank box → 改 blank mask、blank 虛線移動
-- [ ] prefetch 沒跑完點下去 → 提示 wait，不當機
-- [ ] T₀ 隨 k 收斂的 step 容易選；漂移的 step 看得出晚段 cycle 有問題
+- [ ] T₀ Range 圖點下去不再跳 dialog（drill-down 已撤）
+- [ ] AgeCalc「Age 譜敏感度」按鈕開窗，拉桿即時重畫
+- [ ] k=1 scaled 線與 baseline 灰線重合
+- [ ] k 往 0 拉 → 各 step age 變年輕、spectrum 整體下移
+- [ ] 沒跑 pipeline / blank ³⁶≈0 → 提示，不當機
+- [ ] NO.65：找出 spectrum 平 + plateau ≈ 9.77 Ma 的 k
 
 ### 檔案改動
 
-- `AutoPipeline.py`：`_wq`/`_wbox_stats`（module）、`_paint_t0range_pattern`（收 all_sigs + bxp 加權 + 存 positions/meta）、`cv_t0range` 接 click、`_on_t0range_click`/`_best_per_cycle`/`_show_cycle_drilldown`/`_apply_cycle_combo`
-- `.work/.app_info.txt`：3.8.55 → 3.8.56
+- `AutoPipeline.py`：revert v3.8.56；`AgeCalcPage` 加 `ar36SpecBtn`、`_ar36_scaled_ages`、`_show_ar36_spectrum_dialog`
+- `.work/.app_info.txt`：3.8.55 →（3.8.56 reverted）→ 3.8.57
 
 ---
 
