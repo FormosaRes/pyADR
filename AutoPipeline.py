@@ -886,6 +886,40 @@ def _compute_combo_score(sig_a, sig_m, n, mask, nc=10,
     return base + penalty
 
 
+def _wq(vals, wts, qs):
+    """v3.8.56: weighted quantiles (midpoint convention). vals/wts array-like,
+    qs list of fractions in [0,1]. Returns list of interpolated values."""
+    v = np.asarray(vals, dtype=float)
+    w = np.asarray(wts, dtype=float)
+    if v.size == 0:
+        return [float('nan')] * len(qs)
+    order = np.argsort(v)
+    v = v[order]; w = w[order]
+    tot = w.sum()
+    if tot <= 0:
+        return [float(np.interp(q, np.linspace(0, 1, v.size), v)) for q in qs]
+    cw = (np.cumsum(w) - 0.5 * w) / tot
+    return [float(np.interp(q, cw, v)) for q in qs]
+
+
+def _wbox_stats(t0s, sigs):
+    """v3.8.56: build a matplotlib bxp() stats dict for one box, weighting
+    each combo by 1/σ² so noisy low-cycle combos don't dominate the spread.
+    Whiskers use Tukey 1.5·IQR fences clamped to the data."""
+    v = np.asarray(t0s, dtype=float)
+    s = np.asarray(sigs, dtype=float)
+    w = np.where(s > 0, 1.0 / (s * s), 0.0)
+    if not np.any(w > 0):
+        w = np.ones_like(v)
+    q1, med, q3 = _wq(v, w, [0.25, 0.5, 0.75])
+    iqr = q3 - q1
+    lo, hi = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+    inside = v[(v >= lo) & (v <= hi)]
+    whislo = float(inside.min()) if inside.size else float(v.min())
+    whishi = float(inside.max()) if inside.size else float(v.max())
+    return dict(med=med, q1=q1, q3=q3, whislo=whislo, whishi=whishi, fliers=[])
+
+
 def _enumerate_combos_simple(vt_i, fit_type, n_total):
     """v3.8.26: worker-callable enumerate, mirrors MvCanvas._enumerate_combos
     exactly (k = n_total..4, no penalty, no R² rejection). Returns list of
@@ -2255,6 +2289,8 @@ class CalcT0Page(QtWidgets.QWidget):
         self._t0range_ax  = self._t0range_fig.add_subplot(111)
         self.cv_t0range   = _FigCanvas(self._t0range_fig)
         self.cv_t0range.setFixedSize(1450, 360)   # 380 → 360 (toggle row 上方占 20)
+        # v3.8.56: click a box → drill-down (T₀ vs cycle count) to pick cycles
+        self.cv_t0range.mpl_connect('button_press_event', self._on_t0range_click)
         p5tl.addWidget(self.cv_t0range)
 
         # v3.8.47: removed Degassing Pattern + Yield Panel per user — both
@@ -3408,6 +3444,7 @@ class CalcT0Page(QtWidgets.QWidget):
             bar_w, gap_in, gap_out = 0.55, 0.04, 0.7
         positions = []
         all_t0s = []
+        all_sigs = []   # v3.8.56: σ per combo, parallel to all_t0s (1/σ² weighting)
         all_colors = []
         group_centers = []
         group_labels = []
@@ -3437,6 +3474,7 @@ class CalcT0Page(QtWidgets.QWidget):
                     if t0s:
                         positions.append(x)
                         all_t0s.append(t0s)
+                        all_sigs.append([c[1] for c in cached_fits])
                         all_colors.append(iso_colors[ai])
                         blank_step_xs.append(x)
                         box_meta.append(('__BLANK__', ai))
@@ -3458,6 +3496,7 @@ class CalcT0Page(QtWidgets.QWidget):
                     if t0s:
                         positions.append(x)
                         all_t0s.append(t0s)
+                        all_sigs.append([c[1] for c in cached_fits])
                         all_colors.append(iso_colors[ai])
                         step_xs.append(x)
                         per_iso_t0s[ai].extend(t0s)
@@ -3477,11 +3516,21 @@ class CalcT0Page(QtWidgets.QWidget):
             self.cv_t0range.draw()
             return
 
-        bp = ax.boxplot(all_t0s, positions=positions, widths=bar_w,
-                        patch_artist=True, showfliers=False,
-                        medianprops=dict(color='black', linewidth=1.0),
-                        whiskerprops=dict(linewidth=0.8),
-                        capprops=dict(linewidth=0.8))
+        # v3.8.56: stash positions + meta so the click handler can map a
+        # click back to its (step, isotope) box and open the drill-down.
+        self._t0r_positions = list(positions)
+        self._t0r_box_meta = list(box_meta)
+
+        # v3.8.56: 1/σ²-weighted boxes (was equal-weight ax.boxplot). The raw
+        # C(10,4..10) pool is dominated by low-cycle combos (k=4/5/6 ≈ 79% of
+        # 848) which are noisy; weighting each combo by 1/σ² down-weights them
+        # so the box reflects the high-precision (many-cycle) T₀ population.
+        box_stats = [_wbox_stats(t, s) for t, s in zip(all_t0s, all_sigs)]
+        bp = ax.bxp(box_stats, positions=positions, widths=bar_w,
+                    patch_artist=True, showfliers=False,
+                    medianprops=dict(color='black', linewidth=1.0),
+                    whiskerprops=dict(linewidth=0.8),
+                    capprops=dict(linewidth=0.8))
         for patch, col in zip(bp['boxes'], all_colors):
             patch.set_facecolor(col)
             patch.set_alpha(0.55)
@@ -3612,6 +3661,159 @@ class CalcT0Page(QtWidgets.QWidget):
         except Exception: pass
         self.cv_t0range.draw()
 
+    # ── v3.8.56: interactive cycle pick (drill-down T₀ vs cycle count) ──
+    def _on_t0range_click(self, event):
+        """Click on a box in the T₀ Range chart → open the per-(step,isotope)
+        drill-down so the user can pick the cycle count. Maps the click x to
+        the nearest box via self._t0r_positions / self._t0r_box_meta."""
+        if event.inaxes is not self._t0range_ax:
+            return
+        if event.xdata is None:
+            return
+        pos = getattr(self, '_t0r_positions', None)
+        meta = getattr(self, '_t0r_box_meta', None)
+        if not pos or not meta:
+            return
+        idx = int(np.argmin([abs(event.xdata - p) for p in pos]))
+        # ignore clicks that land far from any box (between groups)
+        if abs(event.xdata - pos[idx]) > 1.2:
+            return
+        nm, ai = meta[idx]
+        self._show_cycle_drilldown(nm, ai)
+
+    def _best_per_cycle(self, nm, ai):
+        """Return {k: (t0, sig, mask)} = the min-σ combo for each cycle count
+        k present in the prefetch cache for this (step, isotope)."""
+        cache = getattr(self, '_prefetch_cache', {}) or {}
+        if nm == '__BLANK__':
+            vt = self._bvt[ai] if self._bvt is not None else None
+        else:
+            vt = self._svt.get(nm, [None] * 5)[ai]
+        if vt is None:
+            return {}
+        fits = cache.get((id(vt), self._fit, self._nc))
+        if not fits:
+            return {}
+        best = {}
+        for t0, sig, k, m in fits:   # (t0, sig, k, mask)
+            cur = best.get(k)
+            if cur is None or (sig > 0 and sig < cur[1]):
+                best[k] = (t0, sig, m)
+        return best
+
+    def _show_cycle_drilldown(self, nm, ai):
+        """Modal: T₀ ± σ vs cycle count k (min-σ combo per k) for one
+        (step, isotope). Each k weighted equally (no C(10,k) count bias).
+        Click a marker or a row button to apply that k's best combo."""
+        best = self._best_per_cycle(nm, ai)
+        if not best:
+            QtWidgets.QMessageBox.information(
+                self, 'Cycle pick',
+                'Combos not pre-computed yet — wait for prefetch to finish.')
+            return
+        iso_names = ['³⁶Ar', '³⁷Ar', '³⁸Ar', '³⁹Ar', '⁴⁰Ar']
+        step_lbl = 'Blank' if nm == '__BLANK__' else nm.replace('Temperature ', '').strip()
+        ks = sorted(best.keys())
+        t0s = [best[k][0] for k in ks]
+        sgs = [best[k][1] for k in ks]
+
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle(f'Cycle pick — {step_lbl} · {iso_names[ai]}')
+        dlg.resize(520, 460)
+        vl = QtWidgets.QVBoxLayout(dlg)
+
+        hdr = QtWidgets.QLabel(
+            f'<b>{step_lbl} · {iso_names[ai]}</b> — T₀ ± σ vs cycle count<br>'
+            '<span style="font-size:11px;color:#666;">每個 cycle 數只取最低-σ 組合。'
+            '看 T₀ 是否隨 cycle 數收斂；σ 隨 cycle 數變小。點一個 cycle 數套用。</span>')
+        vl.addWidget(hdr)
+
+        fig = _mfig.Figure(facecolor='white', figsize=(5, 3))
+        ax = fig.add_subplot(111)
+        cv = _FigCanvas(fig)
+        col = AR_COLS[ai]
+        ax.errorbar(ks, t0s, yerr=sgs, fmt='o-', color=col, ecolor=col,
+                    elinewidth=1, capsize=3, ms=6, mfc='white', mec=col, mew=1.4)
+        # mark current selection's T₀ (if any) as a horizontal line
+        cur_mask = (self._bmask[ai] if nm == '__BLANK__'
+                    else self._smask.get(nm, [None] * 5)[ai])
+        if cur_mask is not None:
+            try:
+                f = Utilities.fit_func_list[self._fit]
+                vt = self._bvt[ai] if nm == '__BLANK__' else self._svt[nm][ai]
+                t0_cur, _, _, _ = _fit_one(f, vt, cur_mask)
+                ax.axhline(t0_cur, color='#888', linestyle='--', linewidth=1,
+                           label=f'current ({int(np.sum(cur_mask))} cyc)')
+                ax.legend(fontsize=8, loc='best')
+            except Exception:
+                pass
+        ax.set_xlabel('cycles used (k)', fontsize=10)
+        ax.set_ylabel('$T_0$ (mV)', fontsize=10)
+        ax.set_xticks(ks)
+        ax.grid(True, alpha=0.25)
+        ax.ticklabel_format(style='sci', axis='y', scilimits=(0, 0), useMathText=False)
+        try: fig.tight_layout(pad=0.6)
+        except Exception: pass
+        vl.addWidget(cv, 1)
+
+        # row of per-k buttons + Auto
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addWidget(QtWidgets.QLabel('套用 k='))
+        for k in ks:
+            b = QtWidgets.QPushButton(str(k))
+            b.setFixedWidth(34)
+            b.clicked.connect(
+                lambda _, kk=k: (self._apply_cycle_combo(nm, ai, best[kk][2]),
+                                 dlg.accept()))
+            btn_row.addWidget(b)
+        autoBtn = QtWidgets.QPushButton('Auto (min σ)')
+        autoBtn.setStyleSheet(_btn_style('#1a5fb4', 'white', '#1a5fb4') +
+                              'QPushButton{font-weight:bold;padding:4px 10px;}')
+        def _auto():
+            kbest = min(best.keys(), key=lambda k: best[k][1] if best[k][1] > 0 else 9e99)
+            self._apply_cycle_combo(nm, ai, best[kbest][2]); dlg.accept()
+        autoBtn.clicked.connect(_auto)
+        btn_row.addWidget(autoBtn)
+        btn_row.addStretch()
+        closeBtn = QtWidgets.QPushButton('Close')
+        closeBtn.clicked.connect(dlg.reject)
+        btn_row.addWidget(closeBtn)
+        vl.addLayout(btn_row)
+
+        # click a marker on the plot → nearest k
+        def _on_pick(ev):
+            if ev.inaxes is not ax or ev.xdata is None:
+                return
+            kk = min(ks, key=lambda k: abs(k - ev.xdata))
+            self._apply_cycle_combo(nm, ai, best[kk][2]); dlg.accept()
+        cv.mpl_connect('button_press_event', _on_pick)
+
+        dlg.exec_()
+
+    def _apply_cycle_combo(self, nm, ai, mask):
+        """Apply a chosen cycle mask to the live selection for (step, isotope),
+        refresh the affected canvases, and repaint the T₀ Range chart so the
+        selected-T₀ dot / blank line move."""
+        if mask is None:
+            return
+        m = np.asarray(mask).copy()
+        if nm == '__BLANK__':
+            if self._bvt is None:
+                return
+            self._bmask[ai] = m
+            self._calc_blank_t0()
+            if self._cur == '__BLANK__':
+                self._refresh_blank()
+        else:
+            if nm not in self._smask:
+                return
+            self._smask[nm][ai] = m
+            if self._cur == nm:
+                self._refresh_signal()
+        self._broadcast_t0_net_37()
+        self._refresh_sum_only()
+        self._update_step_colors()
+        self._paint_t0range_pattern()
 
     # ── Save ─────────────────────────────────────────────────
     def _save(self):
