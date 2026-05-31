@@ -1,10 +1,44 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58
 最後整理日期：2026-05-31
 整理者：Claude (based on git-style diff across all versions)
 
 GitHub Releases（tag）：v3.8.0、v3.8.1、v3.8.3、v3.8.4、v3.8.5、v3.8.6、v3.8.7、v3.8.8，最新 **v3.8.54（Latest）彙整 v3.8.9 → v3.8.54 共 46 版**。
+
+---
+
+## V3.8.58（2026-05-31）— 修 T₀ Range 圖新 sample 一直「Prefetch cache empty」
+
+### 問題
+
+計算新 sample 後，T₀ Range 圖卡在「Prefetch cache empty — wait a few seconds」不顯示。
+
+### 根因
+
+T₀ Range 圖**完全靠 `_prefetch_cache`**，而 cache 只在 prefetch **全部跑完**（`_on_prefetch_finished`）才重畫一次。`_on_prefetch_one`（每個 step/isotope 算完）只塞 cache、不重畫。所以：
+- 新 sample 若 step 多，prefetch 要跑數十秒～分鐘，這整段時間圖一直空白，看起來壞掉。
+- 萬一某載入路徑沒觸發 `_start_prefetch`，圖就永遠空。
+- 若 `_fit`/`_nc` 在 prefetch 後改變，paint 的 cache key 對不上 → 也空。
+
+### 修法（`CalcT0Page`，三道防護）
+
+1. **邊算邊重畫**：`_on_prefetch_progress` 每 4 個 task（與結尾）呼叫 `_paint_t0range_pattern`，盒子隨進度逐步出現，不再等到最後。
+2. **自我修復** `_t0r_ensure_prefetch()`：paint 遇到空狀態時，若有載入資料但**沒有 worker 在跑**，自動 `_start_prefetch()`。涵蓋「沒觸發」或「key 對不上需重算」。worker 在跑時不重啟（避免迴圈）。
+3. **進度訊息** `_t0r_prog_text()`：空狀態改顯示 `Pre-computing combos… X/Y（圖會逐步填上，step 多時需數十秒）`，而非靜態「wait a few seconds」。
+
+### 驗證 checklist
+
+- [ ] 載入新 sample → T₀ Range 圖盒子隨 prefetch 進度逐步出現
+- [ ] 空狀態訊息顯示 X/Y 進度
+- [ ] 切到 T₀ Range 時若 cache 空且無 worker → 自動啟動 prefetch
+- [ ] prefetch 跑完全部盒子到齊（與舊行為一致）
+- [ ] 改 fit/nc 後再看圖 → 自動重算填上
+
+### 檔案改動
+
+- `AutoPipeline.py`：`_on_prefetch_progress`（throttled 重畫 + 存 `_t0r_prog`）、新 `_t0r_ensure_prefetch`/`_t0r_prog_text`、`_paint_t0range_pattern` 兩個空分支改自我修復 + 進度訊息
+- `.work/.app_info.txt`：3.8.57 → 3.8.58
 
 ---
 

@@ -2595,8 +2595,17 @@ class CalcT0Page(QtWidgets.QWidget):
         self._prefetch_cache[key] = fits
 
     def _on_prefetch_progress(self, done, total):
+        self._t0r_prog = (done, total)   # v3.8.58: stash for the chart message
         if hasattr(self, 'footMsg') and done < total:
             self.footMsg.setText(f'Pre-computing combos: {done}/{total}')
+        # v3.8.58: repaint the T₀ Range chart incrementally so boxes appear as
+        # combos finish (was empty until the very end). Throttled to avoid
+        # thrashing during the ~50k-fit sweep.
+        if hasattr(self, 'cv_t0range') and (done % 4 == 0 or done == total):
+            try:
+                self._paint_t0range_pattern()
+            except Exception:
+                pass
 
     def _on_prefetch_finished(self):
         if hasattr(self, 'footMsg'):
@@ -2610,6 +2619,29 @@ class CalcT0Page(QtWidgets.QWidget):
                 self._paint_t0range_pattern()
             except Exception:
                 pass
+
+    def _t0r_ensure_prefetch(self):
+        """v3.8.58: self-heal for the T₀ Range chart. If data is loaded but the
+        chart has nothing to draw AND no prefetch worker is running, (re)start
+        prefetch so the chart fills instead of sitting on 'empty' forever
+        (covers any load path that didn't kick off prefetch)."""
+        if not self._svt and self._bvt is None:
+            return
+        w = getattr(self, '_prefetch_worker', None)
+        if w is not None and w.isRunning():
+            return   # already computing — boxes will arrive incrementally
+        self._start_prefetch()
+
+    def _t0r_prog_text(self):
+        """v3.8.58: progress message for the T₀ Range empty state."""
+        w = getattr(self, '_prefetch_worker', None)
+        prog = getattr(self, '_t0r_prog', None)
+        if w is not None and w.isRunning():
+            if prog:
+                return (f'Pre-computing combos… {prog[0]}/{prog[1]}\n'
+                        '（圖會隨進度逐步填上，step 多時需數十秒）')
+            return 'Pre-computing combos…（圖會逐步填上）'
+        return '啟動 combo 預算中…稍候（圖會逐步填上）'
 
     def _mask_changed(self):
         # Sync canvas masks back to _bmask / _smask before recalculating
@@ -3359,9 +3391,11 @@ class CalcT0Page(QtWidgets.QWidget):
 
         cache = getattr(self, '_prefetch_cache', None)
         if not self._svt or not cache:
-            ax.text(0.5, 0.5,
-                    'Pre-computing combos…\n(load signal files, '
-                    'then wait for prefetch in footer)',
+            if self._svt:                 # data loaded but cache empty → heal
+                self._t0r_ensure_prefetch()
+            msg = (self._t0r_prog_text() if self._svt
+                   else 'Pre-computing combos…\n(load signal files first)')
+            ax.text(0.5, 0.5, msg,
                     ha='center', va='center', transform=ax.transAxes,
                     color='grey', fontsize=11)
             try: self._t0range_fig.tight_layout(pad=0.5)
@@ -3469,7 +3503,8 @@ class CalcT0Page(QtWidgets.QWidget):
             x += gap_out
 
         if not positions:
-            ax.text(0.5, 0.5, 'Prefetch cache empty — wait a few seconds',
+            self._t0r_ensure_prefetch()   # v3.8.58: self-heal if it never ran
+            ax.text(0.5, 0.5, self._t0r_prog_text(),
                     ha='center', va='center', transform=ax.transAxes,
                     color='grey', fontsize=11)
             try: self._t0range_fig.tight_layout(pad=0.5)
