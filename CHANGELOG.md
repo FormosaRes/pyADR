@@ -1,10 +1,39 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60
 最後整理日期：2026-06-03
 整理者：Claude (based on git-style diff across all versions)
 
 GitHub Releases（tag）：v3.8.0、v3.8.1、v3.8.3、v3.8.4、v3.8.5、v3.8.6、v3.8.7、v3.8.8，最新 **v3.8.54（Latest）彙整 v3.8.9 → v3.8.54 共 46 版**。
+
+---
+
+## V3.8.60（2026-06-03）— AutoPipeline 開啟時自動全螢幕
+
+### 問題
+
+進 AutoPipeline 時是固定 1280×720 的普通視窗（置中），不是全螢幕，使用者要的是一進去就全螢幕。
+
+### 根因
+
+AutoPipeline 是塞進主程式 `self.widget`（QStackedWidget，也是 top-level 視窗）的一個 page。`AutoPipelineWindow.__init__` 裡的 `showFullScreen()` 在被 reparent 進 stack 後是 no-op（它已不是獨立 top-level 視窗）。實際視窗狀態由主程式 `toAP` 控制，而 `toAP` 寫的是 `resize(1280,720)`＋置中。
+
+### 修法（`NTNU_DataReduction.py`）
+
+1. `toAP`：拿掉 `resize(1280,720)`＋置中，改成 `self.widget.setCurrentIndex(20)` 後 `self.widget.showFullScreen()`（對真正的 top-level 視窗全螢幕）。
+2. `toMain`：離開時先 `if self.widget.isFullScreen(): self.widget.showNormal()`，再 `resize(800,700)`＋置中（showNormal 要在 resize 前，否則 resize 被全螢幕狀態吃掉）。AutoPipeline 的 Return 鈕本來就接 `toMain`（L1325），所以退出路徑涵蓋。
+
+Esc 仍可退出全螢幕（Qt 預設）。
+
+### 驗證 checklist
+
+- [ ] Home 按 AutoPipeline → 立刻全螢幕
+- [ ] AutoPipeline 按 Return → 回 Home 且視窗恢復成正常大小（非全螢幕殘留）
+- [ ] Esc 能退出全螢幕
+
+### 檔案改動
+
+- `NTNU_DataReduction.py`：`toAP`（改全螢幕）、`toMain`（離開先 showNormal）
 
 ---
 

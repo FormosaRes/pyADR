@@ -2635,6 +2635,11 @@ class App():
     # ===============================================================================
     # back to Homepage
     def toMain(self):
+        # v3.8.60: leave full-screen (set by toAP) before restoring the normal
+        # Home-page window size. showNormal() must come first or the resize is
+        # swallowed by the full-screen state.
+        if self.widget.isFullScreen():
+            self.widget.showNormal()
         # FIX: restore normal window size when leaving AutoPipeline
         self.widget.resize(800, 700)
         QtWidgets.QApplication.processEvents()
@@ -5105,16 +5110,12 @@ class App():
             self.parameters, self.parameters_name,
             int(self.parameters[self.parameters_name.index('numCycle')])
         )
-        # FIX: resize to fit AutoPipeline minimum size (1280×720), then re-center
-        self.widget.resize(1280, 720)
-        QtWidgets.QApplication.processEvents()
-        _sg = QtWidgets.QApplication.primaryScreen().availableGeometry()
-        _fg = self.widget.frameGeometry()
-        self.widget.move(
-            _sg.x() + (_sg.width()  - _fg.width())  // 2,
-            _sg.y() + (_sg.height() - _fg.height()) // 2,
-        )
+        # v3.8.60: open AutoPipeline full-screen. AutoPipeline is a page inside
+        # this QStackedWidget, so AutoPipelineWindow.__init__'s own
+        # showFullScreen() is a no-op (it's reparented, not a top-level window).
+        # Full-screen the actual top-level window (self.widget) here instead.
         self.widget.setCurrentIndex(20)
+        self.widget.showFullScreen()
 
     def toDPR(self):
         """ISOr export — produce 8-column isochron-ratio table from MassRatio CSVs.
