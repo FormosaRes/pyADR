@@ -1228,6 +1228,14 @@ class MvCanvas(QtWidgets.QWidget):
         # Set externally by CalcT0Page after each mask change
         self._t0_net_37 = 0.0   # T0_net[37], updated by CalcT0Page
         self._bt_sig    = None  # blank T0 for this isotope (raw, not net)
+        # v3.8.59: debounce resize repaints. Maximizing / fullscreen fires a
+        # storm of resizeEvents; repainting 5 mV + 5 scatter panels (the
+        # scatter is ~848 pts, the heaviest op here) synchronously on each one
+        # backs up the GUI thread → "python (沒有回應)". Coalesce into one
+        # repaint ~160 ms after the resize settles.
+        self._resize_timer = QtCore.QTimer(self)
+        self._resize_timer.setSingleShot(True)
+        self._resize_timer.timeout.connect(self._on_resize_settled)
         self._build()
 
     # ── build ────────────────────────────────────────────────
@@ -1935,9 +1943,19 @@ class MvCanvas(QtWidgets.QWidget):
 
     # ── resize ───────────────────────────────────────────────
     def resizeEvent(self, e):
+        # v3.8.59: don't repaint synchronously on every resize event (a
+        # maximize / fullscreen emits dozens, each re-rendering 5 mV + 5
+        # scatter matplotlib panels → event loop backs up → app hangs).
+        # Restart a short single-shot timer; the actual repaint fires once,
+        # in _on_resize_settled, after the resize stops.
         super().resizeEvent(e)
+        self._resize_timer.start(160)
+
+    def _on_resize_settled(self):
+        if self._vt is None:
+            return
         self._paint_mv()
-        if self._vt is not None and self._all_pts:
+        if self._all_pts:
             self._paint_sc()
 
 

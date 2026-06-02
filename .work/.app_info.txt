@@ -1,8 +1,8 @@
 Version:
-3.8.58
+3.8.59
 
 Last updated date:
-31/05/2026
+03/06/2026
 Developer:
 Chi-Hsiu Pang
 An-Jun (Andrew) Liu
