@@ -1,10 +1,51 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61 → V3.8.62
 最後整理日期：2026-06-03
 整理者：Claude (based on git-style diff across all versions)
 
 GitHub Releases（tag）：v3.8.0、v3.8.1、v3.8.3、v3.8.4、v3.8.5、v3.8.6、v3.8.7、v3.8.8，最新 **v3.8.54（Latest）彙整 v3.8.9 → v3.8.54 共 46 版**。
+
+---
+
+## V3.8.62（2026-06-03）— 修 T₀ Range 圖永遠畫不出盒子（cache key 用 id(view) 的根本 bug）
+
+### 問題
+
+換新 sample 後，T₀ Range 圖卡在「Pre-computing combos... 55/55」、不畫盒子（footer 卻顯示 ✓ done）。時好時壞。
+
+### 根因（root cause，找了好幾層）
+
+cache key 用 `(id(vt[ai]), fit, nc)`，但 `_svt[nm]` / `_bvt` 是 **3D ndarray**，`vt[ai]` 每次回傳**臨時 view**：
+
+- `vt[0] is vt[0]` → **False**（不同物件）
+- 但 `id(vt[0])` 兩次常**相同** → 因為前一個 view 被 GC、記憶體位址被重用，**純屬巧合**
+
+所以 prefetch 存 key 的 view 跟 paint 讀 key 的 view 是不同物件，id 只在「GC 剛好重用同位址」時相等。換 sample / 記憶體狀態不同 → id 不一致 → **cache 永遠 miss → positions 空 → 不畫盒子**。診斷時實測 `(1+16 steps)×5=85` 個 key 只存進 43 格（view id 互撞），直接坐實。
+
+附帶：finish 的最後一張重畫被 v3.8.61 debounce timer 的「已排程就跳過」吞掉，所以畫面卡在中途訊息。
+
+### 修法
+
+1. **cache key 改 `view.ctypes.data`**（資料指標 = parent_base + ai·stride，只要 parent ndarray 活著就穩定且唯一），取代所有 `id(view)`：
+   - `_start_prefetch`（存）、`_refresh_blank` / `_refresh_signal`（讀，傳 prefetched_fits）、`_paint_t0range_impl` 的 blank group + signal loop（讀）、`MvCanvas.load` 內部 combo cache。
+   - 共 7 處 `id(...[ai])` / `id(vt_i)` 全換。
+2. **finish 強制直接重畫**：`_on_prefetch_finished` 不走可能被吞的 timer，先 stop 再 guarded 直接 `_paint_t0range_pattern()`。
+
+### 驗證（headless）
+
+offscreen Qt + 真 NO.65（16 step）：
+- 修前：cache 85 key 只進 43 格（id 互撞）
+- 修後：85 格全進、manual key lookup 85 hit / 0 miss、`_paint_t0range_impl` 後 `ax.patches = 51`（= 3 啟用同位素 ×（1 blank+16 step）），無空訊息 text。✓ 盒子全畫出。
+
+### 影響
+
+這個 id(view) bug 從 v3.8.26（引入 prefetch + id-keying）就在，一直靠 GC 位址重用的巧合「大多時候能用」。除了 T₀ Range 不畫，連 step 切換的 mV combo cache 也會偶發 miss → 多花時間重算。改 ctypes.data 後全部穩定。
+
+### 檔案改動
+
+- `AutoPipeline.py`：7 處 cache key `id()` → `.ctypes.data`；`_on_prefetch_finished` 強制重畫
+- `.work/.app_info.txt`：3.8.61 → 3.8.62
 
 ---
 

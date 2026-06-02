@@ -1504,7 +1504,10 @@ class MvCanvas(QtWidgets.QWidget):
         # v3.8.26: if CalcT0Page background-prefetched fits are available, take
         # them straight from the parent's cache — skips the ~4 s enumerate per
         # isotope when first visiting a step.
-        cache_key = (id(vt_i), fit, self._nc)
+        # v3.8.62: key by the array's data pointer, NOT id(view). _bvt/_svt[nm]
+        # are 3D ndarrays, so vt_i = vt[ai] is an ephemeral view whose id() is
+        # only coincidentally stable (GC address reuse) → cache key mismatch.
+        cache_key = ((vt_i.ctypes.data if vt_i is not None else 0), fit, self._nc)
         if getattr(self, '_combo_cache_key', None) != cache_key:
             if prefetched_fits is not None:
                 self._combo_fits = prefetched_fits
@@ -2544,7 +2547,7 @@ class CalcT0Page(QtWidgets.QWidget):
         for ai, cv in enumerate(self._cv):
             # v3.8.26: hand over prefetched combo fits if background worker
             # already finished this isotope — skips ~4 s enumerate per cv.
-            key = (id(self._bvt[ai]), self._fit, self._nc)
+            key = (self._bvt[ai].ctypes.data, self._fit, self._nc)
             cv.load(self._bvt[ai], self._bmask[ai],
                     bt=None, fit=self._fit, manual=self._manual,
                     prefetched_fits=cache.get(key))
@@ -2558,7 +2561,8 @@ class CalcT0Page(QtWidgets.QWidget):
         cache = getattr(self, '_prefetch_cache', {})
         for ai, cv in enumerate(self._cv):
             # v3.8.26: ditto — try prefetch cache first
-            key = (id(vt[ai]), self._fit, self._nc)
+            # v3.8.62: ctypes.data, not id(view) (see _refresh_blank / paint)
+            key = (vt[ai].ctypes.data, self._fit, self._nc)
             cv.load(vt[ai], mask[ai],
                     bt=self._bT0[ai], fit=self._fit, manual=self._manual,
                     prefetched_fits=cache.get(key))
@@ -2589,12 +2593,12 @@ class CalcT0Page(QtWidgets.QWidget):
         # Blank first — user lands on Blank tab, then moves to signal
         if self._bvt is not None:
             for ai in range(5):
-                key = (id(self._bvt[ai]), self._fit, self._nc)
+                key = (self._bvt[ai].ctypes.data, self._fit, self._nc)
                 if key not in self._prefetch_cache:
                     tasks.append((key, self._bvt[ai]))
         for nm, vt in self._svt.items():
             for ai in range(5):
-                key = (id(vt[ai]), self._fit, self._nc)
+                key = (vt[ai].ctypes.data, self._fit, self._nc)
                 if key not in self._prefetch_cache:
                     tasks.append((key, vt[ai]))
 
@@ -2637,11 +2641,17 @@ class CalcT0Page(QtWidgets.QWidget):
         if hasattr(self, 'footMsg'):
             self.footMsg.setText('✓ Pre-compute done — step switch is now instant')
         self._prefetch_worker = None
-        # v3.8.44: T₀ range chart needs the prefetch cache to render — repaint
-        # when all combos are ready. v3.8.59: via the debounced top-level timer
-        # so it can't re-enter a paint already running under processEvents().
+        # v3.8.62: force the final repaint DIRECTLY (guarded). The debounced
+        # timer coalesces with "skip if already pending", which could swallow
+        # this finish repaint — leaving the chart stuck on "Pre-computing…"
+        # even though the cache is now full. Stop any pending timer first.
         if hasattr(self, 'cv_t0range'):
-            self._t0r_schedule_repaint(50)
+            if hasattr(self, '_t0r_repaint_timer'):
+                self._t0r_repaint_timer.stop()
+            try:
+                self._paint_t0range_pattern()
+            except Exception:
+                pass
 
     def _t0r_ensure_prefetch(self):
         """v3.8.58: self-heal for the T₀ Range chart. If data is loaded but the
@@ -3508,7 +3518,7 @@ class CalcT0Page(QtWidgets.QWidget):
             for ai in range(5):
                 if not enabled[ai]:
                     continue
-                key = (id(self._bvt[ai]), self._fit, self._nc)
+                key = (self._bvt[ai].ctypes.data, self._fit, self._nc)
                 cached_fits = cache.get(key)
                 if cached_fits:
                     t0s = [c[0] for c in cached_fits]
@@ -3529,7 +3539,7 @@ class CalcT0Page(QtWidgets.QWidget):
             for ai in range(5):
                 if not enabled[ai]:
                     continue   # v3.8.46: skip disabled isotopes
-                key = (id(vt_list[ai]), self._fit, self._nc)
+                key = (vt_list[ai].ctypes.data, self._fit, self._nc)
                 cached_fits = cache.get(key)
                 if cached_fits:
                     t0s = [c[0] for c in cached_fits]
