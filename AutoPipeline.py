@@ -1974,6 +1974,37 @@ class _DummyLbl:
     def text(self): return self._txt
 
 
+class _StatusProxy:
+    """v3.8.63: routes CalcT0Page status text (footMsg + statusLbl) to the
+    single full-width AutoPipelineWindow QMainWindow status bar, so every
+    status / progress message shows in one bottom strip instead of two small
+    in-page labels. Walks up parents to the AutoPipelineWindow (the ancestor
+    with _refresh_pipe_visuals) — it owns the QMainWindow status bar even when
+    reparented into the host program's QStackedWidget. setStyleSheet / hide /
+    setWordWrap are no-ops so existing label-style calls don't break."""
+    def __init__(self, page):
+        self._page = page
+        self._txt = ''
+    def _win(self):
+        p = self._page
+        while p is not None and not hasattr(p, '_refresh_pipe_visuals'):
+            p = p.parent()
+        return p
+    def setText(self, t):
+        self._txt = str(t)
+        try:
+            w = self._win()
+            if w is not None and hasattr(w, 'statusBar'):
+                w.statusBar().showMessage(self._txt)
+        except Exception:
+            pass
+    def text(self): return self._txt
+    def setStyleSheet(self, *a, **k): pass
+    def setWordWrap(self, *a, **k): pass
+    def hide(self): pass
+    def show(self): pass
+
+
 class CalcT0Page(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1995,6 +2026,12 @@ class CalcT0Page(QtWidgets.QWidget):
     def _build(self):
         main_vl = QtWidgets.QVBoxLayout(self)
         main_vl.setContentsMargins(0, 0, 0, 0); main_vl.setSpacing(0)
+
+        # v3.8.63: unify status text into the single full-width window status
+        # bar. Both footMsg (file load / prefetch progress) and statusLbl
+        # (auto blank/signal, σ/Δt refit, save…) now route there via proxy,
+        # instead of two small in-page labels.
+        self.statusLbl = self.footMsg = _StatusProxy(self)
 
         # v3.8.21: "Calculate T₀" page header removed per user request — the
         # pipeline strip in top_bar already shows which page is active, so the
@@ -2086,11 +2123,8 @@ class CalcT0Page(QtWidgets.QWidget):
 
         sbl.addStretch()
 
-        self.statusLbl = QtWidgets.QLabel('Ready')
-        self.statusLbl.setStyleSheet(
-            f'font-size:8px;color:{TXT3};font-family:Courier New;padding:4px;')
-        self.statusLbl.setWordWrap(True)
-        sbl.addWidget(self.statusLbl)
+        # v3.8.63: statusLbl routed to the window status bar (see _StatusProxy);
+        # no small sidebar label here.
         hl.addWidget(sb)
 
         # Main: QScrollArea for vertical scrolling
@@ -2302,12 +2336,8 @@ class CalcT0Page(QtWidgets.QWidget):
         self.sumTbl = QtWidgets.QTableWidget(0, 8); self.sumTbl.hide()
         self.prevTbl = QtWidgets.QTableWidget(0, 10); self.prevTbl.hide()
 
-        # Footer (移除 nextBtn，已在頂部)
-        ftr = QtWidgets.QHBoxLayout()
-        self.footMsg = QtWidgets.QLabel('Load blank and sample .dat files')
-        self.footMsg.setStyleSheet(f'font-size:9px;color:{TXT3};')
-        ftr.addWidget(self.footMsg); ftr.addStretch()
-        left_vb.addLayout(ftr)
+        # v3.8.63: footMsg merged into the window status bar (see _StatusProxy);
+        # no separate content-area footer.
 
         # _chips: internal dict for status updates (not displayed in this widget).
         # v3.8.18: added 'Δt' so _auto_update_delta_t can write to it even before
@@ -6884,7 +6914,14 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
         self.agePage=AgeCalcPage()
         self.stack.addWidget(self.agePage)
         vb.addWidget(self.stack,1)
-        self.statusBar().showMessage('Ready')
+        # v3.8.63: this single QMainWindow status bar is now the unified status
+        # strip — pipeline messages + CalcT0Page footMsg/statusLbl (via
+        # _StatusProxy) all land here. Style it so it reads clearly.
+        self.statusBar().setStyleSheet(
+            'QStatusBar{background:#eeede8;color:#333;font-size:12px;'
+            'border-top:1px solid #c9c6bd;}'
+            'QStatusBar::item{border:none;}')
+        self.statusBar().showMessage('Ready — load blank + sample .dat to begin')
         self._go(0)
 
     def _go(self, idx):

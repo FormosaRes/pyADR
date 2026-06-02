@@ -2635,10 +2635,10 @@ class App():
     # ===============================================================================
     # back to Homepage
     def toMain(self):
-        # v3.8.60: leave full-screen (set by toAP) before restoring the normal
-        # Home-page window size. showNormal() must come first or the resize is
-        # swallowed by the full-screen state.
-        if self.widget.isFullScreen():
+        # v3.8.60/63: leave maximized/full-screen (set by toAP) before restoring
+        # the normal Home-page window size. showNormal() must come first or the
+        # resize is swallowed by the maximized/full-screen state.
+        if self.widget.isMaximized() or self.widget.isFullScreen():
             self.widget.showNormal()
         # FIX: restore normal window size when leaving AutoPipeline
         self.widget.resize(800, 700)
@@ -5110,12 +5110,12 @@ class App():
             self.parameters, self.parameters_name,
             int(self.parameters[self.parameters_name.index('numCycle')])
         )
-        # v3.8.60: open AutoPipeline full-screen. AutoPipeline is a page inside
-        # this QStackedWidget, so AutoPipelineWindow.__init__'s own
-        # showFullScreen() is a no-op (it's reparented, not a top-level window).
-        # Full-screen the actual top-level window (self.widget) here instead.
+        # v3.8.60: open AutoPipeline big. v3.8.63: use showMaximized() not
+        # showFullScreen() — full-screen hides the title bar, so the min /
+        # max / close buttons vanished. Maximized fills the work area but
+        # keeps the title bar + window controls (and doesn't cover the taskbar).
         self.widget.setCurrentIndex(20)
-        self.widget.showFullScreen()
+        self.widget.showMaximized()
 
     def toDPR(self):
         """ISOr export — produce 8-column isochron-ratio table from MassRatio CSVs.

@@ -1,10 +1,41 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61 → V3.8.62
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61 → V3.8.62 → V3.8.63
 最後整理日期：2026-06-03
 整理者：Claude (based on git-style diff across all versions)
 
 GitHub Releases（tag）：v3.8.0、v3.8.1、v3.8.3、v3.8.4、v3.8.5、v3.8.6、v3.8.7、v3.8.8，最新 **v3.8.54（Latest）彙整 v3.8.9 → v3.8.54 共 46 版**。
+
+---
+
+## V3.8.63（2026-06-03）— 全螢幕窗口按鈕修復 + icon 重組成方形 + 狀態文字整合到底部單一狀態列
+
+三項使用者回報（全螢幕後續調整）：
+
+### 1. 全螢幕後右上角最小化/最大化/關閉按鈕不見 → 改 showMaximized
+
+v3.8.60 用 `showFullScreen()` 開 AutoPipeline，全螢幕會**隱藏標題列**（連帶 min/max/close）。`NTNU_DataReduction.toAP`：`showFullScreen()` → `showMaximized()`（填滿工作區、保留標題列按鈕、不蓋工作列）。`toMain` 離開判斷改 `isMaximized() or isFullScreen()`。
+
+### 2. 工作列 icon 太小 → 用 logo 三塊重組成方形
+
+根因：`logo.png` 是寬扁 wordmark（1091×137，aspect ~8:1），之前 square/tight 版內容只佔高度 45-53%，放進方形 icon 又小又扁。依使用者構想拆三塊重組成方形：**AR** monogram（置中 hero）、**40/39**（壓在 AR 上緣、置中）、**紅校徽**（圓形疊在 AR 下方、置中），垂直置中堆疊填滿方框。重建多解析度 `.work/pyADR.ico`（16–256）。
+
+### 3. 狀態小字整合到單一底部狀態列
+
+原有兩個頁內小標籤（sidebar `statusLbl`：auto blank/signal、σ/Δt refit、save；內容底 `footMsg`：載入、prefetch 進度）。整合到那條全寬底列 = `AutoPipelineWindow`（QMainWindow）的 statusBar。新增 `_StatusProxy`：`self.statusLbl = self.footMsg = _StatusProxy(self)`，`.setText` 往上找 AutoPipelineWindow（`_refresh_pipe_visuals` 祖先，reparent 進主程式 stack 也找得到）→ `statusBar().showMessage()`。移除頁內兩個 QLabel；statusBar 加樣式（12px 淺底上邊框）。
+
+### 檔案改動
+
+- `NTNU_DataReduction.py`：`toAP` showMaximized、`toMain` 判斷
+- `AutoPipeline.py`：`_StatusProxy`、`CalcT0Page._build`（移除 statusLbl/footMsg QLabel 改 proxy）、`AutoPipelineWindow` statusBar 樣式 + 初始訊息
+- `.work/pyADR.ico`、`.work/.app_info.txt`：3.8.62 → 3.8.63
+
+### 驗證 checklist
+
+- [ ] AutoPipeline 開為 maximized，右上角有最小化/最大化/關閉
+- [ ] 工作列 icon 為方形 AR+40/39+紅圈、填滿框
+- [ ] auto blank/signal、prefetch 進度、save 等都顯示在底部全寬 statusBar
+- [ ] 頁內不再有 sidebar 'Ready' 小字與內容底 footMsg
 
 ---
 
