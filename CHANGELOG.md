@@ -1,10 +1,53 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61
 最後整理日期：2026-06-03
 整理者：Claude (based on git-style diff across all versions)
 
 GitHub Releases（tag）：v3.8.0、v3.8.1、v3.8.3、v3.8.4、v3.8.5、v3.8.6、v3.8.7、v3.8.8，最新 **v3.8.54（Latest）彙整 v3.8.9 → v3.8.54 共 46 版**。
+
+---
+
+## V3.8.61（2026-06-03）— 修載入 sample 後切換溫階 app 掛掉（T₀ Range 重畫 re-entrancy + 全螢幕重畫塞爆）
+
+### 問題
+
+v3.8.60 起 AutoPipeline 全螢幕開啟後，載入 sample 再切換不同溫階，程式會「掛掉 / python 沒有回應」。
+
+### 根因（與 v3.8.59 resize hang 同類，但不同觸發點）
+
+切換溫階 → `_sel_step` → 同步重畫 5 個 mV + 5 個 scatter（全螢幕下很重）+ `_refresh_guide` 同步重畫 T₀ Range。而：
+
+1. **v3.8.58 的 prefetch 增量重畫**：`_on_prefetch_progress` 每 4 個 task 直接同步重畫 T₀ Range。
+2. **`processEvents()` re-entrancy**：step-switch 的 refresh 路徑有多處 `QApplication.processEvents()`（L2766/2788/2826...）。它會把 worker 那個 queued 進度訊號**在切 step 重畫到一半時插進來**，re-entrant 再畫一次 T₀ Range → Agg/Qt backend 在重畫中被重畫。
+3. 全螢幕（v3.8.60）讓每次重畫更重，三者疊起來把 GUI thread 塞爆 → 掛。
+
+v3.8.59 只 debounce 了 **resize** 重畫，沒涵蓋 prefetch 進度與 step-switch 的 T₀ Range 重畫。
+
+### 修法（`CalcT0Page`，與 v3.8.59 同套路）
+
+1. **`_paint_t0range_pattern` 加 re-entrancy guard**：拆成 guarded wrapper + `_paint_t0range_impl`，`_t0r_painting` flag 防止重入（processEvents 期間再進來直接 no-op）。
+2. **prefetch 進度重畫改 debounce**：`_on_prefetch_progress` 不再同步畫，改 `_t0r_schedule_repaint()`（single-shot QTimer 300 ms，從 event-loop 頂層觸發，絕不巢狀）。`_on_prefetch_finished` 也走 timer（50 ms）。
+3. **`_refresh_guide` 改 debounce**：step-switch 的 T₀ Range 重畫改 `_t0r_schedule_repaint(120)`，不在 5 mV+scatter 重畫之上再同步壓一張。
+4. **進度訊息改 ASCII**：`_t0r_prog_text` 拿掉中文（Arial 缺字會噴大量 missing-glyph warning）。
+
+### 診斷方法（記錄）
+
+headless 重現（offscreen Qt + faulthandler + 真 NO.65 資料 + 逐步切 step）抓不到 Python 例外 → 確認是 GUI runtime 的 re-entrancy/塞爆，非邏輯例外。配合 git log 發現 v3.8.59（resize hang fix）/ v3.8.60（全螢幕）脈絡定位。
+
+### 驗證 checklist
+
+- [ ] 全螢幕載入 NO.65，prefetch 跑時連續切溫階：不再掛 / 沒回應
+- [ ] T₀ Range 圖仍隨 prefetch 進度逐步填上（debounce 後稍慢但不卡）
+- [ ] 切 step 即時看 mV / scatter，不被 T₀ Range 拖住
+- [ ] 無 CJK missing-glyph warning 洪水
+
+### 檔案改動
+
+- `AutoPipeline.py`：`_paint_t0range_pattern`（guard）+ `_paint_t0range_impl`、`_on_prefetch_progress`/`_on_prefetch_finished`（debounce timer）、`_t0r_schedule_repaint`（新）、`_refresh_guide`（debounce）、`_t0r_prog_text`（ASCII）
+- `.work/.app_info.txt`：3.8.60 → 3.8.61
+
+備註：本版未動 v3.8.59（resize debounce）/ v3.8.60（全螢幕）的程式碼，只補上它們未涵蓋的 prefetch / step-switch 重畫路徑。工具列 icon 變小是 v3.8.60 旁的 `icon: tighten pyADR.ico` 裁切所致，非本版。
 
 ---
 

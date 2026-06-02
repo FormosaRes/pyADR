@@ -2616,27 +2616,32 @@ class CalcT0Page(QtWidgets.QWidget):
         self._t0r_prog = (done, total)   # v3.8.58: stash for the chart message
         if hasattr(self, 'footMsg') and done < total:
             self.footMsg.setText(f'Pre-computing combos: {done}/{total}')
-        # v3.8.58: repaint the T₀ Range chart incrementally so boxes appear as
-        # combos finish (was empty until the very end). Throttled to avoid
-        # thrashing during the ~50k-fit sweep.
-        if hasattr(self, 'cv_t0range') and (done % 4 == 0 or done == total):
-            try:
-                self._paint_t0range_pattern()
-            except Exception:
-                pass
+        # v3.8.59: coalesce incremental repaints into a single-shot timer. The
+        # worker fires this signal frequently and it may be DELIVERED mid-
+        # step-switch (a processEvents() in the refresh path). Painting
+        # directly here re-entered the draw and crashed; a single-shot timer
+        # always fires from the event-loop top level, never nested.
+        if hasattr(self, 'cv_t0range'):
+            self._t0r_schedule_repaint()
+
+    def _t0r_schedule_repaint(self, delay=300):
+        """v3.8.59: debounced, top-level repaint of the T₀ Range chart."""
+        if not hasattr(self, '_t0r_repaint_timer'):
+            self._t0r_repaint_timer = QtCore.QTimer(self)
+            self._t0r_repaint_timer.setSingleShot(True)
+            self._t0r_repaint_timer.timeout.connect(self._paint_t0range_pattern)
+        if not self._t0r_repaint_timer.isActive():
+            self._t0r_repaint_timer.start(delay)
 
     def _on_prefetch_finished(self):
         if hasattr(self, 'footMsg'):
             self.footMsg.setText('✓ Pre-compute done — step switch is now instant')
         self._prefetch_worker = None
-        # v3.8.44: T₀ range chart needs the prefetch cache to render —
-        # repaint when all combos are ready so the user doesn't have to
-        # manually switch step to see it populate.
+        # v3.8.44: T₀ range chart needs the prefetch cache to render — repaint
+        # when all combos are ready. v3.8.59: via the debounced top-level timer
+        # so it can't re-enter a paint already running under processEvents().
         if hasattr(self, 'cv_t0range'):
-            try:
-                self._paint_t0range_pattern()
-            except Exception:
-                pass
+            self._t0r_schedule_repaint(50)
 
     def _t0r_ensure_prefetch(self):
         """v3.8.58: self-heal for the T₀ Range chart. If data is loaded but the
@@ -2651,15 +2656,17 @@ class CalcT0Page(QtWidgets.QWidget):
         self._start_prefetch()
 
     def _t0r_prog_text(self):
-        """v3.8.58: progress message for the T₀ Range empty state."""
+        """v3.8.58: progress message for the T₀ Range empty state.
+        v3.8.59: ASCII only — CJK glyphs flood matplotlib with missing-glyph
+        warnings (Arial lacks them) and add no value on a plot."""
         w = getattr(self, '_prefetch_worker', None)
         prog = getattr(self, '_t0r_prog', None)
         if w is not None and w.isRunning():
             if prog:
-                return (f'Pre-computing combos… {prog[0]}/{prog[1]}\n'
-                        '（圖會隨進度逐步填上，step 多時需數十秒）')
-            return 'Pre-computing combos…（圖會逐步填上）'
-        return '啟動 combo 預算中…稍候（圖會逐步填上）'
+                return (f'Pre-computing combos...  {prog[0]}/{prog[1]}\n'
+                        '(boxes fill in as it finishes)')
+            return 'Pre-computing combos...  (boxes fill in as it finishes)'
+        return 'Starting combo pre-compute...'
 
     def _mask_changed(self):
         # Sync canvas masks back to _bmask / _smask before recalculating
@@ -3137,8 +3144,13 @@ class CalcT0Page(QtWidgets.QWidget):
         # v3.8.47: skip paint_degas / paint_yield — those widgets are
         # hidden (no UI surface), saving CPU on every step switch.
         # T₀ Range chart is the only visible panel left here.
+        # v3.8.61: go through the debounced timer (not a synchronous paint).
+        # On a step switch this paint stacks on top of the 5 mV + 5 scatter
+        # repaints (heavy at full-screen, v3.8.60) and, if a processEvents()
+        # in the refresh path delivers a queued prefetch-progress signal,
+        # re-enters the draw → the app hangs / crashes. Coalescing fixes it.
         if hasattr(self, 'cv_t0range'):
-            self._paint_t0range_pattern()
+            self._t0r_schedule_repaint(120)
 
     # New advanced analysis panels (⑤⑥⑦⑧)
     # ══════════════════════════════════════════════════════════
@@ -3391,6 +3403,20 @@ class CalcT0Page(QtWidgets.QWidget):
         self.cv_yield.draw()
 
     def _paint_t0range_pattern(self):
+        # v3.8.59: re-entrancy guard. A QApplication.processEvents() in the
+        # step-switch refresh path can deliver a queued prefetch-progress
+        # signal *while this paint is already on the stack*; without the guard
+        # that re-enters the matplotlib draw and crashes the Agg/Qt backend.
+        # (Progress repaints are coalesced via _t0r_repaint_timer.)
+        if getattr(self, '_t0r_painting', False):
+            return
+        self._t0r_painting = True
+        try:
+            self._paint_t0range_impl()
+        finally:
+            self._t0r_painting = False
+
+    def _paint_t0range_impl(self):
         """v3.8.45: T₀ range distribution per (signal step, isotope) — now
         for ALL 5 isotopes (³⁶/³⁷/³⁸/³⁹/⁴⁰Ar). The legend embeds the
         recommended blank T₀ target per isotope, derived from each
