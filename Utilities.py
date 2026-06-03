@@ -584,7 +584,7 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
                        iso_groups=None, group_colors=None,
                        return_points=False, show_legend=True,
                        show_group_fits=True, show_overall_fit=True,
-                       isochron_method='ols'):
+                       isochron_method='ols', iso_limits=None):
     """
     Generate isochron diagrams for step heating data.
     
@@ -742,29 +742,31 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
     # HELPER FUNCTION: Apply user-defined axis controls
     # =========================================================
     def apply_controls(ax, target=None):
-        """FIX: apply limits only when target matches pname (or pname is None)."""
-        apply_limits = (pname is None) or (target is None) or (pname == target)
+        """FIX: apply limits only when target matches pname (or pname is None).
+        v3.8.64: iso_limits={'DFN':(xl,yl),'DFI':(xl,yl)} (xl/yl tuple or None)
+        gives DFN and DFI independent axes — needed by AutoPipeline which shows
+        both isochrons at once. When iso_limits is given the legacy
+        pname/xlim/ylim path is bypassed (DiagramPlots_SH passes None → unchanged)."""
+        if iso_limits is not None:
+            _lim = iso_limits.get(target) or (None, None)
+            _xl, _yl = _lim
+            apply_x, apply_y = (_xl is not None), (_yl is not None)
+        else:
+            _apply = (pname is None) or (target is None) or (pname == target)
+            _xl, _yl = xlim, ylim
+            apply_x = _apply and (_xl is not None)
+            apply_y = _apply and (_yl is not None)
 
-        if apply_limits and xlim is not None:
-            xmin, xmax = float(xlim[0]), float(xlim[1])
-            print(f"[DEBUG] Setting X limits ({target}): {xmin} to {xmax}")
-            if xmax - xmin > 1e6:
-                print(f"[WARNING] X range too large, using auto")
-                ax.autoscale(axis='x')
-            elif xmax <= xmin:
-                print(f"[WARNING] Invalid X range, using auto")
+        if apply_x:
+            xmin, xmax = float(_xl[0]), float(_xl[1])
+            if (xmax - xmin > 1e6) or (xmax <= xmin):
                 ax.autoscale(axis='x')
             else:
                 ax.set_xlim(xmin, xmax)
 
-        if apply_limits and ylim is not None:
-            ymin, ymax = float(ylim[0]), float(ylim[1])
-            print(f"[DEBUG] Setting Y limits ({target}): {ymin} to {ymax}")
-            if ymax - ymin > 1e6:
-                print(f"[WARNING] Y range too large, using auto")
-                ax.autoscale(axis='y')
-            elif ymax <= ymin:
-                print(f"[WARNING] Invalid Y range, using auto")
+        if apply_y:
+            ymin, ymax = float(_yl[0]), float(_yl[1])
+            if (ymax - ymin > 1e6) or (ymax <= ymin):
                 ax.autoscale(axis='y')
             else:
                 ax.set_ylim(ymin, ymax)
@@ -1662,7 +1664,11 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
 def getSHStatistics(file, mask, constants, xlim=None, ylim=None, legend_name=None, show_legend=True,
                    log_y=False, show_group_span=False,
                     target_plot=None, style='pyADR',
-                    step_groups=None, group_colors=None):
+                    step_groups=None, group_colors=None, panel_limits=None):
+    # v3.8.64: panel_limits = {'DFW': (xlim, ylim), 'DFA': ..., 'DFC': ...}
+    # lets a caller (AutoPipeline) set independent axes on all three spectra
+    # in ONE call. Each value is (xlim_tuple_or_None, ylim_tuple_or_None).
+    # Applied per panel below, overriding the single xlim/ylim/target_plot.
     if step_groups is None:
         step_groups = {}
     if group_colors is None:
@@ -1836,6 +1842,10 @@ def getSHStatistics(file, mask, constants, xlim=None, ylim=None, legend_name=Non
         plt.xlim(xlim[0], xlim[1])
     if (target_plot is None or target_plot == 'DFW') and ylim is not None:
         plt.ylim(ylim[0], ylim[1])
+    if panel_limits and panel_limits.get('DFW'):   # v3.8.64 per-panel override
+        _xl, _yl = panel_limits['DFW']
+        if _xl is not None: w.set_xlim(_xl[0], _xl[1])
+        if _yl is not None: w.set_ylim(_yl[0], _yl[1])
     w.set_xlabel('Cumulative $^{39}$Ar Released(%)')
     w.set_ylabel('Age (Ma)')
     if legend_name:
@@ -1991,6 +2001,10 @@ def getSHStatistics(file, mask, constants, xlim=None, ylim=None, legend_name=Non
         _eps = max(abs(_y1a)*1e-4, 1e-9)
         ax_a.set_ylim(max(_eps, _y0a), _y1a)
         ax_a.set_yscale('log')
+    if panel_limits and panel_limits.get('DFA'):   # v3.8.64 per-panel override
+        _xl, _yl = panel_limits['DFA']
+        if _xl is not None: ax_a.set_xlim(_xl[0], _xl[1])
+        if _yl is not None: ax_a.set_ylim(_yl[0], _yl[1])
     # ── Classic frame: outward ticks all 4 sides, closed box ─────────────
     if st.get('classic'):
         ax_a.set_facecolor('white')
@@ -2102,6 +2116,10 @@ def getSHStatistics(file, mask, constants, xlim=None, ylim=None, legend_name=Non
         _eps = max(abs(_y1c)*1e-4, 1e-9)
         ax_cl.set_ylim(max(_eps, _y0c), _y1c)
         ax_cl.set_yscale('log')
+    if panel_limits and panel_limits.get('DFC'):   # v3.8.64 per-panel override
+        _xl, _yl = panel_limits['DFC']
+        if _xl is not None: ax_cl.set_xlim(_xl[0], _xl[1])
+        if _yl is not None: ax_cl.set_ylim(_yl[0], _yl[1])
     # ── Classic frame: outward ticks all 4 sides, closed box ─────────────
     if st.get('classic'):
         ax_cl.set_facecolor('white')

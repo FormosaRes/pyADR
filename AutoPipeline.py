@@ -277,6 +277,20 @@ def _sf(v, d=0.0):
     try: return float(v)
     except: return d
 
+def _is_neg_num(s):
+    """v3.8.64: True if the cell text parses to a negative number.
+    Tolerates a trailing '%', surrounding whitespace, thousands commas and
+    a leading '±' (never negative). Non-numeric / blank → False."""
+    if s is None:
+        return False
+    t = str(s).strip().rstrip('%').replace(',', '').strip()
+    if not t or t in ('-', '—', '±'):
+        return False
+    try:
+        return float(t) < 0
+    except Exception:
+        return False
+
 def _fe(v):
     try: return '{:.6e}'.format(float(v))
     except: return '0'
@@ -4634,6 +4648,26 @@ class AgeCalcPage(QtWidgets.QWidget):
         opts_hl.addStretch()
         ctrl_vl.addLayout(opts_hl)
 
+        # Row 2b (v3.8.64): Style + Log Y + Group Span — ported from
+        # DiagramPlots_SH so AgeCalcPage has the same render options.
+        opts2_hl = QtWidgets.QHBoxLayout()
+        opts2_hl.addWidget(QtWidgets.QLabel('Style:'))
+        self._plot_style_combo = QtWidgets.QComboBox()
+        self._plot_style_combo.addItems(['pyADR', 'Classic (PDF)'])
+        self._plot_style_combo.setToolTip(
+            'pyADR: colored fills  |  Classic (PDF): black & white')
+        opts2_hl.addWidget(self._plot_style_combo)
+        opts2_hl.addSpacing(10)
+        self._plot_cb_logy = QtWidgets.QCheckBox('Log Y')
+        self._plot_cb_logy.setToolTip('Log-scale Y axis (Ca/K, Cl/K, Degassing).')
+        self._plot_cb_span = QtWidgets.QCheckBox('Group Span')
+        self._plot_cb_span.setToolTip('Shade min–max span of each step group '
+                                      '(Age / Ca/K / Cl/K spectra).')
+        opts2_hl.addWidget(self._plot_cb_logy)
+        opts2_hl.addWidget(self._plot_cb_span)
+        opts2_hl.addStretch()
+        ctrl_vl.addLayout(opts2_hl)
+
         # Row 3: legend title
         legend_hl = QtWidgets.QHBoxLayout()
         legend_hl.addWidget(QtWidgets.QLabel('Legend title:'))
@@ -4819,6 +4853,128 @@ class AgeCalcPage(QtWidgets.QWidget):
         self._tabs = tabs
         vb.addWidget(tabs, 1)
 
+        # ── v3.8.64: keep Plot Controls in sync with the ACTUAL rendered axes
+        # (mirrors DiagramPlots_SH.SH_apply_axes).  Without this the spinboxes
+        # showed 0/0 (or a stale custom value) while the chart auto-scaled to a
+        # totally different range, i.e. "XY 數值跟圖表對不在一起".
+        self._actual_xlims = {}   # {key: (xmin, xmax)} last rendered
+        self._actual_ylims = {}
+        # Auto checkbox ↔ spinbox enabled state (disabled while Auto is on)
+        self._plot_cb_xauto.toggled.connect(lambda on: (
+            self._plot_xmin.setEnabled(not on), self._plot_xmax.setEnabled(not on)))
+        self._plot_cb_yauto.toggled.connect(lambda on: (
+            self._plot_ymin.setEnabled(not on), self._plot_ymax.setEnabled(not on)))
+        self._plot_xmin.setEnabled(False); self._plot_xmax.setEnabled(False)
+        self._plot_ymin.setEnabled(False); self._plot_ymax.setEnabled(False)
+        # Switching the "Apply to:" target reloads that diagram's saved /
+        # actual limits and picks sensible decimals for its value magnitude.
+        self._plot_target_combo.currentIndexChanged.connect(self._plot_target_changed)
+        self._plot_target_changed()
+
+    # ── v3.8.64: axis-control <-> rendered-axes sync helpers ──────────────
+    _TARGET_KEY = {
+        'Age Spectrum': 'DFW', 'Ca/K': 'DFA', 'Normal Isochron': 'DFN',
+        'Inverse Isochron': 'DFI', 'Cl/K': 'DFC', 'Degassing': 'DFD',
+    }
+
+    def _active_single_key(self):
+        """DF key for the current 'Apply to:' target, or None for 'All'."""
+        return self._TARGET_KEY.get(self._plot_target_combo.currentText())
+
+    @staticmethod
+    def _decimals_for_key(key):
+        if key in ('DFN', 'DFI'): return 6   # isochron ratios ~1e-3
+        if key in ('DFA', 'DFC'): return 4   # Ca/K, Cl/K
+        return 2                              # ages, %, temperature
+
+    @staticmethod
+    def _smart_set_spin(sb, val, min_dec=2):
+        """Set a spinbox value, picking decimals from the value magnitude so
+        the displayed number is not silently rounded away from the chart.
+        min_dec is a floor (per-diagram) so isochron boxes keep ≥6 places even
+        when the value is 0 or large."""
+        if val is None or not np.isfinite(val):
+            return
+        sb.blockSignals(True)
+        try:
+            if val == 0.0:
+                decs = min_dec
+            else:
+                mag = int(math.floor(math.log10(abs(val))))
+                decs = max(min_dec, min(-mag + 3, 9))
+            sb.setDecimals(decs)
+            sb.setValue(float(val))
+        finally:
+            sb.blockSignals(False)
+
+    @staticmethod
+    def _fmt_axis(val, key):
+        if val is None or not np.isfinite(val):
+            return ''
+        decs = AgeCalcPage._decimals_for_key(key)
+        return f'{val:.{decs}f}'
+
+    def _plot_target_changed(self, *_):
+        """'Apply to:' changed → set decimals + reload that target's saved
+        custom limits (or the last actual rendered range) into the shared
+        spinboxes, and reflect the Auto checkbox state."""
+        key = self._active_single_key()
+        decs = self._decimals_for_key(key) if key else 4
+        for sb in (self._plot_xmin, self._plot_xmax, self._plot_ymin, self._plot_ymax):
+            sb.setDecimals(decs)
+        if not key:
+            return   # 'All diagrams' — ambiguous, leave spinboxes as-is
+        d = (self._daxis.get(key, {}) if hasattr(self, '_daxis') else {}) or {}
+        ax = getattr(self, '_actual_xlims', {})
+        ay = getattr(self, '_actual_ylims', {})
+        has_x = d.get('xmin') is not None and d.get('xmax') is not None
+        has_y = d.get('ymin') is not None and d.get('ymax') is not None
+        self._plot_cb_xauto.setChecked(not has_x)
+        self._plot_cb_yauto.setChecked(not has_y)
+        xv = (d['xmin'], d['xmax']) if has_x else ax.get(key)
+        yv = (d['ymin'], d['ymax']) if has_y else ay.get(key)
+        if xv:
+            self._smart_set_spin(self._plot_xmin, xv[0], decs)
+            self._smart_set_spin(self._plot_xmax, xv[1], decs)
+        if yv:
+            self._smart_set_spin(self._plot_ymin, yv[0], decs)
+            self._smart_set_spin(self._plot_ymax, yv[1], decs)
+
+    def _sync_axis_controls_from_actual(self):
+        """After a render, push the ACTUAL matplotlib limits back into the
+        controls: shared spinboxes for the active single target (only the
+        axes currently in Auto), and every per-tab edit's placeholder so the
+        user can see the live range without locking it."""
+        ax = getattr(self, '_actual_xlims', {})
+        ay = getattr(self, '_actual_ylims', {})
+        key = self._active_single_key()
+        if key:
+            md = self._decimals_for_key(key)
+            if key in ax and self._plot_cb_xauto.isChecked():
+                self._smart_set_spin(self._plot_xmin, ax[key][0], md)
+                self._smart_set_spin(self._plot_xmax, ax[key][1], md)
+            if key in ay and self._plot_cb_yauto.isChecked():
+                self._smart_set_spin(self._plot_ymin, ay[key][0], md)
+                self._smart_set_spin(self._plot_ymax, ay[key][1], md)
+        # per-tab edits: blank stays blank (=auto) but the placeholder shows
+        # the live range; if the user typed a custom value keep it untouched.
+        for k, ed in getattr(self, '_daxis_edits', {}).items():
+            d = (self._daxis.get(k, {}) if hasattr(self, '_daxis') else {}) or {}
+            if k in ax:
+                ed[0].setPlaceholderText(f'auto ({self._fmt_axis(ax[k][0], k)})')
+                ed[1].setPlaceholderText(f'auto ({self._fmt_axis(ax[k][1], k)})')
+            if k in ay:
+                ed[2].setPlaceholderText(f'auto ({self._fmt_axis(ay[k][0], k)})')
+                ed[3].setPlaceholderText(f'auto ({self._fmt_axis(ay[k][1], k)})')
+
+    def _plot_style(self):
+        """'pyADR' or 'classic' from the Style combo (default pyADR)."""
+        try:
+            return ('classic' if 'Classic' in self._plot_style_combo.currentText()
+                    else 'pyADR')
+        except Exception:
+            return 'pyADR'
+
     def populate(self, steps, datum_csv, work_dir, consts=None):
         self._steps = steps
         self._work_dir = work_dir
@@ -4862,6 +5018,10 @@ class AgeCalcPage(QtWidgets.QWidget):
                     item.setToolTip(tooltips[c])
                 if c==5 and v!='—':
                     item.setForeground(QtGui.QColor('#b41a1a'))
+                elif c in (1, 2, 3, 4) and _is_neg_num(v):
+                    # v3.8.64: flag negative numeric values (over-corrected
+                    # ⁴⁰Ar(r)%, negative age, etc.) in red.
+                    item.setForeground(QtGui.QColor('#c0282d'))
                 self.tbl.setItem(r,c,item)
             
             # Accumulate for total fusion age (weighted by 1/σ²)
@@ -5289,6 +5449,10 @@ class AgeCalcPage(QtWidgets.QWidget):
         self._plot_xmin.setValue(0); self._plot_xmax.setValue(0)
         self._plot_ymin.setValue(0); self._plot_ymax.setValue(0)
         self._plot_legend_edit.clear()
+        # v3.8.64: also reset the ported controls
+        if hasattr(self, '_plot_cb_logy'): self._plot_cb_logy.setChecked(False)
+        if hasattr(self, '_plot_cb_span'): self._plot_cb_span.setChecked(False)
+        if hasattr(self, '_plot_style_combo'): self._plot_style_combo.setCurrentIndex(0)
         self._plot_target_combo.setCurrentIndex(0)
         self._plot_apply()
 
@@ -5320,6 +5484,10 @@ class AgeCalcPage(QtWidgets.QWidget):
         show_group_fits = getattr(self, '_plot_show_group_fits', True)
         show_overall    = getattr(self, '_plot_show_overall_fit', True)
         legend_title    = getattr(self, '_plot_legend_title', '') or None
+        # v3.8.64: Style / Log Y / Group Span ported from DiagramPlots_SH
+        style    = self._plot_style()
+        log_y    = self._plot_cb_logy.isChecked() if hasattr(self, '_plot_cb_logy') else False
+        grp_span = self._plot_cb_span.isChecked() if hasattr(self, '_plot_cb_span') else False
 
         def _xy(key):
             d = self._daxis.get(key, {}) if hasattr(self, '_daxis') else {}
@@ -5331,56 +5499,81 @@ class AgeCalcPage(QtWidgets.QWidget):
 
         mask_all = np.ones(len(self._steps))
 
-        # 1. Isochron pair (DFN + DFI from a single call). DFN drives xlim/ylim.
-        iso_x, iso_y = _xy('DFN')
+        def _capture(res_dict):
+            """Pull actual_xlim/actual_ylim out of a Utilities return dict."""
+            if not isinstance(res_dict, dict):
+                return
+            for k, v in res_dict.get('actual_xlim', {}).items():
+                self._actual_xlims[k] = v
+            for k, v in res_dict.get('actual_ylim', {}).items():
+                self._actual_ylims[k] = v
+
+        # 1. Isochron pair (DFN + DFI from a single call).
+        # v3.8.64: iso_limits gives DFN/DFI INDEPENDENT axes (the old code passed
+        # one xlim/ylim that bled onto both — and silently ignored a custom DFI
+        # range entirely). return_limits=True echoes the rendered range back into
+        # the controls (fixes "XY 數值跟圖表對不在一起").
+        iso_limits = {'DFN': _xy('DFN'), 'DFI': _xy('DFI')}
         try:
-            Utilities.getDFStatistics_sh(self._datum_csv, mask_all, self._consts,
+            res = Utilities.getDFStatistics_sh(self._datum_csv, mask_all, self._consts,
                                          'b', 'o',
-                                         xlim=iso_x, ylim=iso_y,
+                                         iso_limits=iso_limits,
                                          show_temp=show_temp,
                                          atm_ratio=atm_ratio,
                                          isochron_method=method,
                                          show_legend=show_legend,
                                          show_group_fits=show_group_fits,
                                          show_overall_fit=show_overall,
-                                         legend_name=legend_title)
+                                         legend_name=legend_title,
+                                         style=style, return_limits=True)
+            if isinstance(res, tuple) and len(res) == 2 and isinstance(res[1], dict):
+                for pn in ('DFN', 'DFI'):
+                    lv = res[1].get(pn)
+                    if lv:
+                        self._actual_xlims[pn] = tuple(float(v) for v in lv[0])
+                        self._actual_ylims[pn] = tuple(float(v) for v in lv[1])
         except Exception as e:
             QtWidgets.QMessageBox.warning(
                 self, 'Refresh diagrams failed',
                 f'getDFStatistics_sh failed:\n{e}')
             return
 
-        # 2. Spectrum DFW/DFA/DFC: per-target dispatch.
-        # If any target has custom xlim/ylim, call getSHStatistics once per
-        # such target (with target_plot=key). Otherwise a single default call
-        # regenerates all three with autoscaled axes.
-        sh_xy = {k: _xy(k) for k in ('DFW', 'DFA', 'DFC')}
-        custom = [(k, xl, yl) for k, (xl, yl) in sh_xy.items()
-                  if xl is not None or yl is not None]
+        # 2. Spectrum DFW/DFA/DFC in ONE call via panel_limits (v3.8.64): each
+        # spectrum keeps its own custom axes simultaneously — the old per-target
+        # loop re-rendered all three each pass so a 2nd custom panel clobbered
+        # the 1st. None entries autoscale.
+        panel_lims = {}
+        for k in ('DFW', 'DFA', 'DFC'):
+            xl, yl = _xy(k)
+            if xl is not None or yl is not None:
+                panel_lims[k] = (xl, yl)
         try:
-            if not custom:
-                Utilities.getSHStatistics(self._datum_csv, mask_all, self._consts,
-                                          show_legend=show_legend)
-            else:
-                for k, xl, yl in custom:
-                    Utilities.getSHStatistics(self._datum_csv, mask_all, self._consts,
-                                              xlim=xl, ylim=yl, target_plot=k,
-                                              show_legend=show_legend)
+            r = Utilities.getSHStatistics(self._datum_csv, mask_all, self._consts,
+                                          legend_name=legend_title,
+                                          show_legend=show_legend,
+                                          log_y=log_y, show_group_span=grp_span,
+                                          style=style,
+                                          panel_limits=(panel_lims or None))
+            _capture(r)
         except Exception:
             pass   # non-fatal: SH plots already pre-generated by worker
 
         # 3. Degassing (DFD).
         deg_x, deg_y = _xy('DFD')
         try:
-            Utilities.getDegasPlot(self._datum_csv, mask_all, self._consts,
+            r = Utilities.getDegasPlot(self._datum_csv, mask_all, self._consts,
                                     xlim=deg_x, ylim=deg_y,
-                                    show_legend=show_legend)
+                                    show_legend=show_legend,
+                                    log_y=log_y, style=style)
+            _capture(r)
         except Exception:
             pass
 
         # v3.8.36: reload regenerated PNGs into both thumbnail (Summary tab)
         # and big view (per-diagram tabs) labels.
         self._reload_all_pngs()
+        # v3.8.64: echo the actually-rendered axes back into the controls.
+        self._sync_axis_controls_from_actual()
     
     def _get_atm_ratio(self):
         """Get current atm ratio from input."""
@@ -5476,7 +5669,9 @@ class AgeCalcPage(QtWidgets.QWidget):
                          3: f'{pct_k:.1f}%'}
                 for c, v in cells.items():
                     it = QtWidgets.QTableWidgetItem(v)
-                    if col_clr is not None:
+                    if _is_neg_num(v):                 # v3.8.64: negatives win, red
+                        it.setForeground(QtGui.QColor('#c0282d'))
+                    elif col_clr is not None:
                         it.setForeground(col_clr)
                     self.tbl.setItem(r, c, it)
             if ok and sig > 0 and age_k == age_k:
@@ -5841,6 +6036,8 @@ class AgeCalcPage(QtWidgets.QWidget):
         for r, row in enumerate(data):
             for c, val in enumerate(row):
                 item = QtWidgets.QTableWidgetItem(val)
+                if _is_neg_num(val):   # v3.8.64: negative datum values in red
+                    item.setForeground(QtGui.QColor('#c0282d'))
                 self._datum_tbl.setItem(r, c, item)
 
     def _show_enlarged(self, key, title):

@@ -1,10 +1,60 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61 → V3.8.62 → V3.8.63
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61 → V3.8.62 → V3.8.63 → V3.8.64
 最後整理日期：2026-06-03
 整理者：Claude (based on git-style diff across all versions)
 
 GitHub Releases（tag）：v3.8.0、v3.8.1、v3.8.3、v3.8.4、v3.8.5、v3.8.6、v3.8.7、v3.8.8，最新 **v3.8.54（Latest）彙整 v3.8.9 → v3.8.54 共 46 版**。
+
+---
+
+## V3.8.64（2026-06-03）— AgeCalc+Datum 頁完整對齊 DiagramPlot：XY 軸數值同步、負值紅字、補 Style/Log Y/Group Span、DFN/DFI 與三譜獨立軸
+
+使用者回報 AgeCalc+Datum 頁 bug 多（Plot Controls 的 XY 數值跟圖對不在一起、負值沒標紅等），要求完整參考 DiagramPlot 子程式功能補齊。本版只動繪圖軸控制與表格著色，**不動任何科學計算**。
+
+### 1. Plot Controls 的 XY 數值跟圖表對不在一起（核心 bug）
+
+根因：`_refresh_diagrams` 畫完圖後從不把「實際 render 出來的軸範圍」回填控制項。Auto 時 spinbox 還停在 0/0（或前一個 target 的舊值），圖卻自動縮放到完全不同範圍，所以「對不在一起」。
+
+修法（抄 `DiagramPlots_SH.SH_apply_axes` 的回填機制）：
+
+- isochron 呼叫加 `return_limits=True`；三譜與 degassing 從回傳 dict 取 `actual_xlim/ylim`，存進 `self._actual_xlims/_actual_ylims`。
+- 新增 `_sync_axis_controls_from_actual()`：render 後把實際軸範圍回填共用 spinbox（僅該 target 且 Auto 時，不蓋掉手填值）+ 每個分頁 edit 的 placeholder（顯示 live 範圍但不鎖死成自訂）。
+- spinbox 依 target 自適應小數位（isochron 6、Ca/K Cl/K 4、其餘 2），`_smart_set_spin` 再依數值量級微調並設下限，避免顯示值被四捨五入到跟圖不符。
+- 切換 "Apply to:" target 會重載該圖存的自訂／實際範圍並反映 Auto 勾選；Auto 勾選連動 spinbox enable/disable。
+
+### 2. DFN/DFI 與 DFW/DFA/DFC 軸互相污染（latent bug）
+
+- `getDFStatistics_sh(pname=None)` 會把同一組 xlim/ylim 套到 DFN 跟 DFI（兩者尺度天差地遠），且 AutoPipeline 之前根本沒讀 `_daxis['DFI']`。新增 `iso_limits={'DFN':(xl,yl),'DFI':(xl,yl)}` 讓兩張獨立設軸（傳 None 走舊路徑、等價不變，DiagramPlots_SH 不受影響）。
+- `getSHStatistics` 每次都重畫三張譜、只對 `target_plot` 套限，舊的 per-target 迴圈會讓第二張自訂譜把第一張覆蓋回 autoscale。新增 `panel_limits={'DFW':..,'DFA':..,'DFC':..}`，一次呼叫三譜各自設軸，互不覆蓋。
+
+### 3. 負值用紅字顯示
+
+新增 `_is_neg_num()` helper（容忍 `%`、千分位逗號、`±`、`—`）。結果表（Age/σ/⁴⁰Ar(r)%/Ca/K 欄）、Datum CSV 全表、³⁶Ar 試算覆寫的 cell，凡解析為負數一律紅字（#c0282d）。⁴⁰Ar(r)% 過度校正成負、負年齡等一眼可見。
+
+### 4. 補齊 DiagramPlot 控制項
+
+Plot Controls 增 Style（pyADR / Classic PDF）、Log Y、Group Span，傳入 `getSHStatistics` / `getDegasPlot` / `getDFStatistics_sh`。
+
+### 檔案改動
+
+- `AutoPipeline.py`：`_is_neg_num`；AgeCalcPage 加 Style/Log Y/Group Span 控制；`_actual_xlims/_actual_ylims` + sync helpers（`_active_single_key`/`_decimals_for_key`/`_smart_set_spin`/`_fmt_axis`/`_plot_target_changed`/`_sync_axis_controls_from_actual`/`_plot_style`）；`_refresh_diagrams` 改用 `iso_limits` + `panel_limits` 並回填；`populate`/`_load_datum_into_table`/`_apply_ar36_scale` 負值紅字；`_plot_reset` 重置新控制項。
+- `Utilities.py`：`getSHStatistics` 加 `panel_limits`（三譜 per-panel 設軸）；`getDFStatistics_sh` 加 `iso_limits`，`apply_controls` 重構（iso_limits 優先，legacy 路徑邏輯等價不變）。
+- `.work/.app_info.txt`：3.8.63 → 3.8.64
+
+### 驗證 checklist
+
+- [x] headless（NO.65 datum）：`panel_limits` 讓 DFA 套 (0,3) 而 DFW/DFC 各自 autoscale
+- [x] headless：`iso_limits` 讓 DFN 套 (0,300)/(280,320)、DFI 獨立 autoscale 不繼承 DFN 尺度
+- [x] headless GUI logic：切 target 重載軸＋小數位、Auto 回填實際範圍、Auto off 不覆寫手填值、負值判斷、All diagrams 不爆
+- [ ] GUI：調 XY 按 Apply，spinbox 數值與圖一致；按 Auto 後 spinbox 顯示實際範圍
+- [ ] GUI：Datum 表 / 結果表負值顯示紅字
+- [ ] NO.65 重跑 plateau 仍 9.77 ± 0.28 Ma（本版不動科學計算，只動繪圖軸與著色，預期不變）
+
+### 尚未移植（如需再補）
+
+- 圖上滑鼠 hover 顯示資料座標（DiagramPlot 的 infoLabel）：AgeCalc 縮圖是 KeepAspectRatio 有 letterbox，pixel→data 需另存 axes_bbox 處理，本版未做。
+- 點圖分組（step groups 1-5 著色）：互動式點選功能，本版未做。
 
 ---
 
