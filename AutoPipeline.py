@@ -2358,7 +2358,10 @@ class CalcT0Page(QtWidgets.QWidget):
         # AutoPipelineWindow's real chip dict is wired in via t0Page._chips=...
         self._chips = {'Mode': _DummyLbl(), 'Fit': _DummyLbl(),
                        'Blank file': _DummyLbl(), 'Signal': _DummyLbl(),
-                       'Current step': _DummyLbl(), 'Δt': _DummyLbl()}
+                       'Current step': _DummyLbl(), 'Δt': _DummyLbl(),
+                       # v3.8.65: sample identity chips
+                       'Sample': _DummyLbl(), 'Mineral': _DummyLbl(),
+                       'Exp. date': _DummyLbl()}
         self._chips['Mode'].setText('Auto')
         self._chips['Fit'].setText('Linear')
         # nextBtn will be set by AutoPipelineWindow
@@ -2454,6 +2457,7 @@ class CalcT0Page(QtWidgets.QWidget):
             self._refresh_signal()
         # auto Δt from OGD (param) + SPD (first sample's Project# date)
         self._auto_update_delta_t()
+        self._update_sample_chips()   # v3.8.65: Sample / Mineral / Exp. date
         self.nextBtn.setEnabled(True)
         self.footMsg.setText('Files loaded')
         # v3.8.26: kick off background prefetch for blank + all signal steps
@@ -2507,6 +2511,36 @@ class CalcT0Page(QtWidgets.QWidget):
                     f'Auto Δt = {dt} d  (OGD {ogd} → SPD {spd})', 5000)
             except Exception:
                 pass
+
+    def _update_sample_chips(self):
+        """v3.8.65: fill the Sample / Mineral / Exp. date top-bar chips from the
+        first signal step's .dat header (parse_dat info = [name, mineral, ?, ?,
+        irr]) and its analysis date (SPD, from _extract_dat_date)."""
+        if not getattr(self, '_chips', None):
+            return
+        samp = miner = ''
+        if getattr(self, '_sinfo', None):
+            first = next(iter(self._sinfo.values()), None)
+            if first:
+                samp  = (first[0] if len(first) > 0 else '').strip()
+                miner = (first[1] if len(first) > 1 else '').strip()
+        date_str = ''
+        if getattr(self, '_step_dates', None):
+            d = next(iter(self._step_dates.values()), None)
+            if d is not None:
+                try:
+                    date_str = d.strftime('%Y/%m/%d')
+                except Exception:
+                    date_str = str(d)
+        if 'Sample' in self._chips:
+            self._chips['Sample'].setText(samp or '—')
+            self._chips['Sample'].setToolTip(samp)        # full name on hover
+        if 'Mineral' in self._chips:
+            self._chips['Mineral'].setText(miner or '—')
+        if 'Exp. date' in self._chips:
+            self._chips['Exp. date'].setText(date_str or '—')
+            self._chips['Exp. date'].setToolTip(
+                'Analysis date (SPD) from .dat header')
 
     # ── Step buttons ─────────────────────────────────────────
     def _rebuild_step_btns(self):
@@ -3966,6 +4000,7 @@ class CalcT0Page(QtWidgets.QWidget):
 
         if hasattr(self, '_chips'):
             self._chips['Signal'].setText(f'{len(self._svt)} steps')
+            self._update_sample_chips()   # v3.8.65
 
         # Rebuild UI elements that depend on step list
         self._rebuild_step_btns()
@@ -6997,7 +7032,10 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
         # CalcT0Page._auto_update_delta_t via self._chips['Δt'].setText().
         self._nav_chips = {}
         self._nav_chip_widgets = []  # Store chip widgets for hiding
-        for key in ['Mode','Fit','Blank file','Signal','Current step','Δt']:
+        # v3.8.65: Sample / Mineral / Exp. date prepended so the run is
+        # identified at a glance; the long sample-name chip can elide.
+        for key in ['Sample','Mineral','Exp. date',
+                    'Mode','Fit','Blank file','Signal','Current step','Δt']:
             chip = QtWidgets.QWidget()
             chip.setStyleSheet(f'background:#eeede8;border:1px solid {BRD};border-radius:3px;')
             cl = QtWidgets.QVBoxLayout(chip)
@@ -7006,6 +7044,9 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
             lbl_k.setStyleSheet(f'font-size:9px;color:{TXT3};background:transparent;border:none;')
             val_k = QtWidgets.QLabel('—')
             val_k.setStyleSheet(f'font-size:15px;font-weight:bold;font-family:Courier New;background:transparent;border:none;')
+            # keep an over-long sample name from stretching the whole bar
+            if key == 'Sample':
+                val_k.setMaximumWidth(200)
             cl.addWidget(lbl_k); cl.addWidget(val_k)
             tbl.addWidget(chip)
             self._nav_chips[key] = val_k

@@ -1,10 +1,33 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61 → V3.8.62 → V3.8.63 → V3.8.64
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61 → V3.8.62 → V3.8.63 → V3.8.64 → V3.8.65
 最後整理日期：2026-06-03
 整理者：Claude (based on git-style diff across all versions)
 
 GitHub Releases（tag）：v3.8.0、v3.8.1、v3.8.3、v3.8.4、v3.8.5、v3.8.6、v3.8.7、v3.8.8，最新 **v3.8.54（Latest）彙整 v3.8.9 → v3.8.54 共 46 版**。
+
+---
+
+## V3.8.65（2026-06-03）— Calculate T₀ 頂列加 Sample / Mineral / Exp. date 三個 chip
+
+使用者要把 Sample name、礦物、實驗日期也放進頂部那條資訊列（原本只有 Mode / Fit / Blank file / Signal / Current step / Δt）。
+
+- 頂列 chip 迴圈最前面插入 `Sample` / `Mineral` / `Exp. date` 三格（放最前是因為它們標明「現在在看哪個樣品」）。
+- 資料來源：第一個 signal step 的 `.dat` 標頭，`parse_dat` 回傳 `info=[name, mineral, ?, ?, irr]` → Sample=info[0]、Mineral=info[1]；Exp. date = `_extract_dat_date`（SPD 分析日期，與 Δt 用的同一個）格式化成 YYYY/MM/DD。這就是程式各處（datum CSV 的 Sample 欄等）一直在用的同一組樣品識別。
+- 新增 `CalcT0Page._update_sample_chips()`，在 `load_signal` 與 session restore 兩處呼叫。Sample 過長的名字 chip 限寬 200 px、完整名放 tooltip。沒載 signal 時顯示 `—`。
+- NO.65 實檔驗證：Sample `0621-01C`、Mineral `Muscovite`、date `2023/04/18`。
+
+### 檔案改動
+
+- `AutoPipeline.py`：`_chips` placeholder dict 加 3 鍵；nav chip 迴圈加 3 格（Sample 限寬）；`_update_sample_chips` 方法 + `load_signal`/restore 呼叫。
+- `.work/.app_info.txt`：3.8.64 → 3.8.65
+
+### 驗證 checklist
+
+- [x] headless：`_update_sample_chips` 正確填 Sample/Mineral/Date，空狀態顯示 —
+- [x] headless：`parse_dat` + `_extract_dat_date` 在 NO.65 實檔取出 0621-01C / Muscovite / 2023/04/18
+- [ ] GUI：載入 sample 後頂列出現 Sample / Mineral / Exp. date 三格且正確
+- [ ] GUI：開舊 .adr session 也會顯示
 
 ---
 
