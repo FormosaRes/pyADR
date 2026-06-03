@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-AutoPipeline.py  —  pyADR Auto Pipeline (full PyQt5 UI)
+AutoPipeline.py  —  pyADR Argon Pipeline (full PyQt5 UI)
 =========================================================
 Native PyQt5 interface matching the HTML design:
   - Top navigation: 1.Calculate T0 → 2.Mass Ratio → 3.Age Calc+Datum
@@ -6677,7 +6677,7 @@ class PipelineWorker(QtCore.QThread):
 class AutoPipelineWindow(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('pyADR — Auto Pipeline')
+        self.setWindowTitle('pyADR — Argon Pipeline')
         self._params=self._pnames=None; self._nc=10; self._worker=None
         self._build(); self.setStyleSheet(_sheet())
         self.setMinimumSize(1280, 720)

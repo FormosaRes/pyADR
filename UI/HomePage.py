@@ -69,7 +69,7 @@ class Ui_MainWindow(object):
             ("T0S", "Statistics"),
             ("DF", "Diagram Plots"),
             ("DP", "Datum Publication"),
-            ("AP", "Auto Pipeline"),
+            ("AP", "Argon Pipeline"),
         ]
         for name, _text in button_specs:
             btn = QtWidgets.QPushButton(self.content)
@@ -124,7 +124,7 @@ class Ui_MainWindow(object):
         self.SC.setText(_translate("MainWindow", "Salt Calculation"))
         self.DF.setText(_translate("MainWindow", "Diagram Plots"))
         self.DP.setText(_translate("MainWindow", "Datum Publication"))
-        self.AP.setText(_translate("MainWindow", "Auto Pipeline"))
+        self.AP.setText(_translate("MainWindow", "Argon Pipeline"))
         self.AC.setToolTip(_translate("MainWindow", "<html><head/><body><p>Age Calculation:</p><p>Please select one file (the measurement file output by the <span style=\" font-style:italic;\">Mass Ratio Page</span>) that you want to calculate the age for.</p></body></html>"))
         self.AC.setWhatsThis(_translate("MainWindow", "<html><head/><body><p>what is this</p></body></html>"))
         self.AC.setText(_translate("MainWindow", "Age Calculation"))
