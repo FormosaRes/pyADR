@@ -4663,7 +4663,7 @@ class AgeCalcPage(QtWidgets.QWidget):
         row_target = QtWidgets.QHBoxLayout()
         row_target.addWidget(QtWidgets.QLabel('<b>Apply to:</b>'))
         self._plot_target_combo = QtWidgets.QComboBox()
-        for _t in ['All diagrams', 'Age Spectrum', 'Ca/K',
+        for _t in ['All diagrams', 'Age Spectrum', '⁴⁰Ar(r)%', 'Ca/K',
                    'Normal Isochron', 'Inverse Isochron', 'Cl/K', 'Degassing']:
             self._plot_target_combo.addItem(_t)
         row_target.addWidget(self._plot_target_combo, 1)
@@ -4790,7 +4790,8 @@ class AgeCalcPage(QtWidgets.QWidget):
         # v3.8.43: Summary tab 6-grid: 4 既存 + Cl/K + Degassing
         # v3.8.50: order aligned with bottom tabs (Age Spectrum, Inverse,
         # Normal, Ca/K, Cl/K, Degassing)
-        for idx,(key,title) in enumerate([('DFW','Age Spectrum'),('DFI','Inverse Isochron'),
+        for idx,(key,title) in enumerate([('DFW','Age Spectrum'),('DFR','⁴⁰Ar(r)%'),
+                                           ('DFI','Inverse Isochron'),
                                            ('DFN','Normal Isochron'),('DFA','Ca/K'),
                                            ('DFC','Cl/K'),('DFD','Degassing')]):
             fr=QtWidgets.QFrame()
@@ -4879,6 +4880,7 @@ class AgeCalcPage(QtWidgets.QWidget):
         # v3.8.43: 6 full-size diagram tabs (added Cl/K + Degassing)
         # v3.8.50: order = Age Spectrum, Inverse, Normal, Ca/K, Cl/K, Degassing
         for _key, _title in [('DFW', 'Age Spectrum'),
+                             ('DFR', '⁴⁰Ar(r)%'),
                              ('DFI', 'Inverse Isochron'),
                              ('DFN', 'Normal Isochron'),
                              ('DFA', 'Ca/K'),
@@ -4908,8 +4910,9 @@ class AgeCalcPage(QtWidgets.QWidget):
 
     # ── v3.8.64: axis-control <-> rendered-axes sync helpers ──────────────
     _TARGET_KEY = {
-        'Age Spectrum': 'DFW', 'Ca/K': 'DFA', 'Normal Isochron': 'DFN',
-        'Inverse Isochron': 'DFI', 'Cl/K': 'DFC', 'Degassing': 'DFD',
+        'Age Spectrum': 'DFW', '⁴⁰Ar(r)%': 'DFR', 'Ca/K': 'DFA',
+        'Normal Isochron': 'DFN', 'Inverse Isochron': 'DFI',
+        'Cl/K': 'DFC', 'Degassing': 'DFD',
     }
 
     def _active_single_key(self):
@@ -5155,6 +5158,11 @@ class AgeCalcPage(QtWidgets.QWidget):
         html['DFW'] = (_row('Weighted plateau', _pl)
                        + (f"<br><span style='color:#888;font-size:11px;'>{_plx}</span>" if _plx else "")
                        + "<br><br>" + _row('Total fusion age', _tot))
+        # %⁴⁰Ar* radiogenic-yield spectrum
+        html['DFR'] = (_row('Steps', f"{n_steps}")
+                       + "<br><br><span style='color:#888;font-size:11px;'>"
+                         "%⁴⁰Ar* = ⁴⁰Ar*/⁴⁰Ar(total) per step. Per-step values are "
+                         "also in the ⁴⁰Ar(r)% column of the Summary table.</span>")
         # Normal isochron
         if nm:
             html['DFN'] = (_row('Isochron age', f"{nm[0]:.3f} ± {nm[1]:.3f} Ma")
@@ -5437,8 +5445,9 @@ class AgeCalcPage(QtWidgets.QWidget):
         # 'All diagrams' = all six (caveat: same xlim/ylim across plots
         # with different x-scales — caller's responsibility)
         target_keys_map = {
-            'All diagrams':     ['DFW', 'DFA', 'DFN', 'DFI', 'DFC', 'DFD'],
+            'All diagrams':     ['DFW', 'DFR', 'DFA', 'DFN', 'DFI', 'DFC', 'DFD'],
             'Age Spectrum':     ['DFW'],
+            '⁴⁰Ar(r)%':         ['DFR'],
             'Ca/K':             ['DFA'],
             'Normal Isochron':  ['DFN'],
             'Inverse Isochron': ['DFI'],
@@ -5600,6 +5609,16 @@ class AgeCalcPage(QtWidgets.QWidget):
                                     xlim=deg_x, ylim=deg_y,
                                     show_legend=show_legend,
                                     log_y=log_y, style=style)
+            _capture(r)
+        except Exception:
+            pass
+
+        # 4. %⁴⁰Ar* radiogenic-yield spectrum (DFR). v3.8.66
+        rad_x, rad_y = _xy('DFR')
+        try:
+            r = Utilities.getRadiogenicPlot(self._datum_csv, mask_all, self._consts,
+                                    xlim=rad_x, ylim=rad_y,
+                                    show_legend=show_legend, style=style)
             _capture(r)
         except Exception:
             pass
@@ -5828,6 +5847,22 @@ class AgeCalcPage(QtWidgets.QWidget):
         srow.addWidget(plLbl)
         vl.addLayout(srow)
 
+        # v3.8.66: Y-axis range control (default Auto; uncheck to fix Age axis)
+        yrow = QtWidgets.QHBoxLayout()
+        yrow.addWidget(QtWidgets.QLabel('Y 軸 (Age, Ma)'))
+        yAuto = QtWidgets.QCheckBox('Auto'); yAuto.setChecked(True)
+        yrow.addWidget(yAuto)
+        yrow.addWidget(QtWidgets.QLabel('min'))
+        yMinEdit = QtWidgets.QLineEdit(); yMinEdit.setFixedWidth(90)
+        yMinEdit.setPlaceholderText('auto'); yMinEdit.setEnabled(False)
+        yrow.addWidget(yMinEdit)
+        yrow.addWidget(QtWidgets.QLabel('max'))
+        yMaxEdit = QtWidgets.QLineEdit(); yMaxEdit.setFixedWidth(90)
+        yMaxEdit.setPlaceholderText('auto'); yMaxEdit.setEnabled(False)
+        yrow.addWidget(yMaxEdit)
+        yrow.addStretch()
+        vl.addLayout(yrow)
+
         def _draw_one(ages, color, alpha, lw, lbl):
             cum = 0.0; first = True
             for age, sig, f39, ok in ages:
@@ -5869,6 +5904,21 @@ class AgeCalcPage(QtWidgets.QWidget):
             ax.set_ylabel('Age (Ma)', fontsize=10)
             ax.grid(True, alpha=0.25)
             ax.legend(fontsize=8, loc='best')
+            # v3.8.66: Y-axis range — Auto shows the live range; uncheck to fix it
+            if yAuto.isChecked():
+                yMinEdit.setEnabled(False); yMaxEdit.setEnabled(False)
+                _lo, _hi = ax.get_ylim()
+                yMinEdit.blockSignals(True); yMaxEdit.blockSignals(True)
+                yMinEdit.setText(f'{_lo:.2f}'); yMaxEdit.setText(f'{_hi:.2f}')
+                yMinEdit.blockSignals(False); yMaxEdit.blockSignals(False)
+            else:
+                yMinEdit.setEnabled(True); yMaxEdit.setEnabled(True)
+                try:
+                    _ymn = float(yMinEdit.text()); _ymx = float(yMaxEdit.text())
+                    if _ymx > _ymn:
+                        ax.set_ylim(_ymn, _ymx)
+                except Exception:
+                    pass
             pl = _plateau(scaled)
             if pl and pl[2] is not None:
                 plLbl.setText(f'plateau {pl[0]:.3f} ± {pl[1]:.3f} Ma  '
@@ -5882,6 +5932,9 @@ class AgeCalcPage(QtWidgets.QWidget):
             cv.draw()
 
         sld.valueChanged.connect(lambda _v: _redraw())
+        yAuto.toggled.connect(lambda _v: _redraw())
+        yMinEdit.editingFinished.connect(_redraw)
+        yMaxEdit.editingFinished.connect(_redraw)
         _redraw()
 
         btns = QtWidgets.QHBoxLayout(); btns.addStretch()
@@ -5896,6 +5949,9 @@ class AgeCalcPage(QtWidgets.QWidget):
     _DIAG_NOTES = {
         'DFW': 'Weighted-mean plateau from concordant steps. Box height = ±2σ. '
                'A plateau needs ≥3 contiguous steps carrying ≥50% of ³⁹Ar.',
+        'DFR': 'Per-step radiogenic yield %⁴⁰Ar* = ⁴⁰Ar*/⁴⁰Ar(total). Low values '
+               '(atmosphere-dominated, low-T steps) carry large age uncertainty; '
+               'high %⁴⁰Ar* steps anchor the plateau.',
         'DFA': 'Ca/K = 1.96 · ³⁷Ar(Ca)/³⁹Ar(K). Elevated Ca/K flags Ca-rich '
                'phases (plagioclase, pyroxene) degassing in that step.',
         'DFN': 'Normal isochron: y = ⁴⁰Ar/³⁶Ar  vs  x = ³⁹Ar/³⁶Ar. '
@@ -6594,12 +6650,15 @@ class PipelineWorker(QtCore.QThread):
         # immediately after pipeline finishes.
         try: Utilities.getDegasPlot(datum_csv, mask_all, consts)
         except Exception as e: self._warns.append(f'getDegasPlot: {e}')
+        # v3.8.66: %⁴⁰Ar* radiogenic-yield spectrum (.work/DFR.png)
+        try: Utilities.getRadiogenicPlot(datum_csv, mask_all, consts)
+        except Exception as e: self._warns.append(f'getRadiogenicPlot: {e}')
         # v3.8.25: Figures/Publish/StepHeating/ (work_dir-relative) instead of
         # Data/Figures/ to match NTNU_DataReduction.line 4885.
         # v3.8.43: also copy DFC (Cl/K spectrum) + DFD (Degassing) to publish dir.
         fig_d=os.path.join(work_dir,'Figures','Publish','StepHeating')
         os.makedirs(fig_d,exist_ok=True)
-        for key in ['DFW','DFA','DFN','DFI','DFC','DFD']:
+        for key in ['DFW','DFR','DFA','DFN','DFI','DFC','DFD']:
             src=os.path.join(work_dir,'.work',key+'.png')
             if os.path.exists(src): shutil.copyfile(src,os.path.join(fig_d,str(sid)+'_'+key+'.png'))
         # v3.8.34: single consolidated warning dialog at end of pipeline,

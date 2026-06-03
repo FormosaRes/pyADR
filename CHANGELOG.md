@@ -1,10 +1,41 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61 → V3.8.62 → V3.8.63 → V3.8.64 → V3.8.65
-最後整理日期：2026-06-03
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61 → V3.8.62 → V3.8.63 → V3.8.64 → V3.8.65 → V3.8.66
+最後整理日期：2026-06-04
 整理者：Claude (based on git-style diff across all versions)
 
 GitHub Releases（tag）：v3.8.0、v3.8.1、v3.8.3、v3.8.4、v3.8.5、v3.8.6、v3.8.7、v3.8.8，最新 **v3.8.54（Latest）彙整 v3.8.9 → v3.8.54 共 46 版**。
+
+---
+
+## V3.8.66（2026-06-04）— Age 譜敏感度加 Y 軸控制 + 找回 ⁴⁰Ar(r)% 溫階 diagram
+
+兩個 AgeCalc+Datum 回報。
+
+### 1. Age 譜敏感度視窗可改 Y 軸
+
+`_show_ar36_spectrum_dialog`（³⁶Ar blank → Age Spectrum 即時敏感度）原本 Y 軸只能 autoscale，拉桿縮放 ³⁶ blank 時 age 譜上下亂跳不好對照。加一排 Y 軸控制：`Auto`（預設勾）顯示當前 autoscale 範圍且唯讀，取消勾選後可手填 min/max，`_redraw` 內套 `ax.set_ylim`。拉桿、Auto、min/max 改動都即時重畫。
+
+### 2. ⁴⁰Ar(r)% 每個溫階的 diagram 找回來
+
+AutoPipeline 的 AgeCalc 一直只有 DFW/DFI/DFN/DFA/DFC/DFD 六張，沒有 %⁴⁰Ar* 譜（standalone DiagramPlot 是靠 getSummaryPlot 的 'atm' panel 出）。補一張獨立的 ⁴⁰Ar(r)% 階梯譜：
+
+- `Utilities.getRadiogenicPlot()`（新增，仿 `getDegasPlot` 的回傳契約）：用 `_read_sh_rows` + `_draw_step_bars` 畫 y = 40Ar(r)(%)（datum col 19，per-step 放射性佔比，跟 getSummaryPlot 'atm' 同源）vs x = 累積 ³⁹Ar(K)%，存 `.work/DFR.png`，回傳 `actual_xlim/ylim` dict 讓 v3.8.64 的軸控制同步。standalone、不動 getSHStatistics/getSummaryPlot。
+- AgeCalcPage 加 `DFR` 第 7 張：縮圖格、放大分頁、`_DIAG_NOTES`、`_update_diagram_info`、Plot Controls 的 "Apply to:" combo + `target_keys_map` + `_TARGET_KEY` 都補上（排在 Age Spectrum 之後）。
+- `_refresh_diagrams` 第 4 步呼叫 `getRadiogenicPlot` 並回填軸；worker 預先產生 `DFR.png` 並複製到 Publish/StepHeating。
+
+### 檔案改動
+
+- `Utilities.py`：新增 `getRadiogenicPlot`。
+- `AutoPipeline.py`：Age 譜敏感度 dialog Y 軸控制；DFR 接進縮圖格/分頁/notes/info/refresh/worker/Plot Controls。
+- `.work/.app_info.txt`：3.8.65 → 3.8.66
+
+### 驗證 checklist
+
+- [x] headless（NO.65 datum）：`getRadiogenicPlot` 產出 DFR.png，autoscale Y 0..102，自訂 ylim (0,100) 生效；目視階梯譜形狀正確（低溫階 ~18% → plateau ~80-88% → 末階 ~41%）
+- [x] 兩檔 compile 過
+- [ ] GUI：AgeCalc 出現 ⁴⁰Ar(r)% 縮圖 + 分頁，軸控制可調
+- [ ] GUI：Age 譜敏感度視窗取消 Auto Y 後可固定 age 軸範圍
 
 ---
 

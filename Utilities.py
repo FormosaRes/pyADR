@@ -3189,6 +3189,81 @@ def _draw_step_bars(ax, stepw, y_vals, y_errs, mask, color='purple', alpha=1.0,
     ax.set_xlim(0, 100)
 
 
+def getRadiogenicPlot(file, mask, constants,
+                      xlim=None, ylim=None, legend_name=None,
+                      show_legend=True, style='pyADR',
+                      step_groups=None, group_colors=None):
+    """v3.8.66: standalone %40Ar* (radiogenic yield) step spectrum vs cumulative
+    39Ar(K) released — the per-step 40Ar(r)% diagram. Mirrors the DFW/DFA/DFC
+    spectra (uses _draw_step_bars), saves .work/DFR.png, and returns the
+    actual-limits dict so AgeCalcPage's axis controls stay in sync.
+
+    y = 40Ar(r)(%) (datum col 19, per-step radiogenic %, no per-step sigma, same
+    as the getSummaryPlot 'atm' panel). x = cumulative 39Ar(K) released (%)."""
+    import os
+    import numpy as np
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    outdir = os.path.join(os.path.dirname(__file__), ".work")
+    os.makedirs(outdir, exist_ok=True)
+    _st = _get_style(style)
+    col, rows, stepw, y_age, y_err, n = _read_sh_rows(file)
+
+    atm_idx = col.get('40Ar(r)(%)', 19)
+    y_atm = np.full(n, np.nan)
+    for i in range(n):
+        try:
+            y_atm[i] = float(rows[i][atm_idx])
+        except Exception:
+            pass
+    y_zero = np.zeros(n)
+
+    fig, ax = plt.subplots(figsize=(8, 6), dpi=150)
+    _draw_step_bars(ax, stepw, y_atm, y_zero, mask,
+                    color=_st['atm'], edge=_st['edge'], lw=_st['lw'],
+                    step_groups=step_groups, group_colors=group_colors)
+    ax.set_xlim(0, 100)
+    # autoscale y to data + 5% pad (floor at 0), then honour user override
+    fin = y_atm[np.isfinite(y_atm)]
+    if fin.size:
+        ymn, ymx = float(np.min(fin)), float(np.max(fin))
+        pad = 0.05 * (ymx - ymn) if ymx > ymn else (abs(ymx) * 0.05 + 1.0)
+        ax.set_ylim(min(0.0, ymn - pad), ymx + pad)
+    if xlim is not None:
+        ax.set_xlim(xlim[0], xlim[1])
+    if ylim is not None:
+        ax.set_ylim(ylim[0], ylim[1])
+    ax.set_xlabel('Cumulative $^{39}$Ar Released(%)')
+    ax.set_ylabel('%$^{40}$Ar*')
+    if legend_name:
+        ax.set_title(str(legend_name))
+    if _st.get('classic'):
+        ax.set_facecolor('white')
+        ax.tick_params(which='both', direction='out', top=True, right=True,
+                       bottom=True, left=True)
+        for _sp in ax.spines.values():
+            _sp.set_visible(True); _sp.set_linewidth(1.0); _sp.set_color('black')
+    elif _st.get('grid'):
+        ax.grid(True, alpha=0.25)
+
+    actual_xlim = tuple(float(v) for v in ax.get_xlim())
+    actual_ylim = tuple(float(v) for v in ax.get_ylim())
+    _pos = ax.get_position()
+    axes_bbox = (_pos.x0, _pos.y0, _pos.x1, _pos.y1)
+    fig.savefig(os.path.join(outdir, "DFR.png"), dpi=300,
+                facecolor=("white" if _st.get('classic') else "none"))
+    plt.close(fig)
+    return {
+        "path": os.path.join(outdir, "DFR.png"),
+        "step_data": {"DFR": []},
+        "actual_xlim": {"DFR": actual_xlim},
+        "actual_ylim": {"DFR": actual_ylim},
+        "axes_bbox": {"DFR": axes_bbox},
+    }
+
+
 def getDegasPlot(file, mask, constants,
                  xlim=None, ylim=None, legend_name=None,
                  show_legend=True, log_y=True,
