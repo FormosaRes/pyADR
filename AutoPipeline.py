@@ -5133,7 +5133,11 @@ class AgeCalcPage(QtWidgets.QWidget):
             age_Ma =_sf(ar[46])/1e6 if len(ar)>47 else float('nan')
             age_std=_sf(ar[47])/1e6 if len(ar)>47 else float('nan')
             ar40pct=_sf(ar[50])*100  if len(ar)>50 else 0.0
-            cak = _sf(ar[23]) if len(ar)>24 else 0.0
+            # v3.8.74: Ca/K = (³⁹Ar_K · PR(39/37ca)) / ³⁷Ar(Ca), same as the
+            # datum / DFA spectrum. Was ar[23] = ⁴⁰Ar_m_std ≈ 0 → showed 0.000.
+            _a37ca = _sf(ar[8]) if len(ar) > 18 else 0.0
+            _pr3937 = _sf(self._consts[0]) if getattr(self, '_consts', None) else 0.000377631
+            cak = (_sf(ar[18]) * _pr3937 / _a37ca) if _a37ca else 0.0
             issues=', '.join(step.get('neg_datum',[])) or '—'
             # v3.8.29: strip redundant "Temperature " prefix so the temperature
             # number is what user actually sees. Full name kept as tooltip.
@@ -5372,11 +5376,15 @@ class AgeCalcPage(QtWidgets.QWidget):
             # measured (raw) isotopes for isochron
             if len(ar) > 17:
                 try:
-                    Ar36_m, sAr36 = _sf(ar[2]),  _sf(ar[3])
-                    Ar37_m, sAr37 = _sf(ar[4]),  _sf(ar[5])
-                    Ar38_m, sAr38 = _sf(ar[6]),  _sf(ar[7])
-                    Ar39_m, sAr39 = _sf(ar[8]),  _sf(ar[9])
-                    Ar40_m, sAr40 = _sf(ar[10]), _sf(ar[11])
+                    # v3.8.74 FIX: calcAge return layout (restructured v3.7.4) is
+                    # [36m,σ, 36Air,σ, 36Ca,σ, 37m,σ, 37Ca,σ, 38m,σ, ...]. Measured
+                    # isotopes live at 0/6/10/16/22, NOT 2/4/6/8/10 (those were
+                    # 36Air/36Ca/37m/37Ca/38m → garbage isochron, negative trapped).
+                    Ar36_m, sAr36 = _sf(ar[0]),  _sf(ar[1])
+                    Ar37_m, sAr37 = _sf(ar[6]),  _sf(ar[7])
+                    Ar38_m, sAr38 = _sf(ar[10]), _sf(ar[11])
+                    Ar39_m, sAr39 = _sf(ar[16]), _sf(ar[17])
+                    Ar40_m, sAr40 = _sf(ar[22]), _sf(ar[23])
                     Jv = _sf(ar[44]) if len(ar) > 44 else 0.0
                     if Ar36_m > 0 and Ar39_m > 0 and Ar40_m > 0:
                         iso_data.append({
@@ -5800,7 +5808,7 @@ class AgeCalcPage(QtWidgets.QWidget):
 
         ³⁶blank₀ = blank ³⁶Ar T₀ the pipeline used (self._blank_t0[0], grabbed
         from the Calculate-T₀ page at run time). age_result indices:
-        ar[24]=⁴⁰Ar*, ar[18]=³⁹Ar_K, ar[10]=⁴⁰Ar_m, ar[44]=J,
+        ar[24]=⁴⁰Ar*, ar[18]=³⁹Ar_K, ar[22]=⁴⁰Ar_m, ar[44]=J,
         ar[46]=age(yr), ar[47]=σ_age(yr)."""
         if not getattr(self, '_steps', None):
             return
@@ -5826,7 +5834,7 @@ class AgeCalcPage(QtWidgets.QWidget):
             if len(ar) <= 47:
                 continue
             A40r0 = _sf(ar[24]); A39K = _sf(ar[18])
-            A40m  = _sf(ar[10]); J = _sf(ar[44]); sig = _sf(ar[47]) / 1e6
+            A40m  = _sf(ar[22]); J = _sf(ar[44]); sig = _sf(ar[47]) / 1e6  # v3.8.74: ⁴⁰Ar_m=ar[22] (ar[10]=³⁸Ar_m, wrong)
             age1_yr = _sf(ar[46])
             A40r_k = A40r0 + shift
             ok = (A40r_k > 0 and A39K > 0 and J > 0)
@@ -5910,7 +5918,7 @@ class AgeCalcPage(QtWidgets.QWidget):
             ar = step.get('age_result', [])
             if len(ar) <= 24:
                 continue
-            A40m = _sf(ar[10]); A40r_k = _sf(ar[24]) + shift
+            A40m = _sf(ar[22]); A40r_k = _sf(ar[24]) + shift  # v3.8.74: ⁴⁰Ar_m=ar[22]
             if A40m and A40r_k > A40m:
                 neg += 1
         return neg
@@ -6412,7 +6420,10 @@ class AgeCalcPage(QtWidgets.QWidget):
                         age_Ma =_sf(ar[46])/1e6 if len(ar)>47 else float('nan')
                         age_std=_sf(ar[47])/1e6 if len(ar)>47 else float('nan')
                         ar40pct=_sf(ar[50])*100  if len(ar)>50 else 0.0
-                        cak = _sf(ar[23]) if len(ar)>24 else 0.0
+                        # v3.8.74: Ca/K = (³⁹K·PR39/37ca)/³⁷Ca (was ar[23]=⁴⁰Ar_m_std≈0)
+                        _a37ca = _sf(ar[8]) if len(ar) > 18 else 0.0
+                        _pr3937 = _sf(self._consts[0]) if getattr(self, '_consts', None) else 0.000377631
+                        cak = (_sf(ar[18]) * _pr3937 / _a37ca) if _a37ca else 0.0
                         issues=', '.join(step.get('neg_datum',[])) or '—'
                         w.writerow([step['name'],f'{age_Ma:.4f}',f'{age_std:.4f}',
                                   f'{ar40pct:.1f}%',f'{cak:.3f}',issues])
