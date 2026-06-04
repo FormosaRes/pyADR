@@ -5152,6 +5152,12 @@ class AgeCalcPage(QtWidgets.QWidget):
                     # v3.8.64: flag negative numeric values (over-corrected
                     # ⁴⁰Ar(r)%, negative age, etc.) in red.
                     item.setForeground(QtGui.QColor('#c0282d'))
+                elif c == 3 and ar40pct > 100.0:
+                    # v3.8.73: ⁴⁰Ar(r)% > 100% ⟺ net atmospheric ³⁶ < 0
+                    # (³⁶ signal picked below blank → unphysical, age inflated).
+                    item.setForeground(QtGui.QColor('#c0282d'))
+                    item.setToolTip('⁴⁰Ar(r)% > 100% → net ³⁶(atm) < 0：'
+                                    '³⁶ 訊號被選在 blank 之下，大氣校正變負，非物理')
                 self.tbl.setItem(r,c,item)
             
             # Accumulate for total fusion age (weighted by 1/σ²)
@@ -5814,6 +5820,7 @@ class AgeCalcPage(QtWidgets.QWidget):
         col_clr = None if is_base else QtGui.QColor('#1a5fb4')
         shift = atm * (k - 1.0) * blank36   # common Δ⁴⁰Ar* applied to every step
         pl_ages = []
+        n_neg36 = 0                          # v3.8.73: steps with net ³⁶(atm) < 0
         for r, step in enumerate(self._steps):
             ar = step.get('age_result', [])
             if len(ar) <= 47:
@@ -5837,6 +5844,10 @@ class AgeCalcPage(QtWidgets.QWidget):
             else:
                 age_k = float('nan')
             pct_k = (A40r_k / A40m * 100.0) if A40m else 0.0
+            # v3.8.73: ⁴⁰Ar(r)% > 100% ⟺ net atmospheric ³⁶ < 0 (unphysical)
+            neg_atm = bool(A40m) and (A40r_k > A40m)
+            if neg_atm:
+                n_neg36 += 1
             # update table cells (display only — baseline ar untouched)
             if r < self.tbl.rowCount():
                 cells = {1: (f'{age_k:.4f}' if ok else '—'),
@@ -5844,7 +5855,7 @@ class AgeCalcPage(QtWidgets.QWidget):
                          3: f'{pct_k:.1f}%'}
                 for c, v in cells.items():
                     it = QtWidgets.QTableWidgetItem(v)
-                    if _is_neg_num(v):                 # v3.8.64: negatives win, red
+                    if _is_neg_num(v) or (c == 3 and neg_atm):  # negatives / >100% → red
                         it.setForeground(QtGui.QColor('#c0282d'))
                     elif col_clr is not None:
                         it.setForeground(col_clr)
@@ -5875,7 +5886,34 @@ class AgeCalcPage(QtWidgets.QWidget):
             txt += _b
         if is_base:
             txt += '  [baseline]'
+        if n_neg36:   # v3.8.73: flag unphysical net ³⁶(atm) < 0 steps
+            txt += (f'  ⚠ {n_neg36} 階 net ³⁶(atm)<0 → ⁴⁰Ar(r)%>100%, '
+                    f'非物理（³⁶ 壓過頭/blank 太大）')
         self.ar36ScaleLbl.setText(txt)
+        # turn the label red while any step is in the unphysical regime
+        self.ar36ScaleLbl.setStyleSheet(
+            'font-size:11px;color:%s;' % ('#c0282d' if n_neg36 else '#8a5a00'))
+
+    def _ar36_neg_count(self, k):
+        """v3.8.73: number of steps whose net atmospheric ³⁶Ar goes < 0 at
+        ³⁶-blank scale k, i.e. ⁴⁰Ar*(k) > ⁴⁰Ar_m so ⁴⁰Ar(r)% > 100%. That is
+        the unphysical regime (over-minimized ³⁶ / blank too big): the
+        atmospheric correction would ADD ⁴⁰Ar instead of subtracting it."""
+        if not getattr(self, '_steps', None):
+            return 0
+        atm = self._get_atm_ratio()
+        bt = getattr(self, '_blank_t0', None)
+        blank36 = float(bt[0]) if (bt is not None and len(bt) > 0) else 0.0
+        shift = atm * (k - 1.0) * blank36
+        neg = 0
+        for step in self._steps:
+            ar = step.get('age_result', [])
+            if len(ar) <= 24:
+                continue
+            A40m = _sf(ar[10]); A40r_k = _sf(ar[24]) + shift
+            if A40m and A40r_k > A40m:
+                neg += 1
+        return neg
 
     def _ar36_scaled_ages(self, k):
         """v3.8.57: per-step (age_Ma, sig_Ma, ar39k, ok) with the ³⁶Ar blank
@@ -6041,13 +6079,20 @@ class AgeCalcPage(QtWidgets.QWidget):
                 except Exception:
                     pass
             pl = _plateau(scaled)
+            # v3.8.73: flag steps driven into net ³⁶(atm) < 0 (⁴⁰Ar(r)%>100%,
+            # unphysical — too much blank / over-minimized ³⁶).
+            nneg = self._ar36_neg_count(k)
+            warn = (f'   ⚠ {nneg} 階 net ³⁶(atm)<0 (⁴⁰Ar(r)%>100%, 非物理)'
+                    if nneg else '')
             if pl and pl[2] is not None:
                 plLbl.setText(f'plateau {pl[0]:.3f} ± {pl[1]:.3f} Ma  '
-                              f'(MSWD {pl[2]:.2f}, n={pl[3]})')
+                              f'(MSWD {pl[2]:.2f}, n={pl[3]}){warn}')
             elif pl:
-                plLbl.setText(f'plateau {pl[0]:.3f} Ma (n=1)')
+                plLbl.setText(f'plateau {pl[0]:.3f} Ma (n=1){warn}')
             else:
-                plLbl.setText('no valid steps')
+                plLbl.setText('no valid steps' + warn)
+            plLbl.setStyleSheet('font-size:12px;font-weight:bold;color:%s;'
+                                % ('#c0282d' if nneg else '#1a5fb4'))
             try: fig.tight_layout(pad=0.6)
             except Exception: pass
             cv.draw()
