@@ -3794,8 +3794,10 @@ class CalcT0Page(QtWidgets.QWidget):
         if cur_span is not None:   # v3.8.68
             handles.append(Patch(facecolor='#ffe83d', alpha=0.5,
                                  label='current step'))
-        ax.legend(handles=handles, fontsize=8.5, loc='upper right',
-                  framealpha=0.9, ncol=1,
+        # v3.8.69: legend OUTSIDE the axes (right) so it never covers boxes.
+        ax.legend(handles=handles, fontsize=8.5,
+                  loc='upper left', bbox_to_anchor=(1.01, 1.0),
+                  borderaxespad=0.0, framealpha=0.9, ncol=1,
                   title='blank $T_0$ = dashed line per isotope',
                   title_fontsize=8.5)
         ax.grid(True, alpha=0.2, axis='y')
@@ -3806,7 +3808,9 @@ class CalcT0Page(QtWidgets.QWidget):
             '(dots) · blank $T_0$ (dashed). Pick blank << signal.',
             fontsize=10, color='#444')
 
-        try: self._t0range_fig.tight_layout(pad=0.5)
+        # v3.8.69: reserve the right ~16% for the outside legend (rect= so
+        # tight_layout shrinks the axes instead of overlapping the legend).
+        try: self._t0range_fig.tight_layout(rect=[0, 0, 0.84, 1], pad=0.5)
         except Exception: pass
         self.cv_t0range.draw()
 
