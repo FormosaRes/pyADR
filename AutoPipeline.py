@@ -2588,6 +2588,8 @@ class CalcT0Page(QtWidgets.QWidget):
             self._refresh_signal()
         self._update_step_colors()
         self._refresh_guide()
+        # v3.8.68: move the yellow highlighter band to the newly-selected step
+        self._t0r_schedule_repaint(120)
 
     def _update_step_colors(self):
         """v3.8.10: tabs use QTabBar's built-in selected-tab highlight.
@@ -3586,6 +3588,9 @@ class CalcT0Page(QtWidgets.QWidget):
             try: self._calc_blank_t0()
             except Exception: pass
         x = 0.0
+        # v3.8.68: x-span of the step currently being worked on (self._cur),
+        # used to draw a yellow highlighter band so it's easy to find.
+        cur_span = None
         # v3.8.53: leading "Blank" group — blank T₀ distribution across the
         # same C(10,4..10) combos (one box per enabled isotope), so the user
         # sees the blank's own spread, not only the dashed reference line.
@@ -3610,6 +3615,8 @@ class CalcT0Page(QtWidgets.QWidget):
             if blank_step_xs:
                 group_centers.append(sum(blank_step_xs) / len(blank_step_xs))
                 group_labels.append('Blank')
+                if self._cur == '__BLANK__':
+                    cur_span = (min(blank_step_xs), max(blank_step_xs))
                 x += gap_out * 1.6   # extra gap separating blank from signal
         for temp_val, nm in temp_pairs:
             vt_list = self._svt[nm]
@@ -3632,6 +3639,8 @@ class CalcT0Page(QtWidgets.QWidget):
             if step_xs:
                 group_centers.append(sum(step_xs) / len(step_xs))
                 group_labels.append(str(temp_val))
+                if nm == self._cur:
+                    cur_span = (min(step_xs), max(step_xs))
             x += gap_out
 
         if not positions:
@@ -3653,6 +3662,14 @@ class CalcT0Page(QtWidgets.QWidget):
             patch.set_facecolor(col)
             patch.set_alpha(0.55)
             patch.set_edgecolor(col)
+
+        # ── v3.8.68: yellow highlighter band on the step being worked on ──
+        # self._cur is the step open in the mV charts; mark its column so the
+        # user can spot it instantly among all the boxes.
+        if cur_span is not None:
+            ax.axvspan(cur_span[0] - bar_w / 2 - gap_in,
+                       cur_span[1] + bar_w / 2 + gap_in,
+                       color='#ffe83d', alpha=0.35, zorder=0, linewidth=0)
 
         # Reference at 0
         ax.axhline(0, color='grey', linestyle=':', linewidth=0.9, alpha=0.7)
@@ -3711,6 +3728,17 @@ class CalcT0Page(QtWidgets.QWidget):
         # x-axis: temperature labels at group centers
         ax.set_xticks(group_centers)
         ax.set_xticklabels(group_labels, fontsize=9)
+        # v3.8.68: bold + amber the current step's tick label to match the band
+        if cur_span is not None:
+            if self._cur == '__BLANK__':
+                _cur_lbl = 'Blank'
+            else:
+                _m = re.search(r'(\d+)', str(self._cur))
+                _cur_lbl = _m.group(1) if _m else None
+            if _cur_lbl is not None:
+                for _t in ax.get_xticklabels():
+                    if _t.get_text() == _cur_lbl:
+                        _t.set_fontweight('bold'); _t.set_color('#a06000')
         ax.set_xlabel('Temperature (°C)', fontsize=11)
         ax.set_ylabel('$T_0$ range (mV)', fontsize=11)
         ax.tick_params(axis='y', labelsize=10)
@@ -3763,6 +3791,9 @@ class CalcT0Page(QtWidgets.QWidget):
                               label='selected $T_0$ ± σ'))
         handles.append(Line2D([0], [0], color='grey', linestyle='--',
                               linewidth=1.3, label='blank $T_0$ (dashed)'))
+        if cur_span is not None:   # v3.8.68
+            handles.append(Patch(facecolor='#ffe83d', alpha=0.5,
+                                 label='current step'))
         ax.legend(handles=handles, fontsize=8.5, loc='upper right',
                   framealpha=0.9, ncol=1,
                   title='blank $T_0$ = dashed line per isotope',
