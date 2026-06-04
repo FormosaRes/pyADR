@@ -2323,8 +2323,21 @@ class CalcT0Page(QtWidgets.QWidget):
         self._t0range_fig = _mfig.Figure(facecolor='white')
         self._t0range_ax  = self._t0range_fig.add_subplot(111)
         self.cv_t0range   = _FigCanvas(self._t0range_fig)
-        self.cv_t0range.setFixedSize(1450, 360)   # 380 → 360 (toggle row 上方占 20)
-        p5tl.addWidget(self.cv_t0range)
+        self.cv_t0range.setFixedSize(1235, 360)   # narrowed; legend moved out
+        # v3.8.70: legend on a SEPARATE canvas sitting on the page-grey
+        # background to the RIGHT of the white chart box, so it's physically
+        # OUTSIDE the white frame (user request), not just outside the axes.
+        self._t0r_leg_fig = _mfig.Figure(facecolor=BG)
+        self._t0r_leg_ax  = self._t0r_leg_fig.add_subplot(111)
+        self._t0r_leg_ax.axis('off')
+        self.cv_t0r_legend = _FigCanvas(self._t0r_leg_fig)
+        self.cv_t0r_legend.setFixedSize(215, 360)
+        self.cv_t0r_legend.setStyleSheet(f'background:{BG};border:none;')
+        _t0r_row = QtWidgets.QHBoxLayout()
+        _t0r_row.setContentsMargins(0, 0, 0, 0); _t0r_row.setSpacing(0)
+        _t0r_row.addWidget(self.cv_t0range)
+        _t0r_row.addWidget(self.cv_t0r_legend)
+        p5tl.addLayout(_t0r_row)
 
         # v3.8.47: removed Degassing Pattern + Yield Panel per user — both
         # widgets stay instantiated (paint methods still callable, hidden
@@ -3522,6 +3535,12 @@ class CalcT0Page(QtWidgets.QWidget):
         ax = self._t0range_ax
         ax.clear()
         self._t0range_fig.patch.set_facecolor('white')
+        # v3.8.70: reset external legend canvas; only the full-render path
+        # below repopulates it (keeps it blank on the empty/early-return paths).
+        if hasattr(self, '_t0r_leg_ax'):
+            self._t0r_leg_ax.clear(); self._t0r_leg_ax.axis('off')
+            try: self.cv_t0r_legend.draw()
+            except Exception: pass
 
         cache = getattr(self, '_prefetch_cache', None)
         if not self._svt or not cache:
@@ -3794,12 +3813,19 @@ class CalcT0Page(QtWidgets.QWidget):
         if cur_span is not None:   # v3.8.68
             handles.append(Patch(facecolor='#ffe83d', alpha=0.5,
                                  label='current step'))
-        # v3.8.69: legend OUTSIDE the axes (right) so it never covers boxes.
-        ax.legend(handles=handles, fontsize=8.5,
-                  loc='upper left', bbox_to_anchor=(1.01, 1.0),
-                  borderaxespad=0.0, framealpha=0.9, ncol=1,
-                  title='blank $T_0$ = dashed line per isotope',
-                  title_fontsize=8.5)
+        # v3.8.70: render the legend on the SEPARATE canvas that sits on the
+        # page background to the right of the white chart box (outside it).
+        if hasattr(self, '_t0r_leg_ax'):
+            self._t0r_leg_ax.clear(); self._t0r_leg_ax.axis('off')
+            self._t0r_leg_ax.legend(
+                handles=handles, fontsize=8.5,
+                loc='upper left', bbox_to_anchor=(0.0, 1.0),
+                borderaxespad=0.2, framealpha=0.0, ncol=1,
+                title='blank $T_0$ = dashed per isotope', title_fontsize=8.0)
+            try: self._t0r_leg_fig.tight_layout(pad=0.2)
+            except Exception: pass
+            try: self.cv_t0r_legend.draw()
+            except Exception: pass
         ax.grid(True, alpha=0.2, axis='y')
 
         # Title hint
@@ -3808,9 +3834,9 @@ class CalcT0Page(QtWidgets.QWidget):
             '(dots) · blank $T_0$ (dashed). Pick blank << signal.',
             fontsize=10, color='#444')
 
-        # v3.8.69: reserve the right ~16% for the outside legend (rect= so
-        # tight_layout shrinks the axes instead of overlapping the legend).
-        try: self._t0range_fig.tight_layout(rect=[0, 0, 0.84, 1], pad=0.5)
+        # v3.8.70: legend lives on its own canvas now, so the chart uses its
+        # full white box again (no reserved right margin).
+        try: self._t0range_fig.tight_layout(pad=0.5)
         except Exception: pass
         self.cv_t0range.draw()
 
