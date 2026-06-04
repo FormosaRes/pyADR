@@ -4732,6 +4732,13 @@ class AgeCalcPage(QtWidgets.QWidget):
 
         # Row 1b (v3.8.71): which diagrams appear in the Summary grid.
         # Default = Inverse Isochron + Age Spectrum + Ca/K + ⁴⁰Ar(r)%.
+        # v3.8.72 FIX: define visibility state HERE (before the checkboxes read
+        # it); it was defined later in the grid loop, so __init__ crashed with
+        # AttributeError and pyADR would not open.
+        self._diag_visible = {'DFW': True, 'DFR': True, 'DFI': True,
+                              'DFN': False, 'DFA': True, 'DFC': False,
+                              'DFD': False}
+        self._diag_order = ['DFW', 'DFR', 'DFI', 'DFN', 'DFA', 'DFC', 'DFD']
         ctrl_vl.addWidget(QtWidgets.QLabel(
             '<span style="font-size:10px;color:#666;">Show diagrams:</span>'))
         self._diag_show_cb = {}
@@ -4869,13 +4876,7 @@ class AgeCalcPage(QtWidgets.QWidget):
         self._dlbls={}
         self._dframes={}                 # v3.8.71: {key: containing QFrame}
         self._daxis={}  # Store axis ranges per diagram: {key: {'xmin':..,'xmax':..,'ymin':..,'ymax':..}}
-        # v3.8.71: which diagrams are shown in the Summary grid. Default set =
-        # Inverse Isochron + Age Spectrum + Ca/K + ⁴⁰Ar(r)% (others hidden).
-        self._diag_visible = {'DFW': True, 'DFR': True, 'DFI': True,
-                              'DFN': False, 'DFA': True, 'DFC': False,
-                              'DFD': False}
-        # canonical order for the reflow (matches the grid build order)
-        self._diag_order = ['DFW', 'DFR', 'DFI', 'DFN', 'DFA', 'DFC', 'DFD']
+        # _diag_visible / _diag_order defined earlier (Plot Controls section, v3.8.72)
         # v3.8.43: Summary tab 6-grid: 4 既存 + Cl/K + Degassing
         # v3.8.50: order aligned with bottom tabs (Age Spectrum, Inverse,
         # Normal, Ca/K, Cl/K, Degassing)

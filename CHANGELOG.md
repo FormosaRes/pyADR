@@ -1,10 +1,30 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61 → V3.8.62 → V3.8.63 → V3.8.64 → V3.8.65 → V3.8.66 → V3.8.67 → V3.8.68 → V3.8.69 → V3.8.70 → V3.8.71
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61 → V3.8.62 → V3.8.63 → V3.8.64 → V3.8.65 → V3.8.66 → V3.8.67 → V3.8.68 → V3.8.69 → V3.8.70 → V3.8.71 → V3.8.72
 最後整理日期：2026-06-04
 整理者：Claude (based on git-style diff across all versions)
 
 GitHub Releases（tag）：v3.8.0、v3.8.1、v3.8.3、v3.8.4、v3.8.5、v3.8.6、v3.8.7、v3.8.8，最新 **v3.8.54（Latest）彙整 v3.8.9 → v3.8.54 共 46 版**。
+
+---
+
+## V3.8.72（2026-06-04）— HOTFIX：v3.8.71 害 pyADR 開不起來
+
+v3.8.71 把「Show diagrams」勾選框放在 Plot Controls（建構早段），但勾選框 `setChecked(self._diag_visible.get(...))` 讀的 `self._diag_visible` 卻在後面的 diagram grid loop 才定義 → `AgeCalcPage.__init__` 直接 `AttributeError`。AgeCalcPage 在 app 啟動時就被 AutoPipelineWindow 建構，所以整個 pyADR 開不起來。
+
+修法：把 `self._diag_visible` / `self._diag_order` 的定義**移到 Plot Controls 勾選框之前**，grid loop 內的重複定義移除。`_on_diag_toggle`/`_relayout_diagram_grid` 在建構早期被 `setChecked` 觸發時，`_relayout` 用 `getattr(self,'_dg_grid',None)` 早退，安全。
+
+### 檔案改動
+
+- `AutoPipeline.py`：`_diag_visible`/`_diag_order` 定義位置上移；grid loop 去除重複定義。
+- `.work/.app_info.txt`：3.8.71 → 3.8.72
+
+### 驗證 checklist
+
+- [x] compile 過；靜態確認 `_diag_visible` 定義（4738）早於使用（4752），`_dg_grid`/`_dframes` 在 grid 段定義、`_relayout` 有 getattr 早退保護
+- [ ] GUI：pyADR 正常開啟，AgeCalc Plot Controls 的 Show diagrams 勾選正常
+
+備註：sandbox 無法跑 Qt GUI（Qt 在此環境 C-level crash），此版靠靜態分析 + compile 驗證定義順序；請重開 pyADR 確認。
 
 ---
 
