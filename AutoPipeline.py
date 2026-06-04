@@ -4730,6 +4730,25 @@ class AgeCalcPage(QtWidgets.QWidget):
         row_target.addWidget(self._plot_target_combo, 1)
         ctrl_vl.addLayout(row_target)
 
+        # Row 1b (v3.8.71): which diagrams appear in the Summary grid.
+        # Default = Inverse Isochron + Age Spectrum + Ca/K + ⁴⁰Ar(r)%.
+        ctrl_vl.addWidget(QtWidgets.QLabel(
+            '<span style="font-size:10px;color:#666;">Show diagrams:</span>'))
+        self._diag_show_cb = {}
+        _vis_grid = QtWidgets.QGridLayout()
+        _vis_grid.setHorizontalSpacing(10); _vis_grid.setVerticalSpacing(2)
+        _vis_specs = [('DFW', 'Age Spectrum'), ('DFR', '⁴⁰Ar(r)%'),
+                      ('DFI', 'Inverse'), ('DFN', 'Normal'),
+                      ('DFA', 'Ca/K'), ('DFC', 'Cl/K'), ('DFD', 'Degassing')]
+        for _i, (_k, _lbl) in enumerate(_vis_specs):
+            _cb = QtWidgets.QCheckBox(_lbl)
+            _cb.setChecked(self._diag_visible.get(_k, True))
+            _cb.setStyleSheet('font-size:11px;')
+            _cb.toggled.connect(lambda on, k=_k: self._on_diag_toggle(k, on))
+            self._diag_show_cb[_k] = _cb
+            _vis_grid.addWidget(_cb, _i // 4, _i % 4)
+        ctrl_vl.addLayout(_vis_grid)
+
         # Row 2: display options
         opts_hl = QtWidgets.QHBoxLayout()
         self._plot_cb_legend = QtWidgets.QCheckBox('Show Legend')
@@ -4846,8 +4865,17 @@ class AgeCalcPage(QtWidgets.QWidget):
         
         dg_grid = QtWidgets.QGridLayout()
         dg_grid.setSpacing(6)
+        self._dg_grid = dg_grid          # v3.8.71: kept for show/hide reflow
         self._dlbls={}
+        self._dframes={}                 # v3.8.71: {key: containing QFrame}
         self._daxis={}  # Store axis ranges per diagram: {key: {'xmin':..,'xmax':..,'ymin':..,'ymax':..}}
+        # v3.8.71: which diagrams are shown in the Summary grid. Default set =
+        # Inverse Isochron + Age Spectrum + Ca/K + ⁴⁰Ar(r)% (others hidden).
+        self._diag_visible = {'DFW': True, 'DFR': True, 'DFI': True,
+                              'DFN': False, 'DFA': True, 'DFC': False,
+                              'DFD': False}
+        # canonical order for the reflow (matches the grid build order)
+        self._diag_order = ['DFW', 'DFR', 'DFI', 'DFN', 'DFA', 'DFC', 'DFD']
         # v3.8.43: Summary tab 6-grid: 4 既存 + Cl/K + Degassing
         # v3.8.50: order aligned with bottom tabs (Age Spectrum, Inverse,
         # Normal, Ca/K, Cl/K, Degassing)
@@ -4893,11 +4921,13 @@ class AgeCalcPage(QtWidgets.QWidget):
             
             dg_grid.addWidget(fr,idx//2,idx%2)
             self._dlbls[key]=l
+            self._dframes[key]=fr
             self._daxis[key]={'xmin':None,'xmax':None,'ymin':None,'ymax':None}
         
         dg_grid_w = QtWidgets.QWidget()
         dg_grid_w.setLayout(dg_grid)
         dg_vl.addWidget(dg_grid_w, 1)
+        self._relayout_diagram_grid()    # v3.8.71: apply default visible set
         splitter.addWidget(dg_w)
         
         splitter.setStretchFactor(0, 1)
@@ -5253,6 +5283,35 @@ class AgeCalcPage(QtWidgets.QWidget):
 
         for k, lbl in self._dinfo.items():
             lbl.setText(html.get(k, '—'))
+
+    def _on_diag_toggle(self, key, on):
+        """v3.8.71: Plot Controls 'Show diagrams' checkbox → show/hide a Summary
+        thumbnail, then reflow so visible panels stay packed (no gaps)."""
+        self._diag_visible[key] = bool(on)
+        self._relayout_diagram_grid()
+
+    def _relayout_diagram_grid(self):
+        """v3.8.71: re-pack the Summary thumbnail grid (2 columns) with only the
+        visible diagrams in canonical order; the rest are hidden."""
+        grid = getattr(self, '_dg_grid', None)
+        if grid is None:
+            return
+        order = getattr(self, '_diag_order', None) or list(self._dframes.keys())
+        for k in order:
+            fr = self._dframes.get(k)
+            if fr is not None:
+                grid.removeWidget(fr)
+        pos = 0
+        for k in order:
+            fr = self._dframes.get(k)
+            if fr is None:
+                continue
+            if self._diag_visible.get(k, True):
+                grid.addWidget(fr, pos // 2, pos % 2)
+                fr.show()
+                pos += 1
+            else:
+                fr.hide()
 
     def _on_isochron_method_changed(self, idx):
         """v3.8.5 (A2): user changed OLS / York dropdown. Regenerate DFI/DFN
