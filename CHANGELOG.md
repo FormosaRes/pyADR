@@ -1,10 +1,29 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61 → V3.8.62 → V3.8.63 → V3.8.64 → V3.8.65 → V3.8.66 → V3.8.67 → V3.8.68 → V3.8.69 → V3.8.70 → V3.8.71 → V3.8.72 → V3.8.73 → V3.8.74 → V3.8.75
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61 → V3.8.62 → V3.8.63 → V3.8.64 → V3.8.65 → V3.8.66 → V3.8.67 → V3.8.68 → V3.8.69 → V3.8.70 → V3.8.71 → V3.8.72 → V3.8.73 → V3.8.74 → V3.8.75 → V3.8.76
 最後整理日期：2026-06-05
 整理者：Claude (based on git-style diff across all versions)
 
 GitHub Releases（tag）：v3.8.0、v3.8.1、v3.8.3、v3.8.4、v3.8.5、v3.8.6、v3.8.7、v3.8.8，最新 **v3.8.54（Latest）彙整 v3.8.9 → v3.8.54 共 46 版**。
+
+---
+
+## V3.8.76（2026-06-05）— isochron 預設改 York（修 banner/diagram 方法不一致）+ 控制項灰化
+
+稽核後使用者選定的修法批次第一批（低風險）：
+
+### York 為預設（#4）
+banner 的 isochron age 一律 York,但 diagram 跟 pipeline 預設 OLS → 同資料兩個 age/MSWD,要切 dropdown 才一致。改成全 York：method combo 預設 York（OLS 改標 "OLS (legacy, unweighted)"）、pipeline 預生 `isochron_method='york'`。banner 本來就 York,現在三者一致。**改了 diagram/pipeline 報的 isochron age（OLS→York）,重跑 NO.65 對照。**
+
+### 控制項灰化
+Plot Controls 的 group-fits/overall-fit 只對 isochron 有效、LogY 只對 Ca/K·Cl/K·Degassing、GroupSpan 只對 Age·Ca/K·Cl/K。`_plot_target_changed` 依當前 target 把無效的灰掉（'All diagrams' 全開），不再讓使用者按沒反應的鈕。logic test 過。
+
+### 檔案改動
+- `AutoPipeline.py`：method combo 預設 + label、pipeline 預生 york、`_plot_target_changed` 灰化。
+- `.work/.app_info.txt`：3.8.75 → 3.8.76
+
+### 後續批次（已排）
+plateau step 勾選+Auto、Recalculate 真重算、1σ/2σ、uncertainty budget、inverse-isochron 裁判、其餘 UX 小修（MSWD 顏色/Cl/K 欄/copy/單行 cell）。
 
 ---
 

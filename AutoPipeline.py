@@ -4558,17 +4558,18 @@ class AgeCalcPage(QtWidgets.QWidget):
         sf_hl.addWidget(w6)
         w7, self._stat_steps = stat_cell('Steps')
         sf_hl.addWidget(w7)
-        # v3.8.5 (A2): isochron regression method toggle.  Default OLS for
-        # backward compatibility.  York 2004 uses both x,y errors per Schaen 2021.
+        # v3.8.5 (A2): isochron regression method toggle.  v3.8.76: default York
+        # (matches the always-York banner; OLS is unweighted/legacy). York 2004
+        # uses both x,y errors per Schaen 2021.
         _method_widget = QtWidgets.QWidget()
         _method_vl = QtWidgets.QVBoxLayout(_method_widget)
         _method_vl.setContentsMargins(0,0,0,0); _method_vl.setSpacing(1)
         _method_lbl = QtWidgets.QLabel('Isochron method')
         _method_lbl.setStyleSheet(f'font-size:10px;color:{TXT3};background:transparent;')
         self._isochron_method_combo = QtWidgets.QComboBox()
-        self._isochron_method_combo.addItem('OLS',  'ols')
         self._isochron_method_combo.addItem('York 2004', 'york')
-        self._isochron_method_combo.setCurrentIndex(0)
+        self._isochron_method_combo.addItem('OLS (legacy, unweighted)', 'ols')
+        self._isochron_method_combo.setCurrentIndex(0)  # v3.8.76: York is default (matches banner; OLS is unweighted/legacy)
         self._isochron_method_combo.setToolTip(
             'OLS: scipy.curve_fit, assumes σ_x = 0 (older Ar/Ar convention).\n'
             'York 2004: bivariate weighted regression with both σ_x and σ_y\n'
@@ -5052,6 +5053,16 @@ class AgeCalcPage(QtWidgets.QWidget):
         decs = self._decimals_for_key(key) if key else 4
         for sb in (self._plot_xmin, self._plot_xmax, self._plot_ymin, self._plot_ymax):
             sb.setDecimals(decs)
+        # v3.8.76: gray out controls that do nothing for the current target
+        _all = (key is None)   # 'All diagrams'
+        if hasattr(self, '_plot_cb_group_fits'):
+            _iso = _all or key in ('DFN', 'DFI')
+            self._plot_cb_group_fits.setEnabled(_iso)
+            self._plot_cb_overall_fit.setEnabled(_iso)
+        if hasattr(self, '_plot_cb_logy'):
+            self._plot_cb_logy.setEnabled(_all or key in ('DFA', 'DFC', 'DFD'))
+        if hasattr(self, '_plot_cb_span'):
+            self._plot_cb_span.setEnabled(_all or key in ('DFW', 'DFA', 'DFC'))
         if not key:
             return   # 'All diagrams' — ambiguous, leave spinboxes as-is
         d = (self._daxis.get(key, {}) if hasattr(self, '_daxis') else {}) or {}
@@ -6840,7 +6851,7 @@ class PipelineWorker(QtCore.QThread):
         # v3.8.34: buffer instead of emit
         except Exception as e: self._warns.append(f'getSHStatistics: {e}')
         try: Utilities.getDFStatistics_sh(datum_csv,mask_all,consts,'b','o',
-                                          isochron_method='ols')
+                                          isochron_method='york')  # v3.8.76: match York-default banner
         except Exception as e: self._warns.append(f'getDFStatistics_sh: {e}')
         # v3.8.43: also pre-generate Degassing pattern PNG (.work/DFD.png)
         # so the new Degassing tab in AgeCalcPage has something to show
