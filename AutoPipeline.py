@@ -4489,6 +4489,9 @@ class AgeCalcPage(QtWidgets.QWidget):
         self._work_dir = ''
         self._datum_csv = ''
         self._steps = []
+        # v3.8.77: plateau step selection (the Step cell carries a checkbox)
+        self._plateau_mask = []        # list[bool] per step; True = used in plateau + isochron
+        self._tbl_updating = False     # guard self.tbl.itemChanged during programmatic fills
 
         # v3.8.31: outer = sidebar + content (mirrors MassRatioPage layout)
         outer = QtWidgets.QHBoxLayout(self)
@@ -4617,6 +4620,30 @@ class AgeCalcPage(QtWidgets.QWidget):
             'QPushButton{font-size:11px;padding:3px 10px;}')
         self.recalcBtn.clicked.connect(self._recalculate_with_atm)
         ctrl_hl.addWidget(self.recalcBtn)
+
+        # v3.8.77: plateau step selection — Auto-plateau button + MSWD cutoff.
+        # The Step column carries a checkbox; checked steps drive the weighted
+        # plateau AND the normal/inverse isochrons.
+        ctrl_hl.addSpacing(20)
+        self.autoPlateauBtn = QtWidgets.QPushButton('Auto plateau')
+        self.autoPlateauBtn.setToolTip(
+            '挑「最長連續、累積 ³⁹Ar ≥ 50%、MSWD ≤ cutoff」的 step 當 plateau。\n'
+            '勾選欄在 Step 欄,可手動增減,banner 即時重算。')
+        self.autoPlateauBtn.setStyleSheet(
+            _btn_style('#2e7d52', 'white', '#2e7d52') +
+            'QPushButton{font-size:11px;padding:3px 10px;}')
+        self.autoPlateauBtn.clicked.connect(self._auto_plateau)
+        ctrl_hl.addWidget(self.autoPlateauBtn)
+        ctrl_hl.addWidget(QtWidgets.QLabel(
+            '<span style="font-size:11px;color:#444;">MSWD ≤</span>'))
+        self.plateauMswdSpin = QtWidgets.QDoubleSpinBox()
+        self.plateauMswdSpin.setRange(0.5, 50.0); self.plateauMswdSpin.setSingleStep(0.5)
+        self.plateauMswdSpin.setDecimals(1); self.plateauMswdSpin.setValue(2.5)
+        self.plateauMswdSpin.setFixedWidth(58)
+        self.plateauMswdSpin.setStyleSheet(
+            f'QDoubleSpinBox{{background:white;border:1px solid {BRD};'
+            f'padding:1px 4px;font-size:11px;}}')
+        ctrl_hl.addWidget(self.plateauMswdSpin)
 
         # v3.8.55: ³⁶Ar sensitivity preview — scale the atmospheric ³⁶Ar by k
         # and recompute ages on the fly (non-destructive; k=1 restores).
@@ -5000,6 +5027,8 @@ class AgeCalcPage(QtWidgets.QWidget):
         # actual limits and picks sensible decimals for its value magnitude.
         self._plot_target_combo.currentIndexChanged.connect(self._plot_target_changed)
         self._plot_target_changed()
+        # v3.8.77: Step-column checkboxes drive the plateau/isochron selection
+        self.tbl.itemChanged.connect(self._on_step_check)
 
     # ── v3.8.64: axis-control <-> rendered-axes sync helpers ──────────────
     _TARGET_KEY = {
@@ -5135,10 +5164,14 @@ class AgeCalcPage(QtWidgets.QWidget):
         
         # Populate results table
         self.tbl.setRowCount(len(steps))
+        # v3.8.77: default all steps selected for the plateau (matches prior
+        # all-steps behaviour; user narrows via Auto plateau / Step checkboxes).
+        self._plateau_mask = [True] * len(steps)
+        self._tbl_updating = True   # guard itemChanged while filling the table
         # v3.8.75: accumulate summed gas for the TRUE total fusion age
         sum40r = sum39k = sum_s40r2 = sum_s39k2 = 0.0
         valid_count = 0
-        
+
         for r,step in enumerate(steps):
             ar=step.get('age_result',[])
             age_Ma =_sf(ar[46])/1e6 if len(ar)>47 else float('nan')
@@ -5160,6 +5193,9 @@ class AgeCalcPage(QtWidgets.QWidget):
             tooltips=[full_name, '', '', '', '', issues]  # show full text on hover
             for c,v in enumerate(vals):
                 item=QtWidgets.QTableWidgetItem(v)
+                if c == 0:   # v3.8.77: Step cell carries the plateau-include checkbox
+                    item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
+                    item.setCheckState(QtCore.Qt.Checked)
                 if tooltips[c]:
                     item.setToolTip(tooltips[c])
                 if c==5 and v!='—':
@@ -5185,6 +5221,8 @@ class AgeCalcPage(QtWidgets.QWidget):
                     sum_s40r2 += _sf(ar[25])**2; sum_s39k2 += _sf(ar[19])**2
             if not (age_Ma != age_Ma) and age_std > 0:   # valid-step count
                 valid_count += 1
+
+        self._tbl_updating = False   # v3.8.77: table fill done, re-enable itemChanged
 
         # Update summary banner: total fusion age = ln(1 + J·F_total)/λ_eff,
         # F_total = Σ⁴⁰Ar*/Σ³⁹Ar_K (gas-weighted), σ propagated from summed gas + σ_J.
@@ -5365,6 +5403,81 @@ class AgeCalcPage(QtWidgets.QWidget):
                 self, 'Regen diagrams failed',
                 f'isochron_method={method}: {e}')
 
+    # ── v3.8.77: plateau step selection ──────────────────────────────
+    def _step_selected(self, i):
+        m = self._plateau_mask
+        return m[i] if (m and 0 <= i < len(m)) else True
+
+    def _on_step_check(self, item):
+        """Step-column checkbox toggled → update mask + recompute plateau/isochron."""
+        if self._tbl_updating or item is None or item.column() != 0:
+            return
+        r = item.row()
+        if 0 <= r < len(self._plateau_mask):
+            self._plateau_mask[r] = (item.checkState() == QtCore.Qt.Checked)
+            self._update_isochron_stats(self._steps)
+            self._update_diagram_info()
+
+    def _apply_mask_to_table(self):
+        """Push self._plateau_mask onto the Step-column check states (guarded)."""
+        self._tbl_updating = True
+        try:
+            for r in range(min(self.tbl.rowCount(), len(self._plateau_mask))):
+                it = self.tbl.item(r, 0)
+                if it is not None:
+                    it.setCheckState(QtCore.Qt.Checked if self._plateau_mask[r]
+                                     else QtCore.Qt.Unchecked)
+        finally:
+            self._tbl_updating = False
+
+    def _compute_auto_plateau(self):
+        """Standard plateau search: longest contiguous run of valid steps with
+        cumulative ³⁹Ar ≥ 50% and MSWD ≤ cutoff (editable spinbox). Returns a set
+        of step indices; falls back to all valid steps if none qualifies."""
+        steps = getattr(self, '_steps', []) or []
+        n = len(steps)
+        info = []   # per step: (age_Ma, sig_Ma, f39, valid)
+        for st in steps:
+            ar = st.get('age_result', [])
+            if len(ar) > 50:
+                age = _sf(ar[46]) / 1e6; sig = _sf(ar[47]) / 1e6
+                f39 = _sf(ar[18]); a40r = _sf(ar[24])
+                ok = (sig > 0 and age == age and a40r > 0 and f39 > 0)
+            else:
+                age = sig = f39 = 0.0; ok = False
+            info.append((age, sig, max(f39, 0.0), ok))
+        total39 = sum(x[2] for x in info if x[3]) or 1.0
+        cutoff = float(self.plateauMswdSpin.value()) if hasattr(self, 'plateauMswdSpin') else 2.5
+        best = None   # (n_used, frac, idx_list)
+        for a in range(n):
+            for b in range(a, n):
+                idx = [k for k in range(a, b + 1) if info[k][3]]
+                if len(idx) < 3:
+                    continue
+                sub = [info[k] for k in idx]
+                tw = sum(1.0 / s**2 for _, s, _, _ in sub)
+                if tw <= 0:
+                    continue
+                mean = sum(g / s**2 for g, s, _, _ in sub) / tw
+                mswd = sum(((g - mean) / s)**2 for g, s, _, _ in sub) / (len(sub) - 1)
+                frac = sum(x[2] for x in sub) / total39
+                if mswd <= cutoff and frac >= 0.50:
+                    cand = (len(idx), frac)
+                    if best is None or cand > (best[0], best[1]):
+                        best = (len(idx), frac, idx)
+        if best:
+            return set(best[2])
+        return set(k for k in range(n) if info[k][3])
+
+    def _auto_plateau(self):
+        if not getattr(self, '_steps', None):
+            return
+        sel = self._compute_auto_plateau()
+        self._plateau_mask = [(i in sel) for i in range(len(self._steps))]
+        self._apply_mask_to_table()
+        self._update_isochron_stats(self._steps)
+        self._update_diagram_info()
+
     def _update_isochron_stats(self, steps):
         """Compute plateau (Wendt-Carl 1991 √MSWD corrected), and both
         normal/inverse isochrons via York (2004) regression.
@@ -5385,9 +5498,13 @@ class AgeCalcPage(QtWidgets.QWidget):
         Age computed from F = ⁴⁰Ar*/³⁹Ar_K using J value from each step.
         """
         # --- collect step-level age + isotope ratios ---
+        # v3.8.77: only steps selected via the Step checkboxes contribute to the
+        # plateau AND the isochrons (excluded steps drop out of both).
         ages = []        # (age_Ma, sig_Ma, name)
         iso_data = []    # (Ar36_m, Ar37_m, Ar39_m, Ar40_m, σ36, σ37, σ39, σ40, J, Js)
-        for step in steps:
+        for i, step in enumerate(steps):
+            if not self._step_selected(i):
+                continue
             ar = step.get('age_result', [])
             if len(ar) > 47:
                 age = _sf(ar[46]) / 1e6

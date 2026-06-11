@@ -1,10 +1,32 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61 → V3.8.62 → V3.8.63 → V3.8.64 → V3.8.65 → V3.8.66 → V3.8.67 → V3.8.68 → V3.8.69 → V3.8.70 → V3.8.71 → V3.8.72 → V3.8.73 → V3.8.74 → V3.8.75 → V3.8.76
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61 → V3.8.62 → V3.8.63 → V3.8.64 → V3.8.65 → V3.8.66 → V3.8.67 → V3.8.68 → V3.8.69 → V3.8.70 → V3.8.71 → V3.8.72 → V3.8.73 → V3.8.74 → V3.8.75 → V3.8.76 → V3.8.77
 最後整理日期：2026-06-05
 整理者：Claude (based on git-style diff across all versions)
 
 GitHub Releases（tag）：v3.8.0、v3.8.1、v3.8.3、v3.8.4、v3.8.5、v3.8.6、v3.8.7、v3.8.8，最新 **v3.8.54（Latest）彙整 v3.8.9 → v3.8.54 共 46 版**。
+
+---
+
+## V3.8.77（2026-06-05）— Plateau step 選擇 + Auto plateau（#36）
+
+稽核 #6 / critical feature：原本「Weighted Plateau」用所有 step、沒做 plateau 選擇（其實=全 step 加權平均）。現在可選：
+
+- **Step 欄加勾選框**（用 checkable cell,不動既有欄位 index → 零 reindex 風險）。**勾選的 step 才進 plateau 與 normal/inverse isochron**（`_update_isochron_stats` 依 `_plateau_mask` 用 `_step_selected(i)` 過濾）。勾/取消即時重算 banner（`_on_step_check`,有 `_tbl_updating` guard 防 populate 期間誤觸發）。
+- **Auto plateau 按鈕 + MSWD cutoff spinbox**（預設 2.5,可編）：挑「最長連續、累積 ³⁹Ar ≥ 50%、MSWD ≤ cutoff」的 run；無解則 fallback 全部有效 step。
+- 預設全選（同舊行為,非破壞性）；載入後按 Auto plateau 或手動勾選來縮。
+
+### 驗證（headless 邏輯測試）
+- `_compute_auto_plateau`：5 階中正確挑出中間 3 階 concordant(~9Ma, 90% ³⁹Ar)；全 concordant→全選；全 discordant→fallback。
+- mask 過濾 `_update_isochron_stats`：select 1-3 → plateau 9.000 Ma；全選 → 13.4 Ma（被 20Ma 階拉高）。compile 過。
+
+### 尚未做（後續）
+- Age Spectrum (DFW) 圖上把選定 plateau 那段 shade 起來（目前只 banner/panel 數字反映選擇,圖還沒同步）。
+- ³⁶Ar 試算的 plateau 預覽目前仍用全 step（獨立 what-if 路徑）。
+
+### 檔案改動
+- `AutoPipeline.py`：`_plateau_mask`/`_tbl_updating` state、Auto-plateau 按鈕+cutoff、Step cell checkbox、`itemChanged`→`_on_step_check`、helpers（`_step_selected`/`_apply_mask_to_table`/`_compute_auto_plateau`/`_auto_plateau`）、`_update_isochron_stats` 依 mask 過濾。
+- `.work/.app_info.txt`：3.8.76 → 3.8.77
 
 ---
 
