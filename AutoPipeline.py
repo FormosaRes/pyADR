@@ -5124,8 +5124,8 @@ class AgeCalcPage(QtWidgets.QWidget):
         
         # Populate results table
         self.tbl.setRowCount(len(steps))
-        total_age_sum = 0.0
-        total_age_weight = 0.0
+        # v3.8.75: accumulate summed gas for the TRUE total fusion age
+        sum40r = sum39k = sum_s40r2 = sum_s39k2 = 0.0
         valid_count = 0
         
         for r,step in enumerate(steps):
@@ -5133,11 +5133,12 @@ class AgeCalcPage(QtWidgets.QWidget):
             age_Ma =_sf(ar[46])/1e6 if len(ar)>47 else float('nan')
             age_std=_sf(ar[47])/1e6 if len(ar)>47 else float('nan')
             ar40pct=_sf(ar[50])*100  if len(ar)>50 else 0.0
-            # v3.8.74: Ca/K = (³⁹Ar_K · PR(39/37ca)) / ³⁷Ar(Ca), same as the
-            # datum / DFA spectrum. Was ar[23] = ⁴⁰Ar_m_std ≈ 0 → showed 0.000.
+            # v3.8.75: Ca/K = ³⁷Ar(Ca)·0.52 / ³⁹Ar_K (canonical, matches
+            # Utilities.getJVolumeStatistics:2996 + NTNU_DataReduction:5387).
+            # v3.8.74 had it inverted ((39K·PR)/37Ca = K/Ca, wrong constant).
             _a37ca = _sf(ar[8]) if len(ar) > 18 else 0.0
-            _pr3937 = _sf(self._consts[0]) if getattr(self, '_consts', None) else 0.000377631
-            cak = (_sf(ar[18]) * _pr3937 / _a37ca) if _a37ca else 0.0
+            _a39k  = _sf(ar[18]) if len(ar) > 18 else 0.0
+            cak = (_a37ca * 0.52 / _a39k) if _a39k else 0.0
             issues=', '.join(step.get('neg_datum',[])) or '—'
             # v3.8.29: strip redundant "Temperature " prefix so the temperature
             # number is what user actually sees. Full name kept as tooltip.
@@ -5157,29 +5158,45 @@ class AgeCalcPage(QtWidgets.QWidget):
                     # ⁴⁰Ar(r)%, negative age, etc.) in red.
                     item.setForeground(QtGui.QColor('#c0282d'))
                 elif c == 3 and ar40pct > 100.0:
-                    # v3.8.73: ⁴⁰Ar(r)% > 100% ⟺ net atmospheric ³⁶ < 0
+                    # v3.8.73: ⁴⁰Ar(r)% > 100% ⟹ net ³⁶(atm) < 0 (sufficient, not iff; ⁴⁰Ar_K>0 also subtracted)
                     # (³⁶ signal picked below blank → unphysical, age inflated).
                     item.setForeground(QtGui.QColor('#c0282d'))
                     item.setToolTip('⁴⁰Ar(r)% > 100% → net ³⁶(atm) < 0：'
                                     '³⁶ 訊號被選在 blank 之下，大氣校正變負，非物理')
                 self.tbl.setItem(r,c,item)
             
-            # Accumulate for total fusion age (weighted by 1/σ²)
-            if not (age_Ma != age_Ma) and age_std > 0:  # not NaN and valid σ
-                weight = 1.0 / (age_std**2)
-                total_age_sum += age_Ma * weight
-                total_age_weight += weight
+            # v3.8.75: gas sums for the TRUE total fusion age (Σ⁴⁰Ar*/Σ³⁹Ar_K),
+            # not a 1/σ²-weighted mean of step ages (that duplicated the plateau).
+            if len(ar) > 50:
+                _a40r = _sf(ar[24]); _a39k_g = _sf(ar[18])
+                if _a39k_g > 0:
+                    sum40r += _a40r; sum39k += _a39k_g
+                    sum_s40r2 += _sf(ar[25])**2; sum_s39k2 += _sf(ar[19])**2
+            if not (age_Ma != age_Ma) and age_std > 0:   # valid-step count
                 valid_count += 1
-        
-        # Update summary banner
-        if total_age_weight > 0:
-            total_age = total_age_sum / total_age_weight
-            total_sigma = (1.0 / total_age_weight) ** 0.5
-            self._stat_total.setText(f'{total_age:.3f} ± {total_sigma:.3f} Ma')
-            self._info_total = (total_age, total_sigma)   # v3.8.50
+
+        # Update summary banner: total fusion age = ln(1 + J·F_total)/λ_eff,
+        # F_total = Σ⁴⁰Ar*/Σ³⁹Ar_K (gas-weighted), σ propagated from summed gas + σ_J.
+        self._info_total = None
+        if sum39k > 0 and sum40r > 0 and steps:
+            ar0 = steps[0].get('age_result', [])
+            Jv = _sf(ar0[44]) if len(ar0) > 44 else 0.0
+            Js = _sf(ar0[45]) if len(ar0) > 45 else 0.0
+            F_total = sum40r / sum39k
+            lam = LAMBDA_K
+            try:
+                total_age = math.log1p(Jv * F_total) / lam / 1e6
+                sF = F_total * math.sqrt((math.sqrt(sum_s40r2) / sum40r) ** 2
+                                         + (math.sqrt(sum_s39k2) / sum39k) ** 2)
+                denom = lam * (1.0 + F_total * Jv)
+                total_sigma = (math.sqrt(Jv**2 * sF**2 + F_total**2 * Js**2)
+                               / denom / 1e6) if denom else 0.0
+                self._stat_total.setText(f'{total_age:.3f} ± {total_sigma:.3f} Ma')
+                self._info_total = (total_age, total_sigma)
+            except Exception:
+                self._stat_total.setText('—')
         else:
             self._stat_total.setText('—')
-            self._info_total = None
         
         # Plateau, Normal/Inverse Isochron, MSWD (computed from ar_list)
         self._update_isochron_stats(steps)
@@ -5193,15 +5210,10 @@ class AgeCalcPage(QtWidgets.QWidget):
                 J = _sf(ar[44])
                 Js = _sf(ar[45])
                 self._stat_j.setText(f'{J:.2e} ± {Js:.0e}')
-            # Atm ratio (row[82] in datum row is atm 40/36)
-            if len(ar) > 83:
-                atm = _sf(ar[82])
-                atm_s = _sf(ar[83])
-                if atm > 0:
-                    self.atmRatioEdit.setText(f'{atm:.2f}')
-                    self.atmSigmaLbl.setText(
-                        f'<span style="font-size:10px;color:#888;">± {atm_s:.2f}</span>')
-        
+            # v3.8.75: removed dead atm-ratio block (read ar[82]/ar[83]; calcAge
+            # returns only 59 elements so the guard was always False). The atm
+            # 40/36 stays at the user-editable default; it is consts[12] if needed.
+
         # v3.8.36: load diagrams + datum table together
         self._reload_all_pngs()
         self._load_datum_into_table(datum_csv)
@@ -5852,7 +5864,7 @@ class AgeCalcPage(QtWidgets.QWidget):
             else:
                 age_k = float('nan')
             pct_k = (A40r_k / A40m * 100.0) if A40m else 0.0
-            # v3.8.73: ⁴⁰Ar(r)% > 100% ⟺ net atmospheric ³⁶ < 0 (unphysical)
+            # v3.8.73: ⁴⁰Ar(r)% > 100% ⟹ net ³⁶(atm) < 0 (sufficient, not iff; ⁴⁰Ar_K>0 also subtracted) (unphysical)
             neg_atm = bool(A40m) and (A40r_k > A40m)
             if neg_atm:
                 n_neg36 += 1
@@ -6126,7 +6138,7 @@ class AgeCalcPage(QtWidgets.QWidget):
         'DFR': 'Per-step radiogenic yield %⁴⁰Ar* = ⁴⁰Ar*/⁴⁰Ar(total). Low values '
                '(atmosphere-dominated, low-T steps) carry large age uncertainty; '
                'high %⁴⁰Ar* steps anchor the plateau.',
-        'DFA': 'Ca/K = 1.96 · ³⁷Ar(Ca)/³⁹Ar(K). Elevated Ca/K flags Ca-rich '
+        'DFA': 'Ca/K = 0.52 · ³⁷Ar(Ca)/³⁹Ar(K). Elevated Ca/K flags Ca-rich '
                'phases (plagioclase, pyroxene) degassing in that step.',
         'DFN': 'Normal isochron: y = ⁴⁰Ar/³⁶Ar  vs  x = ³⁹Ar/³⁶Ar. '
                'Intercept = trapped (⁴⁰/³⁶); slope → ⁴⁰Ar*/³⁹Ar_K.',
@@ -6420,10 +6432,10 @@ class AgeCalcPage(QtWidgets.QWidget):
                         age_Ma =_sf(ar[46])/1e6 if len(ar)>47 else float('nan')
                         age_std=_sf(ar[47])/1e6 if len(ar)>47 else float('nan')
                         ar40pct=_sf(ar[50])*100  if len(ar)>50 else 0.0
-                        # v3.8.74: Ca/K = (³⁹K·PR39/37ca)/³⁷Ca (was ar[23]=⁴⁰Ar_m_std≈0)
+                        # v3.8.75: Ca/K = ³⁷Ca·0.52 / ³⁹K (canonical; v3.8.74 was inverted)
                         _a37ca = _sf(ar[8]) if len(ar) > 18 else 0.0
-                        _pr3937 = _sf(self._consts[0]) if getattr(self, '_consts', None) else 0.000377631
-                        cak = (_sf(ar[18]) * _pr3937 / _a37ca) if _a37ca else 0.0
+                        _a39k  = _sf(ar[18]) if len(ar) > 18 else 0.0
+                        cak = (_a37ca * 0.52 / _a39k) if _a39k else 0.0
                         issues=', '.join(step.get('neg_datum',[])) or '—'
                         w.writerow([step['name'],f'{age_Ma:.4f}',f'{age_std:.4f}',
                                   f'{ar40pct:.1f}%',f'{cak:.3f}',issues])
@@ -6431,8 +6443,10 @@ class AgeCalcPage(QtWidgets.QWidget):
             
             # Diagrams
             if cb_figs.isChecked():
-                for key, title in [('DFW','Age_Spectrum'),('DFA','CaK'),
-                                  ('DFN','Normal_Isochron'),('DFI','Inverse_Isochron')]:
+                # v3.8.75: export ALL 7 diagrams (was dropping DFR/DFC/DFD)
+                for key, title in [('DFW','Age_Spectrum'),('DFR','40Ar_r_percent'),
+                                  ('DFN','Normal_Isochron'),('DFI','Inverse_Isochron'),
+                                  ('DFA','CaK'),('DFC','ClK'),('DFD','Degassing')]:
                     src = os.path.join(self._work_dir, '.work', key+'.png')
                     if os.path.exists(src):
                         dest = os.path.join(save_dir, f'{title}.png')
@@ -6525,7 +6539,13 @@ def _build_datum_row(ar, info, temperature, params, pnames, ar39pct, ar40pct):
     J=_sf(ar[44]);Js=_sf(ar[45]);Ji=_sf(ar[48])
     Ts=_sf(ar[46]);Tss=_sf(ar[47]);Ti=_sf(ar[49])
     age=Ts/1e6; ages=Tss/1e6
-    CaK=(a39k*pr)/a37ca if a37ca!=0 else 1.0; CaKs=CaK*0.01
+    # v3.8.75: Ca/K = ³⁷Ca·0.52 / ³⁹K with propagated σ (matches Utilities:2996,
+    # NTNU:5387). Was (39K·pr)/37Ca = K/Ca inverted + flat 1% fake σ.
+    if a37ca != 0 and a39k != 0:
+        CaK = (a37ca * 0.52) / a39k
+        CaKs = CaK * ((a37cas / a37ca) + (a39ks / a39k))
+    else:
+        CaK = 0.0; CaKs = 0.0
     # v3.8.24: row sized to 88 (was 98) — last 10 isochron columns removed to
     # align with NTNU_DataReduction DatumPublication output exactly.
     row=['0']*88

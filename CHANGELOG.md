@@ -1,10 +1,43 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61 → V3.8.62 → V3.8.63 → V3.8.64 → V3.8.65 → V3.8.66 → V3.8.67 → V3.8.68 → V3.8.69 → V3.8.70 → V3.8.71 → V3.8.72 → V3.8.73 → V3.8.74
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61 → V3.8.62 → V3.8.63 → V3.8.64 → V3.8.65 → V3.8.66 → V3.8.67 → V3.8.68 → V3.8.69 → V3.8.70 → V3.8.71 → V3.8.72 → V3.8.73 → V3.8.74 → V3.8.75
 最後整理日期：2026-06-05
 整理者：Claude (based on git-style diff across all versions)
 
 GitHub Releases（tag）：v3.8.0、v3.8.1、v3.8.3、v3.8.4、v3.8.5、v3.8.6、v3.8.7、v3.8.8，最新 **v3.8.54（Latest）彙整 v3.8.9 → v3.8.54 共 46 版**。
+
+---
+
+## V3.8.75（2026-06-05，影響科學輸出）— 多代理稽核後修一批 AgeCalc bug（Ca/K 方向錯、Total Fusion Age、export 漏圖）
+
+用多代理稽核（6 finder 平行 + 對抗式 verify）掃 AgeCalcPage，23 個 claimed bug 經對抗驗證留 16 真。本版修可獨立驗證的那批：
+
+### 1. Ca/K 公式接反 + 常數錯（HIGH，修正 v3.8.74 的錯）
+v3.8.74 我把 Ca/K 改成 `(³⁹K·PR39/37ca)/³⁷Ca` 去對齊 datum,但 **datum 自己就是錯的**（接反 + 用錯常數）。canonical 公式（Utilities.getJVolumeStatistics:2996 + NTNU:5387，皆有「分子分母接反了」「FIXED in V3.0.1」註解）是 **Ca/K = ³⁷Ca · 0.52 / ³⁹K**。三處全改正：`populate`、`_export`、`_build_datum_row`。NO.65 muscovite 驗證：Ca/K 變 0.0001-0.08（K-rich 礦物本來就該很小），舊的接反值是 0.3-0.7。DFA/Stack 圖上 label 0.55→0.52、`_DIAG_NOTES['DFA']` 1.96→0.52 一起對齊。
+
+### 2. Ca/K σ 是假的 flat 1%（HIGH）
+`_build_datum_row` 的 `CaKs=CaK*0.01` 寫死 1%，沒從 σ³⁷/σ³⁹ 傳遞,而那是 Ca/K 譜的誤差棒。改成 `CaKs=CaK·((σ37/37)+(σ39/39))`（同 canonical），並把 `else 1.0` 非物理 sentinel 改 0。
+
+### 3. 「Total Fusion Age」其實是 1/σ² 加權平均，不是 total fusion（HIGH）
+banner 的 Total Fusion Age 跟 Weighted Plateau 用同一條 1/σ² 加權平均公式，中心值完全一樣（只 σ 不同）= 重複又掛錯名。改成真正的氣體加權 total fusion：`F_total=Σ⁴⁰Ar*/Σ³⁹Ar_K`，`age=ln(1+J·F_total)/λ`，σ 從 summed-gas + σ_J 傳遞。現在跟 plateau 是不同數字了。
+
+### 4. 其他
+- `populate` 讀 `ar[82]/ar[83]` 取 atm（calcAge 只回 59 元素）= dead code，移除。
+- 「All diagrams (PNG)」export 只存 4/7 張,補成 7 張（DFR/DFC/DFD 之前被漏）。
+- ⁴⁰Ar(r)%>100% 的註解 ⟺ 改 ⟹（⁴⁰Ar_K>0 也被扣，是充分非充要）。
+
+### 找到但「沒動」（需你確認 + DiagramPlot 驗證）
+- **getDFStatistics_sh/_ls 的 λ 用錯 index**：`Lambda=constants[14]`（=³⁸/³⁶ atm 0.1885）應為 `constants[16]`（=λ）。但這個 T（result[6]）只有 NTNU DiagramPlot 的「Int age」欄在用（AgeCalc 不讀），而且那欄用 `{:0.5e}` 顯示、沒 /1e6,單純改 index 會讓它顯示 ~9e6 年跟旁邊 Ma 欄混單位。要連 /1e6 一起改並在 DiagramPlot GUI 驗證,本版先標記不動。
+
+### 檔案改動
+- `AutoPipeline.py`：Ca/K ×3 + σ、Total Fusion Age、atm dead code、export 7 圖、註解。
+- `Utilities.py`：DFA + Stack label 0.55→0.52。
+- `.work/.app_info.txt`：3.8.74 → 3.8.75
+
+### 驗證 checklist
+- [x] 兩檔 compile；NO.65 calcAge 實測：Ca/K=0.0001-0.08（合理）、Total Fusion 走 Σ40r/Σ39K（與 plateau 不同）
+- [ ] 使用者重跑 NO.65：Ca/K 欄非零且小、Total Fusion ≠ Weighted Plateau、Datum Ca/K_std 非定值
+- [ ] 仍有一批 confirmed bug + 17 feature 待你挑（見對話）：isochron banner York vs diagram OLS 不一致、Weighted Plateau 沒做 plateau step 選擇、Recalculate 是 no-op、group-fits 對 5/7 圖無效、plateau step 勾選、1σ/2σ 切換、uncertainty budget、inverse-isochron 當裁判 readout 等
 
 ---
 

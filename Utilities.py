@@ -2020,7 +2020,7 @@ def getSHStatistics(file, mask, constants, xlim=None, ylim=None, legend_name=Non
     ax_a.set_xlabel('Cumulative $^{39}$Ar Released(%)')
     ax_a.set_ylabel('Ca/K ratio')
     ax_a.text(0.01, 0.99,
-              r'Ca/K $=\ \frac{^{37}\!\mathrm{Ar}_{Ca}}{^{39}\!\mathrm{Ar}_K}\ \times\ 0.55$',
+              r'Ca/K $=\ \frac{^{37}\!\mathrm{Ar}_{Ca}}{^{39}\!\mathrm{Ar}_K}\ \times\ 0.52$',
               transform=ax_a.transAxes, ha='left', va='top',
               fontsize=8, color='#555555', style='italic')
     if legend_name:
@@ -3624,7 +3624,7 @@ def getStackPlot(file, mask, constants, top='Ca/K', log_scale=True,
                 pass
         ratio_color  = _get_style(style)['cak']
         ratio_label  = 'Ca/K'
-        formula_hint = r'Ca/K $= (^{37}\!\mathrm{Ar}_{Ca}/^{39}\!\mathrm{Ar}_K)\times 0.55$'
+        formula_hint = r'Ca/K $= (^{37}\!\mathrm{Ar}_{Ca}/^{39}\!\mathrm{Ar}_K)\times 0.52$'
     else:  # Cl/K
         CLK = 0.22
         a38_idx = col.get('38Ar(cl)'); a38s_idx = col.get('38Ar(cl)_std')
