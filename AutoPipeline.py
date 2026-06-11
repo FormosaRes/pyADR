@@ -4634,6 +4634,17 @@ class AgeCalcPage(QtWidgets.QWidget):
         self.recalcBtn.clicked.connect(self._recalculate_with_atm)
         ctrl_hl.addWidget(self.recalcBtn)
 
+        # v3.8.79: Copy Summary table as TSV + global 2σ note (user works in 2σ).
+        self.copyTblBtn = QtWidgets.QPushButton('Copy table')
+        self.copyTblBtn.setToolTip('複製 Summary 表為 TSV（可直接貼到 Excel）')
+        self.copyTblBtn.setStyleSheet(
+            _btn_style('#888', 'white', '#888') +
+            'QPushButton{font-size:11px;padding:3px 10px;}')
+        self.copyTblBtn.clicked.connect(self._copy_summary)
+        ctrl_hl.addWidget(self.copyTblBtn)
+        ctrl_hl.addWidget(QtWidgets.QLabel(
+            '<span style="font-size:11px;color:#888;">不確定度皆 2σ</span>'))
+
         # v3.8.77: plateau step selection — Auto-plateau button + MSWD cutoff.
         # The Step column carries a checkbox; checked steps drive the weighted
         # plateau AND the normal/inverse isochrons.
@@ -4718,7 +4729,7 @@ class AgeCalcPage(QtWidgets.QWidget):
         
         self.tbl=QtWidgets.QTableWidget(0,6)
         self.tbl.setHorizontalHeaderLabels(
-            ['Step','Age (Ma)','±σ (Ma)','⁴⁰Ar(r)%','Ca/K','Issues'])
+            ['Step','Age (Ma)','±2σ (Ma)','⁴⁰Ar(r)%','Ca/K','Issues'])
         # v3.8.29: per-column resize modes so Step + Issues don't get
         # elided. Step / numeric cols fit-content; Issues stretches to
         # eat any remaining width. Word-wrap + slightly taller rows so
@@ -5201,7 +5212,7 @@ class AgeCalcPage(QtWidgets.QWidget):
             # number is what user actually sees. Full name kept as tooltip.
             full_name = step['name']
             short_name = full_name.replace('Temperature ', '').strip()
-            vals=[short_name, f'{age_Ma:.4f}', f'{age_std:.4f}',
+            vals=[short_name, f'{age_Ma:.4f}', f'{2*age_std:.4f}',
                  f'{ar40pct:.1f}%', f'{cak:.3f}', issues]
             tooltips=[full_name, '', '', '', '', issues]  # show full text on hover
             for c,v in enumerate(vals):
@@ -5253,7 +5264,7 @@ class AgeCalcPage(QtWidgets.QWidget):
                 denom = lam * (1.0 + F_total * Jv)
                 total_sigma = (math.sqrt(Jv**2 * sF**2 + F_total**2 * Js**2)
                                / denom / 1e6) if denom else 0.0
-                self._stat_total.setText(f'{total_age:.3f} ± {total_sigma:.3f} Ma')
+                self._stat_total.setText(self._pm(total_age, total_sigma) + ' Ma')
                 self._info_total = (total_age, total_sigma)
             except Exception:
                 self._stat_total.setText('—')
@@ -5309,6 +5320,35 @@ class AgeCalcPage(QtWidgets.QWidget):
         # v3.8.50: refresh the per-tab right-panel stats too
         self._update_diagram_info()
 
+    def _pm(self, val, sig, prec=3):
+        """v3.8.79: uniform 'val ± 2σ' display string. The user reports
+        everything at 2σ, so the ×2 lives HERE only — every stored sigma and
+        all internal math (plateau MSWD, isochron concordance referee) stay
+        1σ; only the moment of display doubles it."""
+        return f'{val:.{prec}f} ± {2.0 * sig:.{prec}f}'
+
+    def _copy_summary(self):
+        """v3.8.79: copy the Summary table as TSV to the clipboard (paste
+        straight into Excel). Pure read of the visible table, no recompute."""
+        rows = []
+        cols = self.tbl.columnCount()
+        hdr = []
+        for c in range(cols):
+            h = self.tbl.horizontalHeaderItem(c)
+            hdr.append(h.text() if h else '')
+        rows.append('\t'.join(hdr))
+        for r in range(self.tbl.rowCount()):
+            cells = []
+            for c in range(cols):
+                it = self.tbl.item(r, c)
+                cells.append(it.text() if it else '')
+            rows.append('\t'.join(cells))
+        QtWidgets.QApplication.clipboard().setText('\n'.join(rows))
+        if hasattr(self, 'copyTblBtn'):
+            self.copyTblBtn.setText('Copied ✓')
+            QtCore.QTimer.singleShot(
+                1200, lambda: self.copyTblBtn.setText('Copy table'))
+
     def _update_diagram_info(self):
         """v3.8.50: populate each diagram tab's right-panel stats QLabel from
         the structured values stashed by _update_isochron_stats / the total
@@ -5334,9 +5374,9 @@ class AgeCalcPage(QtWidgets.QWidget):
 
         html = {}
         # Age Spectrum → plateau (colored MSWD) + total fusion
-        _pl = (f"{pl[0]:.3f} ± {pl[1]:.3f} Ma" if pl else "—")
+        _pl = (self._pm(pl[0], pl[1]) + " Ma" if pl else "—")
         _plx = _mswd_line(pl[2], pl[3]) if pl else ""
-        _tot = (f"{tot[0]:.3f} ± {tot[1]:.3f} Ma" if tot else "—")
+        _tot = (self._pm(tot[0], tot[1]) + " Ma" if tot else "—")
         html['DFW'] = (_row('Weighted plateau', _pl)
                        + (f"<br>{_plx}" if _plx else "")
                        + "<br><br>" + _row('Total fusion age', _tot))
@@ -5347,7 +5387,7 @@ class AgeCalcPage(QtWidgets.QWidget):
                          "also in the ⁴⁰Ar(r)% column of the Summary table.</span>")
         # Normal isochron
         if nm:
-            html['DFN'] = (_row('Isochron age', f"{nm[0]:.3f} ± {nm[1]:.3f} Ma")
+            html['DFN'] = (_row('Isochron age', self._pm(nm[0], nm[1]) + " Ma")
                            + "<br>" + _mswd_line(nm[2], nm[3])
                            + "<br><br>" + _row('Trapped (⁴⁰/³⁶)', f"{nm[4]:.1f}"))
         else:
@@ -5371,7 +5411,7 @@ class AgeCalcPage(QtWidgets.QWidget):
                 else:
                     _ref += (f"<br><span style='color:#c0282d;font-size:11px;'>"
                              f"與 plateau 不一致 (Δ={_d:.2f} Ma)</span>")
-            html['DFI'] = (_row('Isochron age', f"{iv[0]:.3f} ± {iv[1]:.3f} Ma")
+            html['DFI'] = (_row('Isochron age', self._pm(iv[0], iv[1]) + " Ma")
                            + "<br>" + _mswd_line(iv[2], iv[3])
                            + "<br>" + _row('Trapped (⁴⁰/³⁶)', f"{_trap:.1f}")
                            + _ref)
@@ -5584,12 +5624,12 @@ class AgeCalcPage(QtWidgets.QWidget):
                     sigma_ext = sigma_int * math.sqrt(mswd) if mswd > 1 else sigma_int
                     self._stat_mswd.setText(f'{mswd:.2f} (n={n})')
                     self._stat_plateau.setText(
-                        f'{mean:.3f} ± {sigma_ext:.3f} Ma  (1σ, '
-                        f'{"ext" if mswd > 1 else "int"})')
+                        self._pm(mean, sigma_ext) +
+                        f' Ma  (2σ, {"ext" if mswd > 1 else "int"})')
                     self._info_plateau = (mean, sigma_ext, mswd, n)
                 else:
                     self._stat_mswd.setText('—')
-                    self._stat_plateau.setText(f'{mean:.3f} ± {sigma_int:.3f} Ma')
+                    self._stat_plateau.setText(self._pm(mean, sigma_int) + ' Ma')
                     self._info_plateau = (mean, sigma_int, None, 1)
             else:
                 self._stat_plateau.setText('—'); self._stat_mswd.setText('—')
@@ -5617,9 +5657,9 @@ class AgeCalcPage(QtWidgets.QWidget):
                     age_n = (1/LAMBDA_K)*math.log(1+Jv*F_n)/1e6
                     sage_n = abs((1/LAMBDA_K)*Jv/(1+Jv*F_n)/1e6)*sF_n
                     self._stat_normiso.setText(
-                        f'{age_n:.3f} ± {sage_n:.3f} Ma  '
+                        self._pm(age_n, sage_n) + ' Ma  '
                         f'(MSWD={mswd_n:.2f}, n={len(iso_data)}, '
-                        f'(40/36)ₜ={b_n:.1f}±{sb_n:.1f})')
+                        f'(40/36)ₜ={b_n:.1f}±{2*sb_n:.1f})')
                     self._info_norm = (age_n, sage_n, mswd_n, len(iso_data), b_n)
                 else:
                     self._stat_normiso.setText(f'(MSWD={mswd_n:.2f}, slope ≤ 0)')
@@ -5656,7 +5696,7 @@ class AgeCalcPage(QtWidgets.QWidget):
                         sage_i = abs((1/LAMBDA_K)*Jv/(1+Jv*F_i)/1e6)*sF_i
                         atm_ratio = 1/b_i  # b_i = (36/40)_t, so 1/b_i = (40/36)_t
                         self._stat_invIso.setText(
-                            f'{age_i:.3f} ± {sage_i:.3f} Ma  '
+                            self._pm(age_i, sage_i) + ' Ma  '
                             f'(MSWD={mswd_i:.2f}, n={len(iso_data)}, '
                             f'(40/36)ₜ={atm_ratio:.1f})')
                         self._info_inv = (age_i, sage_i, mswd_i, len(iso_data), atm_ratio)
@@ -6055,7 +6095,7 @@ class AgeCalcPage(QtWidgets.QWidget):
                 sig_int = (1.0 / tw) ** 0.5
                 sig_ext = sig_int * math.sqrt(mswd) if mswd > 1 else sig_int
                 txt = (f'³⁶blk {blank36:.2e}×{k:.2f}={k*blank36:.2e} → '
-                       f'plateau {mean:.3f} ± {sig_ext:.3f} Ma '
+                       f'plateau {self._pm(mean, sig_ext)} Ma '
                        f'(MSWD {mswd:.2f}, n={n})')
             else:
                 txt = f'³⁶blk ×{k:.2f} → {mean:.3f} Ma (n=1)'
@@ -6063,7 +6103,7 @@ class AgeCalcPage(QtWidgets.QWidget):
             txt = f'³⁶blk ×{k:.2f} → 無有效 step（⁴⁰Ar* ≤ 0）'
         base = getattr(self, '_info_plateau', None)
         if base:
-            _b = f' | k=1: {base[0]:.3f} ± {base[1]:.3f} Ma'
+            _b = f' | k=1: {self._pm(base[0], base[1])} Ma'
             if base[2] is not None:
                 _b += f', MSWD {base[2]:.2f}'
             txt += _b
@@ -6268,7 +6308,7 @@ class AgeCalcPage(QtWidgets.QWidget):
             warn = (f'   ⚠ {nneg} 階 net ³⁶(atm)<0 (⁴⁰Ar(r)%>100%, 非物理)'
                     if nneg else '')
             if pl and pl[2] is not None:
-                plLbl.setText(f'plateau {pl[0]:.3f} ± {pl[1]:.3f} Ma  '
+                plLbl.setText(f'plateau {self._pm(pl[0], pl[1])} Ma  '
                               f'(MSWD {pl[2]:.2f}, n={pl[3]}){warn}')
             elif pl:
                 plLbl.setText(f'plateau {pl[0]:.3f} Ma (n=1){warn}')
@@ -6589,7 +6629,7 @@ class AgeCalcPage(QtWidgets.QWidget):
                 dest = os.path.join(save_dir, 'AgeCalc_summary.csv')
                 with open(dest, 'w', newline='', encoding='utf-8') as f:
                     w = csv.writer(f)
-                    w.writerow(['Step','Age (Ma)','±σ (Ma)','40Ar(r)%','Ca/K','Issues'])
+                    w.writerow(['Step','Age (Ma)','±2σ (Ma)','40Ar(r)%','Ca/K','Issues'])
                     for step in self._steps:
                         ar = step.get('age_result', [])
                         age_Ma =_sf(ar[46])/1e6 if len(ar)>47 else float('nan')
@@ -6600,7 +6640,7 @@ class AgeCalcPage(QtWidgets.QWidget):
                         _a39k  = _sf(ar[18]) if len(ar) > 18 else 0.0
                         cak = (_a37ca * 0.52 / _a39k) if _a39k else 0.0
                         issues=', '.join(step.get('neg_datum',[])) or '—'
-                        w.writerow([step['name'],f'{age_Ma:.4f}',f'{age_std:.4f}',
+                        w.writerow([step['name'],f'{age_Ma:.4f}',f'{2*age_std:.4f}',
                                   f'{ar40pct:.1f}%',f'{cak:.3f}',issues])
                 exported.append('AgeCalc_summary.csv')
             
