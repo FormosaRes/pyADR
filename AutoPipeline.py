@@ -5290,6 +5290,11 @@ class AgeCalcPage(QtWidgets.QWidget):
         # v3.8.36: load diagrams + datum table together
         self._reload_all_pngs()
         self._load_datum_into_table(datum_csv)
+        # v3.8.80: worker pre-rendered PNGs without capturing axis limits →
+        # prime them once (deferred so the table/PNGs show first) so Plot
+        # Controls shows the real current X/Y min/max instead of 0.
+        self._limits_primed = False
+        QtCore.QTimer.singleShot(0, self._prime_axis_limits)
 
     def _reload_all_pngs(self):
         """v3.8.36: reload regenerated PNGs into BOTH the thumbnail grid
@@ -5849,6 +5854,21 @@ class AgeCalcPage(QtWidgets.QWidget):
         if hasattr(self, '_plot_style_combo'): self._plot_style_combo.setCurrentIndex(0)
         self._plot_target_combo.setCurrentIndex(0)
         self._plot_apply()
+
+    def _prime_axis_limits(self):
+        """v3.8.80: the pipeline worker pre-renders the diagram PNGs but never
+        captures their matplotlib axis limits, so self._actual_xlims stays
+        empty after a fresh run and the Plot Controls X/Y spinboxes read 0
+        instead of the diagram's current min/max. Run ONE _refresh_diagrams
+        pass (deferred, once per dataset) so the controls reflect the real
+        rendered ranges from the start. Guarded by _limits_primed so it does
+        not re-render on every target change."""
+        if getattr(self, '_limits_primed', False):
+            return
+        if not getattr(self, '_datum_csv', None) or not getattr(self, '_consts', None):
+            return
+        self._limits_primed = True
+        self._refresh_diagrams()
 
     def _refresh_diagrams(self):
         """v3.8.35: actually regenerate diagrams with Show Temp labels + axis
