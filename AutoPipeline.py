@@ -291,6 +291,19 @@ def _is_neg_num(s):
     except Exception:
         return False
 
+def _mswd_verdict(mswd, n):
+    """v3.8.78: (color, label) for an MSWD given n points. 95% upper bound of a
+    well-behaved MSWD ≈ 1 + 2·√(2/(n−2)) (Wendt-Carl 1991). Green inside the
+    band, amber up to 2×, red beyond (excess scatter / disturbed)."""
+    if mswd is None or n is None or n < 3:
+        return ('#888888', '')
+    hi = 1.0 + 2.0 * math.sqrt(2.0 / max(n - 2, 1))
+    if mswd <= hi:
+        return ('#2e7d52', 'OK')
+    if mswd <= 2.0 * hi:
+        return ('#a06000', 'high')
+    return ('#c0282d', 'excess scatter')
+
 def _fe(v):
     try: return '{:.6e}'.format(float(v))
     except: return '0'
@@ -5312,14 +5325,20 @@ class AgeCalcPage(QtWidgets.QWidget):
             return (f"<span style='color:#888;font-size:11px;'>{label}</span><br>"
                     f"<span style='font-size:14px;'><b>{value}</b></span>")
 
+        def _mswd_line(mswd, n):
+            """colored 'MSWD x.xx · verdict · n=N' span (v3.8.78)."""
+            c, lab = _mswd_verdict(mswd, n)
+            mt = (f"MSWD {mswd:.2f}" + (f" · {lab}" if lab else "")) if mswd is not None else ""
+            return (f"<span style='color:{c};font-size:11px;'>"
+                    f"{mt}{' · ' if mt else ''}n={n}</span>")
+
         html = {}
-        # Age Spectrum → plateau + total fusion
+        # Age Spectrum → plateau (colored MSWD) + total fusion
         _pl = (f"{pl[0]:.3f} ± {pl[1]:.3f} Ma" if pl else "—")
-        _plx = (f"MSWD {pl[2]:.2f} · n={pl[3]}" if (pl and pl[2] is not None)
-                else (f"n={pl[3]}" if pl else ""))
+        _plx = _mswd_line(pl[2], pl[3]) if pl else ""
         _tot = (f"{tot[0]:.3f} ± {tot[1]:.3f} Ma" if tot else "—")
         html['DFW'] = (_row('Weighted plateau', _pl)
-                       + (f"<br><span style='color:#888;font-size:11px;'>{_plx}</span>" if _plx else "")
+                       + (f"<br>{_plx}" if _plx else "")
                        + "<br><br>" + _row('Total fusion age', _tot))
         # %⁴⁰Ar* radiogenic-yield spectrum
         html['DFR'] = (_row('Steps', f"{n_steps}")
@@ -5329,17 +5348,33 @@ class AgeCalcPage(QtWidgets.QWidget):
         # Normal isochron
         if nm:
             html['DFN'] = (_row('Isochron age', f"{nm[0]:.3f} ± {nm[1]:.3f} Ma")
-                           + f"<br><span style='color:#888;font-size:11px;'>"
-                             f"MSWD {nm[2]:.2f} · n={nm[3]}</span>"
+                           + "<br>" + _mswd_line(nm[2], nm[3])
                            + "<br><br>" + _row('Trapped (⁴⁰/³⁶)', f"{nm[4]:.1f}"))
         else:
             html['DFN'] = _row('Isochron age', '— (need ≥3 steps)')
-        # Inverse isochron
+        # Inverse isochron + v3.8.78 referee readout (trapped vs air, plateau concordance)
         if iv:
+            _trap = iv[4]
+            if 290.0 <= _trap <= 307.0:
+                _tc, _tv = '#2e7d52', 'air-like (≈298.56)'
+            elif _trap > 307.0:
+                _tc, _tv = '#a06000', 'trapped > air → excess Ar?'
+            else:
+                _tc, _tv = '#c0282d', 'trapped < air / unphysical → check'
+            _ref = (f"<br><span style='color:{_tc};font-size:11px;'>"
+                    f"⁴⁰/³⁶ₜ vs air: {_tv}</span>")
+            if pl:
+                _d = abs(pl[0] - iv[0]); _cs = (pl[1] ** 2 + iv[1] ** 2) ** 0.5
+                if _cs > 0 and _d <= 2.0 * _cs:
+                    _ref += (f"<br><span style='color:#2e7d52;font-size:11px;'>"
+                             f"plateau 一致 (Δ={_d:.2f} ≤ 2σ {2*_cs:.2f} Ma)</span>")
+                else:
+                    _ref += (f"<br><span style='color:#c0282d;font-size:11px;'>"
+                             f"與 plateau 不一致 (Δ={_d:.2f} Ma)</span>")
             html['DFI'] = (_row('Isochron age', f"{iv[0]:.3f} ± {iv[1]:.3f} Ma")
-                           + f"<br><span style='color:#888;font-size:11px;'>"
-                             f"MSWD {iv[2]:.2f} · n={iv[3]}</span>"
-                           + "<br><br>" + _row('Trapped (⁴⁰/³⁶)', f"{iv[4]:.1f}"))
+                           + "<br>" + _mswd_line(iv[2], iv[3])
+                           + "<br>" + _row('Trapped (⁴⁰/³⁶)', f"{_trap:.1f}")
+                           + _ref)
         else:
             html['DFI'] = _row('Isochron age', '— (need ≥3 steps)')
         # Ca/K, Cl/K, Degassing → step count + pointer to Summary
