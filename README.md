@@ -1,9 +1,9 @@
 ![logo](.work/logo.png)
-# pyADR — NTNU modified fork (v3.8.8)
+# pyADR — NTNU modified fork (v3.8.80)
 
-40Ar/39Ar data reduction tool with GUI. Modified fork of [pyADR](https://github.com/AndrewLiu0725/pyADR) (original by **An-Jun (Andrew) Liu**), now maintained by **PANG Chi-Hsiu (NTNU)**.
+40Ar/39Ar data reduction tool with GUI. Modified fork of [pyADR](https://github.com/AndrewLiu0725/pyADR) (original by **An-Jun (Andrew) Liu**), now maintained by **PANG Chi-Hsiu (Academia Sinica)**.
 
-This fork adds: bug fixes, performance optimization, Excel native chart export, four new step-heating diagram types (DFD/DFS/DFM + grouped 3D plane fit), auto-update notification.
+This fork adds: a full batch-automation pipeline (**Argon Pipeline**: Calculate T₀ → MassRatio → AgeCalc + Datum), modern isochron math (York 2004, Vermeesch 2018/2024), bug fixes, performance optimization, Excel native chart export, step-heating diagram types (DFD/DFS/DFM + grouped 3D plane fit), and auto-update notification.
 
 Original README → `README_origin.md` ｜ Full changelog → `CHANGELOG.md`
 
@@ -119,12 +119,21 @@ python NTNU_DataReduction.py
 | `install.py` | 一鍵安裝（pip + 建資料夾 + 桌面捷徑） |
 | `setup.bat` | 雙擊版安裝（自動偵測 Anaconda） |
 | `requirements.txt` | Python 套件清單 |
-| `CHANGELOG.md` | 完整版本變更紀錄 (V2.5 → V3.7) |
+| `CHANGELOG.md` | 完整版本變更紀錄 (V2.5 → v3.8.80) |
 | `README_origin.md` | 原版 pyADR 的 README (Andrew Liu) |
 
 ---
 
 ## Changelog 摘要
+
+### v3.8.9 – v3.8.80 (2026-05 → 2026-06) — 摘要
+
+這段主力在 **AutoPipeline（主畫面「Argon Pipeline」）** 的三個子頁面與科學輸出修正，逐版細節見 `CHANGELOG.md`：
+
+- **Calculate T₀**：Signal T₀ Range 盒鬚圖輔助挑 blank cycle、Δt decay correction、σ_T0 SE-from-covariance、`.adr` session 存讀。
+- **AgeCalc + Datum**：Excel 風格分頁（Summary / Age Spectrum / Inverse・Normal Isochron / Ca/K / Cl/K / Degassing / ⁴⁰Ar(r)%）、York 2004 預設、plateau step 勾選 + Auto plateau、³⁶Ar 大氣敏感度試算、MSWD 顏色提示 + inverse-isochron 裁判 readout、年代結果一律 **2σ**、Copy table、Plot Controls 軸範圍顯示現值。
+- **科學輸出修正（已用 NO.65 muscovite 9.77 ± 0.28 Ma 對照）**：`calcAge` stale-index（⁴⁰Ar(r)% / isochron / Ca/K）、Ca/K 方向、Total Fusion 改真 gas-weighted（ΣAr40\*/ΣAr39K）、σ_J 括號 bug、isochron F = −slope/intercept（York / Vermeesch 2024）。
+- 主畫面「Auto Pipeline」更名 **Argon Pipeline**。
 
 ### v3.8.8 (2026-05-26)
 

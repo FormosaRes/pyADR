@@ -4,7 +4,7 @@
 最後整理日期：2026-06-12
 整理者：Claude (based on git-style diff across all versions)
 
-GitHub Releases（tag）：v3.8.0、v3.8.1、v3.8.3、v3.8.4、v3.8.5、v3.8.6、v3.8.7、v3.8.8，最新 **v3.8.54（Latest）彙整 v3.8.9 → v3.8.54 共 46 版**。
+GitHub Releases（tag）最新仍為 **v3.8.54（Latest，彙整 v3.8.9 → v3.8.54）**；repo `main` HEAD 已到 **v3.8.80**（v3.8.55 → v3.8.80 詳見下方各段，尚未開新 Release tag，等 NO.65 驗證後再發）。
 
 ---
 
