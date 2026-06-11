@@ -8,8 +8,22 @@ import os
 import numpy as np 
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
-from sklearn.metrics import r2_score
 from math import pi
+
+
+def r2_score(y_true, y_pred):
+    """v3.8.81: local R² (coefficient of determination). pyADR used sklearn
+    ONLY for this one function, and importing sklearn cost ~7s on a cold
+    start. This matches sklearn.metrics.r2_score for the 1-D, equal-weight,
+    single-output case used throughout (fit-quality scoring), so T₀ / fit
+    selection are numerically unchanged."""
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    ss_res = float(np.sum((y_true - y_pred) ** 2))
+    ss_tot = float(np.sum((y_true - np.mean(y_true)) ** 2))
+    if ss_tot == 0.0:
+        return 1.0 if ss_res == 0.0 else 0.0
+    return 1.0 - ss_res / ss_tot
 import matplotlib.patches as patches
 from scipy.stats import norm
 import seaborn as sns; sns.set()

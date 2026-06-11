@@ -33,8 +33,8 @@ warnings.filterwarnings('ignore', category=UserWarning, module='matplotlib')
 import numpy as np
 from PyQt5 import QtWidgets, QtCore, QtGui
 from scipy.optimize import curve_fit
-from sklearn.metrics import r2_score
 import Utilities
+from Utilities import r2_score   # v3.8.81: was sklearn (dropped ~7s cold-start import)
 
 # ── Decay constants (Renne et al. 2010, 2011) ───────────────────────────────
 ARGON_37_HALFLIFE_DAYS = 35.011

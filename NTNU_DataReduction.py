@@ -2476,10 +2476,13 @@ class App():
         self.AgeCalculationPage.save.clicked.connect(self.AC_save)
         self.AgeCalculationPage.new_2.clicked.connect(self.toAC)
 
-        # v3.8.4: enforce minimum 3-second splash display so users can
-        # actually read it.  Uses QEventLoop + QTimer so the splash keeps
-        # painting during the wait (a plain time.sleep would freeze it).
-        _splash_min_ms = 3000
+        # v3.8.4: enforce a minimum splash display so users can read it. Uses
+        # QEventLoop + QTimer so the splash keeps painting during the wait (a
+        # plain time.sleep would freeze it).
+        # v3.8.81: 3000 → 1000 ms. On a warm start the whole app loads in ~2-3s,
+        # so the old 3s floor WAS the startup bottleneck; 1s is enough to read
+        # the version/credits without holding the window back.
+        _splash_min_ms = 1000
         if getattr(self, '_splash', None) is not None and \
            getattr(self, '_splash_t0', None) is not None:
             import time as _time
