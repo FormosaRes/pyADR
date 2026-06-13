@@ -1,10 +1,26 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61 → V3.8.62 → V3.8.63 → V3.8.64 → V3.8.65 → V3.8.66 → V3.8.67 → V3.8.68 → V3.8.69 → V3.8.70 → V3.8.71 → V3.8.72 → V3.8.73 → V3.8.74 → V3.8.75 → V3.8.76 → V3.8.77 → V3.8.78 → V3.8.79 → V3.8.80 → V3.8.81 → V3.8.82 → V3.8.83 → V3.8.84
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61 → V3.8.62 → V3.8.63 → V3.8.64 → V3.8.65 → V3.8.66 → V3.8.67 → V3.8.68 → V3.8.69 → V3.8.70 → V3.8.71 → V3.8.72 → V3.8.73 → V3.8.74 → V3.8.75 → V3.8.76 → V3.8.77 → V3.8.78 → V3.8.79 → V3.8.80 → V3.8.81 → V3.8.82 → V3.8.83 → V3.8.84 → V3.8.85
 最後整理日期：2026-06-14
 整理者：Claude (based on git-style diff across all versions)
 
 GitHub Releases（tag）最新仍為 **v3.8.54（Latest，彙整 v3.8.9 → v3.8.54）**；repo `main` HEAD 已到 **v3.8.80**（v3.8.55 → v3.8.80 詳見下方各段，尚未開新 Release tag，等 NO.65 驗證後再發）。
+
+---
+
+## V3.8.85（2026-06-14）— AutoPipeline 三頁側邊加 Parameter 按鈕
+
+使用者要求:Calculate T₀ / MassRatio / AgeCalc+Datum 三頁的左側按鈕列加一顆 **Parameter**,直接導去主程式的 Parameter Settings 頁。
+
+### 做法
+- AutoPipeline 兩個 sidebar builder 各加一顆 `Parameter` 鈕:CalcT0Page 自己的 sidebar(`self.paramBtn`)、`_build_minimal_sidebar`(MassRatio/AgeCalc 共用,`page.paramBtn`)。
+- 點擊由 `NTNU_DataReduction` 接(跟既有 `t0Page.returnBtn → toMain` 同模式):三頁 paramBtn → 新 `toPS_from_pipeline()`,先離開 AutoPipeline 的全螢幕、還原一般視窗大小,再開 `toPS()`(Parameter Settings 頁,stack idx 5)。
+- 純導頁,**不動任何計算**。改完參數後(尤其 J),回 AutoPipeline 重跑或用 AgeCalc 的 J 欄(v3.8.84)即可。
+
+### 檔案改動
+- `AutoPipeline.py`:CalcT0Page sidebar + `_build_minimal_sidebar` 各加 Parameter 鈕並 expose。
+- `NTNU_DataReduction.py`:wire 三頁 paramBtn → `toPS_from_pipeline`(還原視窗 + toPS)。
+- `.work/.app_info.txt`:3.8.84 → 3.8.85
 
 ---
 

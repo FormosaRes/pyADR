@@ -1357,6 +1357,13 @@ class App():
         self.AutoPipelinePage = AutoPipeline.AutoPipelineWindow()
         self.widget.addWidget(self.AutoPipelinePage)   # p20
         self.AutoPipelinePage.t0Page.returnBtn.clicked.connect(self.toMain)
+        # v3.8.85: Parameter button on all three AutoPipeline pages → param page
+        try:
+            self.AutoPipelinePage.t0Page.paramBtn.clicked.connect(self.toPS_from_pipeline)
+            self.AutoPipelinePage.mrPage.paramBtn.clicked.connect(self.toPS_from_pipeline)
+            self.AutoPipelinePage.agePage.paramBtn.clicked.connect(self.toPS_from_pipeline)
+        except Exception:
+            pass
         self.widget.resize(800, 700)
         for i in range(self.widget.count()):
             self.insertLogo(self.widget.widget(i))
@@ -2793,6 +2800,21 @@ class App():
             self.rawpath = str(f.readline())
         f.close()
 
+
+    def toPS_from_pipeline(self):
+        """v3.8.85: Parameter button on the AutoPipeline pages → leave the
+        maximized/full-screen pipeline window, restore the normal window size,
+        then open the Parameter Settings page (same target as toPS)."""
+        if self.widget.isMaximized() or self.widget.isFullScreen():
+            self.widget.showNormal()
+        self.widget.resize(800, 700)
+        QtWidgets.QApplication.processEvents()
+        _sg = QtWidgets.QApplication.primaryScreen().availableGeometry()
+        _fg = self.widget.frameGeometry()
+        self.widget.move(
+            _sg.x() + (_sg.width()  - _fg.width())  // 2,
+            _sg.y() + (_sg.height() - _fg.height()) // 2)
+        self.toPS()
 
     def toPS(self):
         # fill the table and set the item as disabled

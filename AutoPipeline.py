@@ -611,9 +611,13 @@ def _build_minimal_sidebar(page, save_handler, save_label='Save'):
             win.t0Page._open_session()
     btnOpenSess.clicked.connect(_on_open_session)
 
-    # v3.8.41: 4 buttons (Return / Save / Open Session / Save Session)
-    # — Load Blank / Load Sample dropped.
-    for b in (btnReturn, btnSave, btnOpenSess, btnSaveSess):
+    # v3.8.85: Parameter button → main program's Parameter Settings page.
+    # Exposed on the page; NTNU_DataReduction wires the click (like returnBtn).
+    btnParam = _sb_btn('Parameter')
+    page.paramBtn = btnParam
+
+    # v3.8.85: 5 buttons (Return / Save / Open Session / Save Session / Parameter)
+    for b in (btnReturn, btnSave, btnOpenSess, btnSaveSess, btnParam):
         sbl.addWidget(b)
     sbl.addStretch()
     return sb
@@ -2128,6 +2132,9 @@ class CalcT0Page(QtWidgets.QWidget):
         # Datum) is NOT included in the .adr; re-run via Run Pipeline.
         self.btnSaveSession = sb_btn('Save Session')
         self.btnOpenSession = sb_btn('Open Session')
+        # v3.8.85: Parameter → main program's Parameter Settings page
+        # (wired in NTNU_DataReduction, like returnBtn → toMain).
+        self.paramBtn = sb_btn('Parameter')
         # Back-compat hidden widget so any lingering reference doesn't AttributeError
         self.btnABest = QtWidgets.QPushButton(); self.btnABest.hide()
         # Back-compat aliases so existing code referring to btnL/btnA still works
@@ -2138,7 +2145,7 @@ class CalcT0Page(QtWidgets.QWidget):
         # v3.8.35: Open Session above Save Session (user-requested swap)
         for b in (self.returnBtn, self.saveBtn, self.btnLdBlank, self.btnLdSig,
                   self.btnAB, self.btnAS, self.btnM,
-                  self.btnOpenSession, self.btnSaveSession):
+                  self.btnOpenSession, self.btnSaveSession, self.paramBtn):
             sbl.addWidget(b)
 
         # v3.8.18: Δt label moved out of sidebar into the top nav bar (chip
