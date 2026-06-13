@@ -5251,6 +5251,7 @@ class AgeCalcPage(QtWidgets.QWidget):
         # Update summary banner: total fusion age = ln(1 + J·F_total)/λ_eff,
         # F_total = Σ⁴⁰Ar*/Σ³⁹Ar_K (gas-weighted), σ propagated from summed gas + σ_J.
         self._info_total = None
+        self._info_budget = None   # v3.8.82: σ_age source breakdown (J / ⁴⁰Ar* / ³⁹Ar_K)
         if sum39k > 0 and sum40r > 0 and steps:
             ar0 = steps[0].get('age_result', [])
             Jv = _sf(ar0[44]) if len(ar0) > 44 else 0.0
@@ -5264,6 +5265,14 @@ class AgeCalcPage(QtWidgets.QWidget):
                 denom = lam * (1.0 + F_total * Jv)
                 total_sigma = (math.sqrt(Jv**2 * sF**2 + F_total**2 * Js**2)
                                / denom / 1e6) if denom else 0.0
+                # v3.8.82: exact decomposition of total_sigma² into its sources
+                # (the /denom²/1e12 factor is common → cancels in the %).
+                _vJ  = (F_total * Js) ** 2
+                _v40 = (Jv * F_total) ** 2 * (sum_s40r2 / sum40r ** 2) if sum40r else 0.0
+                _v39 = (Jv * F_total) ** 2 * (sum_s39k2 / sum39k ** 2) if sum39k else 0.0
+                _vtot = _vJ + _v40 + _v39
+                self._info_budget = ((100*_vJ/_vtot, 100*_v40/_vtot, 100*_v39/_vtot)
+                                     if _vtot > 0 else None)
                 self._stat_total.setText(self._pm(total_age, total_sigma) + ' Ma')
                 self._info_total = (total_age, total_sigma)
             except Exception:
@@ -5363,6 +5372,7 @@ class AgeCalcPage(QtWidgets.QWidget):
         tot = getattr(self, '_info_total', None)
         pl  = getattr(self, '_info_plateau', None)
         nm  = getattr(self, '_info_norm', None)
+        bud = getattr(self, '_info_budget', None)   # v3.8.82: σ_age source %
         iv  = getattr(self, '_info_inv', None)
         n_steps = len(self._steps) if getattr(self, '_steps', None) else 0
 
@@ -5382,9 +5392,15 @@ class AgeCalcPage(QtWidgets.QWidget):
         _pl = (self._pm(pl[0], pl[1]) + " Ma" if pl else "—")
         _plx = _mswd_line(pl[2], pl[3]) if pl else ""
         _tot = (self._pm(tot[0], tot[1]) + " Ma" if tot else "—")
+        _budline = ""
+        if bud:
+            _budline = (f"<br><span style='color:#888;font-size:11px;'>"
+                        f"σ budget (total fusion): J {bud[0]:.0f}% · "
+                        f"⁴⁰Ar* {bud[1]:.0f}% · ³⁹Ar_K {bud[2]:.0f}%</span>")
         html['DFW'] = (_row('Weighted plateau', _pl)
                        + (f"<br>{_plx}" if _plx else "")
-                       + "<br><br>" + _row('Total fusion age', _tot))
+                       + "<br><br>" + _row('Total fusion age', _tot)
+                       + _budline)
         # %⁴⁰Ar* radiogenic-yield spectrum
         html['DFR'] = (_row('Steps', f"{n_steps}")
                        + "<br><br><span style='color:#888;font-size:11px;'>"
@@ -5661,9 +5677,14 @@ class AgeCalcPage(QtWidgets.QWidget):
                     # v3.8.4: λ from parameters via module LAMBDA_K (was hardcoded 5.543e-10)
                     age_n = (1/LAMBDA_K)*math.log(1+Jv*F_n)/1e6
                     sage_n = abs((1/LAMBDA_K)*Jv/(1+Jv*F_n)/1e6)*sF_n
+                    # v3.8.82: inflate σ by √MSWD when MSWD>1 (Wendt-Carl 1991;
+                    # same rule as plateau, matches IsoplotR model-1 external err).
+                    _ext_n = mswd_n > 1.0
+                    if _ext_n:
+                        sage_n *= math.sqrt(mswd_n)
                     self._stat_normiso.setText(
                         self._pm(age_n, sage_n) + ' Ma  '
-                        f'(MSWD={mswd_n:.2f}, n={len(iso_data)}, '
+                        f'(MSWD={mswd_n:.2f}{" ext" if _ext_n else ""}, n={len(iso_data)}, '
                         f'(40/36)ₜ={b_n:.1f}±{2*sb_n:.1f})')
                     self._info_norm = (age_n, sage_n, mswd_n, len(iso_data), b_n)
                 else:
@@ -5699,10 +5720,14 @@ class AgeCalcPage(QtWidgets.QWidget):
                         # v3.8.4: λ from parameters via module LAMBDA_K (was hardcoded 5.543e-10)
                         age_i = (1/LAMBDA_K)*math.log(1+Jv*F_i)/1e6
                         sage_i = abs((1/LAMBDA_K)*Jv/(1+Jv*F_i)/1e6)*sF_i
+                        # v3.8.82: √MSWD external-error inflation (Wendt-Carl 1991).
+                        _ext_i = mswd_i > 1.0
+                        if _ext_i:
+                            sage_i *= math.sqrt(mswd_i)
                         atm_ratio = 1/b_i  # b_i = (36/40)_t, so 1/b_i = (40/36)_t
                         self._stat_invIso.setText(
                             self._pm(age_i, sage_i) + ' Ma  '
-                            f'(MSWD={mswd_i:.2f}, n={len(iso_data)}, '
+                            f'(MSWD={mswd_i:.2f}{" ext" if _ext_i else ""}, n={len(iso_data)}, '
                             f'(40/36)ₜ={atm_ratio:.1f})')
                         self._info_inv = (age_i, sage_i, mswd_i, len(iso_data), atm_ratio)
                     else:

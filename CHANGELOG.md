@@ -1,10 +1,37 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
-版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61 → V3.8.62 → V3.8.63 → V3.8.64 → V3.8.65 → V3.8.66 → V3.8.67 → V3.8.68 → V3.8.69 → V3.8.70 → V3.8.71 → V3.8.72 → V3.8.73 → V3.8.74 → V3.8.75 → V3.8.76 → V3.8.77 → V3.8.78 → V3.8.79 → V3.8.80 → V3.8.81
-最後整理日期：2026-06-12
+版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61 → V3.8.62 → V3.8.63 → V3.8.64 → V3.8.65 → V3.8.66 → V3.8.67 → V3.8.68 → V3.8.69 → V3.8.70 → V3.8.71 → V3.8.72 → V3.8.73 → V3.8.74 → V3.8.75 → V3.8.76 → V3.8.77 → V3.8.78 → V3.8.79 → V3.8.80 → V3.8.81 → V3.8.82
+最後整理日期：2026-06-14
 整理者：Claude (based on git-style diff across all versions)
 
 GitHub Releases（tag）最新仍為 **v3.8.54（Latest，彙整 v3.8.9 → v3.8.54）**；repo `main` HEAD 已到 **v3.8.80**（v3.8.55 → v3.8.80 詳見下方各段，尚未開新 Release tag，等 NO.65 驗證後再發）。
+
+---
+
+## V3.8.82（2026-06-14）— Uncertainty budget + isochron √MSWD 外部誤差（#39 第一批）
+
+backlog #39 第一批,兩件都是科學判讀強化。對照 IsoplotR `york()` 順手補一個漏的 √MSWD。
+
+### isochron σ 加 √MSWD 外部誤差膨脹（對照 IsoplotR 發現的洞）
+- 之前 plateau 已照 Wendt-Carl 1991 在 MSWD>1 時 σ_ext = σ_int·√MSWD,但 **normal / inverse isochron 的 σ_age 沒做**,MSWD 高時報的誤差偏樂觀。
+- 現在 isochron(normal + inverse)MSWD>1 → `σ_age ×= √MSWD`,banner 標「MSWD=x.xx ext」。這跟 plateau 同規則,也對齊 IsoplotR model-1 external error。
+- **影響**:isochron 報的 σ_age 在 MSWD>1 時變大(更誠實);**中心年代不變**。標準 transform,非 bug fix,但屬科學輸出,記得對照。
+
+### Total Fusion σ_age budget（#39 主項,純顯示）
+- Age Spectrum(DFW)面板新增一行:`σ budget (total fusion): J xx% · ⁴⁰Ar* yy% · ³⁹Ar_K zz%`。
+- 把 total fusion 年代的 σ² 拆成三個來源的 %:J 定值、⁴⁰Ar* 計數、³⁹Ar_K 計數。一眼看出年代是 **J-limited(該重照標準)還是 signal-limited(訊號太小)**。
+- 數學:`σ²` 的精確分解(`(F·σ_J)²` + `(J·F)²·(σ40r/Σ40r)²` + `(J·F)²·(σ39k/Σ39k)²`),三項和 = 既有 total_sigma 分子²,只是換成 %。
+
+### 驗證（headless）
+- budget 分解對照 total_sigma 分子:rel.diff 1.6e-16(機器精度),三項和 = 100.0%。範例 J 15% / ⁴⁰Ar* 73% / ³⁹Ar_K 12%。
+- √MSWD:MSWD=4 → σ×2,MSWD≤1 → 不變。`py_compile` 過。
+
+### 尚未做（#39 後續 / 相關）
+- **plateau 的 budget** 跟 **w/o-J 分析誤差**(GitHub issue #1)要先把共用 σ_J 從 plateau 加權拆開,較複雜,延後。本版只做 total fusion 的 budget(可精確分解)。
+
+### 檔案改動
+- `AutoPipeline.py`:`_update_isochron_stats` isochron √MSWD(normal+inverse)、total-fusion `_info_budget` 計算、`_update_diagram_info` DFW 加 budget 行。
+- `.work/.app_info.txt`:3.8.81 → 3.8.82
 
 ---
 
