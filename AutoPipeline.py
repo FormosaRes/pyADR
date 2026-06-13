@@ -4616,6 +4616,24 @@ class AgeCalcPage(QtWidgets.QWidget):
         self.atmSigmaLbl = QtWidgets.QLabel(
             '<span style="font-size:10px;color:#888;">± 0.31 (default)</span>')
         ctrl_hl.addWidget(self.atmSigmaLbl)
+
+        # v3.8.84: editable J value. Change it then press Recalculate to re-run
+        # the pipeline with the new J so EVERY output (table, banner, diagrams,
+        # datum, export) updates consistently. Pre-filled from the run.
+        ctrl_hl.addSpacing(16)
+        ctrl_hl.addWidget(QtWidgets.QLabel(
+            '<span style="font-size:11px;color:#444;">J:</span>'))
+        self.jEdit = QtWidgets.QLineEdit()
+        self.jEdit.setFixedWidth(120)
+        self.jEdit.setPlaceholderText('(run pipeline)')
+        self.jEdit.setStyleSheet(
+            f'QLineEdit{{background:white;border:1px solid {BRD};'
+            f'padding:2px 6px;font-size:11px;font-family:Courier New;}}')
+        self.jEdit.setValidator(QtGui.QDoubleValidator(0.0, 1.0, 9))
+        self.jEdit.setToolTip(
+            '改 J value 後按 Recalculate，會用新 J 重跑 pipeline，'
+            '表格 / banner / 圖 / datum / export 全部一致更新。')
+        ctrl_hl.addWidget(self.jEdit)
         
         ctrl_hl.addSpacing(20)
         
@@ -5174,6 +5192,12 @@ class AgeCalcPage(QtWidgets.QWidget):
         self._work_dir = work_dir
         self._datum_csv = datum_csv
         self._consts = consts
+        # v3.8.84: reflect the J value actually used (any step's ar[44]) into the
+        # editable J field, unless the user is mid-edit.
+        if steps and hasattr(self, 'jEdit') and not self.jEdit.hasFocus():
+            _ar0 = steps[0].get('age_result', [])
+            if len(_ar0) > 44:
+                self.jEdit.setText(f'{_sf(_ar0[44]):.6e}')
         # v3.8.55: clear any stale ³⁶Ar-scale preview from a previous run
         if hasattr(self, 'ar36ScaleLbl'):
             self.ar36ScaleLbl.setText('')
@@ -6030,22 +6054,31 @@ class AgeCalcPage(QtWidgets.QWidget):
         except: return 298.56
     
     def _recalculate_with_atm(self):
-        """Recalculate ages using user-specified atm ratio."""
+        """v3.8.84: re-run with the user-edited atm ratio AND J value. Both are
+        handed to the parent, which re-runs the pipeline so all outputs stay
+        consistent (no closed-form approximation, no table-vs-diagram mismatch)."""
         try:
             atm = float(self.atmRatioEdit.text())
-        except:
+        except Exception:
             QtWidgets.QMessageBox.warning(self, 'Error', 'Invalid ⁴⁰Ar/³⁶Ar value')
             return
-        
-        # Emit signal for parent to recompute with new atm ratio
-        if hasattr(self, '_on_recalc_request'):
-            self._on_recalc_request(atm)
+        j = None
+        if hasattr(self, 'jEdit') and self.jEdit.text().strip():
+            try:
+                j = float(self.jEdit.text())
+            except Exception:
+                QtWidgets.QMessageBox.warning(self, 'Error', 'Invalid J value')
+                return
+            if not (j > 0):
+                QtWidgets.QMessageBox.warning(self, 'Error', 'J value must be > 0')
+                return
+        if getattr(self, '_on_recalc_request', None):
+            self._on_recalc_request(atm, j)
         else:
             QtWidgets.QMessageBox.information(
                 self, 'Recalculate',
-                f'Atm ratio updated to {atm:.2f}.\n\n'
-                'Note: full recalculation requires re-running the Age Calc pipeline.\n'
-                'The new value will be applied to subsequent calculations.')
+                'Standalone mode: open AutoPipeline from the main program so the '
+                'new J / atm can re-run the pipeline.')
 
     def _apply_ar36_scale(self):
         """v3.8.55: ³⁶Ar BLANK sensitivity preview. Recompute every step's age
@@ -7654,6 +7687,9 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
         self.mrPage.nextBtn.clicked.connect(lambda: self._go(2))
         self.stack.addWidget(self.mrPage)
         self.agePage=AgeCalcPage()
+        # v3.8.84: AgeCalc "Recalculate" (new J / atm) → re-run pipeline here,
+        # where params/pnames live, so every output regenerates consistently.
+        self.agePage._on_recalc_request = self._recalc_with_params
         self.stack.addWidget(self.agePage)
         vb.addWidget(self.stack,1)
         # v3.8.63: this single QMainWindow status bar is now the unified status
@@ -7857,6 +7893,32 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
         # Restore Next button to whatever the current page wants it to say
         self._go(self.stack.currentIndex())
         QtWidgets.QMessageBox.critical(self, 'Pipeline Error', msg)
+
+    def _recalc_with_params(self, atm, j=None):
+        """v3.8.84: re-run the pipeline with a user-edited J value (and atm
+        ratio) from the AgeCalc page, so EVERY output (summary table, banner,
+        diagrams, datum, export) regenerates consistently with the new J — no
+        closed-form approximation, no table-vs-diagram mismatch. Reuses the
+        standard pipeline path; only the J / atm parameters are swapped in."""
+        if self._params is None or self._pnames is None:
+            return
+        self._params = list(self._params)   # ensure mutable for in-place swap
+        changed = []
+        try:
+            if j is not None and 'J value' in self._pnames:
+                self._params[self._pnames.index('J value')] = j
+                changed.append(f'J={j:.6e}')
+        except Exception:
+            pass
+        try:
+            if atm is not None and 'Atmospheric Ratio 40/36(a)' in self._pnames:
+                self._params[self._pnames.index('Atmospheric Ratio 40/36(a)')] = atm
+                changed.append(f'⁴⁰/³⁶ₐ={atm:.2f}')
+        except Exception:
+            pass
+        self.statusBar().showMessage(
+            'Recalculating with ' + (', '.join(changed) or 'current params') + ' …')
+        self._run_pipeline()
 
     def _on_done(self, res):
         self.mrPage.populate(res['steps'])
