@@ -4,11 +4,35 @@
 # ===============================================================================
 
 # import python module
-import numpy as np
-from PyQt5 import QtCore, QtGui, QtWidgets
 import sys
-import requests
 import os
+from PyQt5 import QtCore, QtGui, QtWidgets
+
+# v3.8.83: show the splash IMMEDIATELY — BEFORE the multi-second heavy imports
+# (numpy, pandas, matplotlib, Utilities, AutoPipeline) — so launching pyADR
+# gives instant visual feedback instead of a blank console while modules load.
+# The QApplication created here is reused by App below via .instance(); the
+# splash object is handed to App, which swaps in the version-overlaid pixmap.
+_BOOT_APP = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+_BOOT_SPLASH = None
+_BOOT_T0 = None
+try:
+    import time as _bt
+    _sp = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.work', 'splash.png')
+    if os.path.exists(_sp):
+        _spm = QtGui.QPixmap(_sp)
+        if not _spm.isNull():
+            _spm = _spm.copy(0, 0, _spm.width(), 455)  # crop grey footer (v3.8.19)
+            _BOOT_SPLASH = QtWidgets.QSplashScreen(_spm, QtCore.Qt.WindowStaysOnTopHint)
+            _BOOT_SPLASH.setMask(_spm.mask())
+            _BOOT_SPLASH.show()
+            _BOOT_APP.processEvents()
+            _BOOT_T0 = _bt.monotonic()
+except Exception:
+    _BOOT_SPLASH = None
+
+import numpy as np
+import requests
 import shutil
 from winotify import Notification
 from tkinter import *
@@ -1183,7 +1207,9 @@ class App():
 
         # initilization for GUI
         QtWidgets.QApplication.setStyle('Fusion')
-        self.app = QtWidgets.QApplication(sys.argv)
+        # v3.8.83: reuse the QApplication created at module load (it already put
+        # up the boot splash); only create one if somehow absent.
+        self.app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
         # v3.8.4: set taskbar / window icon to pyADR.ico so Windows shows the
         # Ar 40/39 logo instead of the generic Python icon.  On Windows the
@@ -1264,16 +1290,24 @@ class App():
 
                 _painter.end()
 
-                self._splash = QtWidgets.QSplashScreen(
-                    _pix, QtCore.Qt.WindowStaysOnTopHint)
-                self._splash.setMask(_pix.mask())
+                # v3.8.83: reuse the boot splash shown at module load (so it
+                # appeared instantly, before the heavy imports) — just swap in
+                # the version/date/Loading-overlaid pixmap now.
+                if _BOOT_SPLASH is not None:
+                    self._splash = _BOOT_SPLASH
+                    self._splash.setPixmap(_pix)
+                    self._splash.setMask(_pix.mask())
+                else:
+                    self._splash = QtWidgets.QSplashScreen(
+                        _pix, QtCore.Qt.WindowStaysOnTopHint)
+                    self._splash.setMask(_pix.mask())
                 # v3.8.19: showMessage removed — Loading… now baked into pixmap,
                 # centered below the URL instead of bottom-right grey strip.
                 self._splash.show()
                 self.app.processEvents()
                 # record show time so run() can enforce minimum splash duration
                 import time as _time
-                self._splash_t0 = _time.monotonic()
+                self._splash_t0 = _BOOT_T0 if _BOOT_T0 is not None else _time.monotonic()
         except Exception:
             self._splash = None  # splash is cosmetic; never block startup
 

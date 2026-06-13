@@ -1,5 +1,5 @@
 ![logo](.work/logo.png)
-# pyADR — NTNU modified fork (v3.8.82)
+# pyADR — NTNU modified fork (v3.8.83)
 
 40Ar/39Ar data reduction tool with GUI. Modified fork of [pyADR](https://github.com/AndrewLiu0725/pyADR) (original by **An-Jun (Andrew) Liu**), now maintained by **PANG Chi-Hsiu (Academia Sinica)**.
 
@@ -126,8 +126,9 @@ python NTNU_DataReduction.py
 
 ## Changelog 摘要
 
-### v3.8.9 – v3.8.82 (2026-05 → 2026-06) — 摘要
+### v3.8.9 – v3.8.83 (2026-05 → 2026-06) — 摘要
 
+> **v3.8.83**：啟動時 splash/loading 畫面改成**一啟動就出現**（先顯示 splash 再跑 numpy/pandas/matplotlib 等重 import），不再讓使用者對著黑 cmd 等。
 > **v3.8.82**：isochron(normal/inverse)在 MSWD>1 時 σ 加 √MSWD 外部誤差膨脹（對齊 plateau / IsoplotR）；Age Spectrum 面板新增 total-fusion 的 σ_age budget（J / ⁴⁰Ar* / ³⁹Ar_K 各佔幾 %）。
 > **v3.8.81 啟動加速**：移除只為了 `r2_score` 而拖累冷啟動約 7.5s 的 sklearn import（改用等價 numpy 實作，數值 bit-identical），splash 最短顯示 3s → 1s。
 
