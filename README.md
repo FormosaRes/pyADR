@@ -1,5 +1,5 @@
 ![logo](.work/logo.png)
-# pyADR — NTNU modified fork (v3.8.86)
+# pyADR — NTNU modified fork (v3.8.87)
 
 40Ar/39Ar data reduction tool with GUI. Modified fork of [pyADR](https://github.com/AndrewLiu0725/pyADR) (original by **An-Jun (Andrew) Liu**), now maintained by **PANG Chi-Hsiu (Academia Sinica)**.
 
@@ -126,8 +126,9 @@ python NTNU_DataReduction.py
 
 ## Changelog 摘要
 
-### v3.8.9 – v3.8.86 (2026-05 → 2026-06) — 摘要
+### v3.8.9 – v3.8.87 (2026-05 → 2026-06) — 摘要
 
+> **v3.8.87**：³⁶Ar-blank 敏感度對話框加「Inverse Isochron」檢視（拉 ³⁶ blank 看 trapped ⁴⁰/³⁶、age、各溫階共線性怎麼動）。
 > **v3.8.86**：從 AutoPipeline 進 Parameter 頁後，Return 直接回 Argon Pipeline（session 保留），不必再繞首頁重載。
 > **v3.8.85**：AutoPipeline 三頁（Calculate T₀ / MassRatio / AgeCalc）左側按鈕列新增 **Parameter** 鈕，直接開主程式的 Parameter Settings 頁。
 > **v3.8.84**：AgeCalc 控制列新增可編輯 **J value**（及 atm）欄位，按 Recalculate 會用新 J 重跑 pipeline，所有輸出（表/banner/圖/datum/export）一致更新。

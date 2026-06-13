@@ -6257,6 +6257,84 @@ class AgeCalcPage(QtWidgets.QWidget):
             out.append((age_k, sig, A39K, ok))
         return out
 
+    def _ar36_scaled_isochron(self, k):
+        """v3.8.87: per-step inverse-isochron coords (x=³⁹/⁴⁰, y=³⁶/⁴⁰) with the
+        ³⁶Ar blank scaled by k. Scaling the blank by k shifts the measured ³⁶
+        (ar[0]) by −(k−1)·³⁶blank₀; ³⁹_m (ar[16]) and ⁴⁰_m (ar[22]) are
+        unaffected, so the points slide vertically. Returns
+        [(x, y, temp_label, ok), ...]."""
+        out = []
+        bt = getattr(self, '_blank_t0', None)
+        blank36 = float(bt[0]) if (bt is not None and len(bt) > 0) else 0.0
+        d36 = -(k - 1.0) * blank36
+        for step in getattr(self, '_steps', []):
+            ar = step.get('age_result', [])
+            if len(ar) <= 22:
+                out.append((0.0, 0.0, '', False)); continue
+            a36 = _sf(ar[0]) + d36
+            a39 = _sf(ar[16]); a40 = _sf(ar[22])
+            ok = (a40 != 0.0)
+            x = (a39 / a40) if a40 else 0.0
+            y = (a36 / a40) if a40 else 0.0
+            temp = step.get('name', '').replace('Temperature ', '').strip()
+            out.append((x, y, temp, ok and x == x and y == y))
+        return out
+
+    def _draw_ar36_inverse(self, ax, k, show_temp=True):
+        """v3.8.87: draw the inverse isochron (³⁶/⁴⁰ vs ³⁹/⁴⁰) at ³⁶-blank scale
+        k onto ax, with the baseline (k=1) faded behind it and per-point
+        temperature labels (to spot which steps are co-linear). A quick OLS line
+        (np.polyfit) is drawn per series for the trend; the readout reports
+        trapped ⁴⁰/³⁶ = 1/intercept and age from F = −slope/intercept. Returns a
+        readout string for the label."""
+        base = self._ar36_scaled_isochron(1.0)
+        cur = self._ar36_scaled_isochron(k)
+        Jv = 0.0
+        for step in getattr(self, '_steps', []):
+            ar = step.get('age_result', [])
+            if len(ar) > 44 and _sf(ar[44]) > 0:
+                Jv = _sf(ar[44]); break
+
+        def _fit_draw(pts, color, alpha, lbl, temps):
+            xs = [p[0] for p in pts if p[3]]; ys = [p[1] for p in pts if p[3]]
+            if len(xs) < 2:
+                return None
+            ax.scatter(xs, ys, s=30, c=color, alpha=alpha, zorder=3, label=lbl)
+            if temps:
+                for p in pts:
+                    if p[3]:
+                        ax.annotate(p[2], (p[0], p[1]), fontsize=7, color=color,
+                                    xytext=(3, 3), textcoords='offset points')
+            try:
+                b, a = np.polyfit(xs, ys, 1)   # y = a + b·x  → [slope, intercept]
+            except Exception:
+                return None
+            xl = np.array([0.0, max(xs) * 1.05])
+            ax.plot(xl, a + b * xl, color=color, lw=1.3,
+                    alpha=min(1.0, alpha + 0.3))
+            return (a, b)
+
+        _fit_draw(base, '#999999', 0.40, 'baseline (k=1)', False)
+        fit = _fit_draw(cur, '#1a5fb4', 0.90, f'k={k:.2f}', show_temp)
+        ax.set_xlabel('³⁹Ar / ⁴⁰Ar', fontsize=10)
+        ax.set_ylabel('³⁶Ar / ⁴⁰Ar', fontsize=10)
+        ax.grid(True, alpha=0.25)
+        ax.legend(fontsize=8, loc='best')
+        if not fit:
+            return f'k={k:.2f}: 有效點不足，畫不出 inverse isochron'
+        a, b = fit
+        trapped = (1.0 / a) if a else float('nan')
+        msg = f'k={k:.2f} → trapped ⁴⁰/³⁶ = {trapped:.1f}'
+        if a and Jv > 0:
+            F = -b / a
+            if F > 0:
+                try:
+                    age = math.log1p(Jv * F) / LAMBDA_K / 1e6
+                    msg += f',  age = {age:.3f} Ma'
+                except Exception:
+                    pass
+        return msg
+
     def _show_ar36_spectrum_dialog(self):
         """v3.8.57: live Age-Spectrum sensitivity vs ³⁶Ar blank scale. A slider
         scales the ³⁶Ar blank (k: 0 → 1.5); the spectrum redraws from in-memory
@@ -6298,8 +6376,16 @@ class AgeCalcPage(QtWidgets.QWidget):
         cv = _FigCanvas(fig)
         vl.addWidget(cv, 1)
 
-        # slider row
+        # slider row (+ v3.8.87 view toggle: Age Spectrum / Inverse Isochron)
         srow = QtWidgets.QHBoxLayout()
+        srow.addWidget(QtWidgets.QLabel('檢視'))
+        viewCombo = QtWidgets.QComboBox()
+        viewCombo.addItems(['Age Spectrum', 'Inverse Isochron'])
+        viewCombo.setFixedWidth(150)
+        viewCombo.setToolTip('拉 ³⁶Ar blank,看它怎麼推動 Age Spectrum 或 '
+                             'Inverse Isochron（點上標溫度,找共線溫階）。')
+        srow.addWidget(viewCombo)
+        srow.addSpacing(16)
         srow.addWidget(QtWidgets.QLabel('³⁶Ar blank ×'))
         sld = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         sld.setRange(0, 150); sld.setValue(100)   # k = v/100, 0.00 .. 1.50
@@ -6363,6 +6449,21 @@ class AgeCalcPage(QtWidgets.QWidget):
             k = sld.value() / 100.0
             kLbl.setText(f'k = {k:.2f}')
             ax.clear()
+            if viewCombo.currentIndex() == 1:   # v3.8.87: Inverse Isochron view
+                msg = self._draw_ar36_inverse(ax, k, show_temp=True)
+                if not yAuto.isChecked():
+                    try:
+                        _ymn = float(yMinEdit.text()); _ymx = float(yMaxEdit.text())
+                        if _ymx > _ymn:
+                            ax.set_ylim(_ymn, _ymx)
+                    except Exception:
+                        pass
+                plLbl.setText(msg)
+                plLbl.setStyleSheet('font-size:12px;font-weight:bold;color:#1a5fb4;')
+                try: fig.tight_layout(pad=0.6)
+                except Exception: pass
+                cv.draw()
+                return
             _draw_one(base, '#999999', 0.30, 1.0, 'baseline (k=1)')
             scaled = self._ar36_scaled_ages(k)
             _draw_one(scaled, '#1a5fb4', 0.45, 1.4, f'k={k:.2f}')
@@ -6406,6 +6507,7 @@ class AgeCalcPage(QtWidgets.QWidget):
             cv.draw()
 
         sld.valueChanged.connect(lambda _v: _redraw())
+        viewCombo.currentIndexChanged.connect(lambda _v: _redraw())
         yAuto.toggled.connect(lambda _v: _redraw())
         yMinEdit.editingFinished.connect(_redraw)
         yMaxEdit.editingFinished.connect(_redraw)
