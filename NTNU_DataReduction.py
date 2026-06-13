@@ -2506,7 +2506,7 @@ class App():
         self.JSelectPage.goHome.triggered.connect(self.toMain)
 
         # click button on Parameter Setting page
-        self.ParameterSettingPage.return_2.clicked.connect(self.toMain)
+        self.ParameterSettingPage.return_2.clicked.connect(self.PS_return)
         self.ParameterSettingPage.change.clicked.connect(self.PS_change)
         self.ParameterSettingPage.save.clicked.connect(self.PS_save)
         self.ParameterSettingPage.raw.clicked.connect(self.PS_raw)
@@ -2815,8 +2815,23 @@ class App():
             _sg.x() + (_sg.width()  - _fg.width())  // 2,
             _sg.y() + (_sg.height() - _fg.height()) // 2)
         self.toPS()
+        self._ps_from_ap = True   # v3.8.86: Return from param → back to Argon Pipeline
+
+    def PS_return(self):
+        """v3.8.86: Parameter page Return. If we arrived from AutoPipeline, go
+        back THERE (the AutoPipeline pages are never destroyed, so the loaded
+        session — .dat, T₀, computed ages — is preserved; toAP also re-pushes
+        any params you edited). Otherwise go Home, as before."""
+        if getattr(self, '_ps_from_ap', False):
+            self._ps_from_ap = False
+            self.toAP()
+        else:
+            self.toMain()
 
     def toPS(self):
+        # v3.8.86: normal entry (Home / menu) → Return goes Home;
+        # toPS_from_pipeline overrides _ps_from_ap to True after calling this.
+        self._ps_from_ap = False
         # fill the table and set the item as disabled
         for i in range(self.numParamters):
             item = QtWidgets.QTableWidgetItem(self.parameters[i])
