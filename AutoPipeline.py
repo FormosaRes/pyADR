@@ -5058,6 +5058,13 @@ class AgeCalcPage(QtWidgets.QWidget):
 
         self._tabs = tabs
         vb.addWidget(tabs, 1)
+        # v3.8.88: re-fit the diagram PNG when its tab becomes visible. Apply on
+        # the Summary Plot Controls runs _reload_all_pngs while the diagram tabs
+        # are still hidden, so their big views were scaled to a stale / zero size
+        # and the freshly-rendered chart only showed after a manual poke. Defer
+        # (singleShot 0) so the page is laid out at its real size before we scale.
+        tabs.currentChanged.connect(
+            lambda _i: QtCore.QTimer.singleShot(0, self._reload_all_pngs))
 
         # ── v3.8.64: keep Plot Controls in sync with the ACTUAL rendered axes
         # (mirrors DiagramPlots_SH.SH_apply_axes).  Without this the spinboxes
