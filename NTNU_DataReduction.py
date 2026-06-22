@@ -207,11 +207,29 @@ Two parametrisations are common in Ar/Ar:</p>
 <p><b>OLS (Ordinary Least Squares)</b> &mdash; <code>scipy.curve_fit(linear, x, y)</code>.
 Assumes &sigma;<sub>x</sub> = 0 (all error in Y).  Older Ar/Ar convention.</p>
 <p><b>York 2004</b> &mdash; Bivariate weighted regression: accounts for
-&sigma;<sub>x</sub>, &sigma;<sub>y</sub>, and their correlation per point.
-Iteratively solves slope until convergence.  Schaen et al. (2021) Ar/Ar standard;
-IsoplotR default.</p>
+&sigma;<sub>x</sub> and &sigma;<sub>y</sub> (and, optionally, a per-point x&ndash;y
+correlation &rho;).  Iteratively solves slope until convergence.
+Schaen et al. (2021) Ar/Ar standard; IsoplotR default.</p>
 <p>York generally gives smaller-magnitude slope (when &sigma;<sub>x</sub> is
 non-trivial) than OLS, so F and the resulting age can differ.  Toggle to compare.</p>
+<h3>Why &sigma;<sub>x</sub> cannot be ignored (regression dilution)</h3>
+<p>On an isochron both axes are <i>ratios sharing a common denominator</i>
+(inverse: x = <sup>39</sup>Ar/<sup>40</sup>Ar, y = <sup>36</sup>Ar/<sup>40</sup>Ar &mdash;
+both divided by <sup>40</sup>Ar).  The <sup>40</sup>Ar measurement error therefore
+enters <b>both</b> x and y, so the two axes are genuinely correlated and
+&sigma;<sub>x</sub> is never zero.</p>
+<p>OLS, by assuming &sigma;<sub>x</sub> = 0, suffers <b>regression dilution
+(attenuation bias)</b>: scatter along x flattens the fitted line toward zero
+slope.  This does not only bias the slope (hence F &rarr; age) &mdash; because the
+fit is anchored through the data centroid, a flattened slope also
+<b>shifts the y-intercept</b>, so the trapped (<sup>40</sup>/<sup>36</sup>)<sub>trapped</sub>
+is biased too.  York removes this bias by weighting each point with its full
+2-D error structure; it is the correct estimator for the error-in-both-variables
+problem and should be preferred for any reported result.</p>
+<p><i>Implementation note:</i> the genuine x&ndash;y error correlation from the
+shared <sup>40</sup>Ar denominator is real, but pyADR currently calls York with
+&rho; = 0 (it propagates &sigma;<sub>x</sub>, &sigma;<sub>y</sub> only).  Supplying
+the analytical &rho; would tighten the fit further; this is a known refinement.</p>
 <h3>&sigma;<sub>F</sub> for inverse isochron</h3>
 <p>F = &minus;b/a, so by Gaussian error propagation including
 slope-intercept covariance:</p>

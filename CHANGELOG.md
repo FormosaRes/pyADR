@@ -8,6 +8,28 @@ GitHub Releases（tag）最新仍為 **v3.8.54（Latest，彙整 v3.8.9 → v3.8
 
 ---
 
+## V3.8.89（2026-06-22）— Help 補 isochron 兩種回歸方法的物理意義
+
+使用者問 inverse isochron 兩種回歸（OLS vs York 2004）差異與意義，並要求把說明寫進 help。盤點現況：tooltip 與 Help → Formulas & References「Isochron」分頁已有 OLS/York 基本定義，但缺兩個關鍵點，且有一處敘述與實作不符。
+
+### 修法（`NTNU_DataReduction._HELP_ISOCHRON_HTML`，共用 dialog，AutoPipeline Help 也吃得到）
+- 新增段「Why σ_x cannot be ignored (regression dilution)」：說明 isochron 兩軸共用 ⁴⁰Ar 分母 → 誤差真實相關、σ_x ≠ 0；OLS 的 attenuation bias 壓低 slope（→ F→age 偏），且因擬合過 centroid 也會偏移 y-intercept → trapped (⁴⁰/³⁶)ₜ 跟著偏。York 是 error-in-both-variables 的正確估計，報告結果應採用。
+- 修正原文「York accounts for their correlation per point」的不實敘述（code 內 `york_regression` 以 `rho_xy=0` 呼叫，只傳 σ_x、σ_y）。改為 ρ 可選，並加 implementation note：補上解析 ρ 是已知可改進項。
+
+### 影響
+- 純文件（help HTML）。不動任何計算或科學輸出。
+
+### 已知待辦（本次未動，僅記錄）
+- DiagramPlot SH `isochronMethodCombo` 預設為 OLS，與 AutoPipeline 預設 York 不一致。
+- DiagramPlot SH 僅 `SH_apply_axes` 路徑傳 `isochron_method`，其餘 4 個重畫 call site（NTNU_DataReduction.py:2320/4053/4265/5128）未傳 → fallback 'ols'，使用者選 York 可能被靜默還原。
+- DiagramPlot LS（`getDFStatistics_ls`）無 method 參數，無切換。
+
+### 檔案改動
+- `NTNU_DataReduction.py`：`_HELP_ISOCHRON_HTML` 補兩段 + 修 correlation 敘述。
+- `.work/.app_info.txt`：3.8.88 → 3.8.89
+
+---
+
 ## V3.8.88（2026-06-14）— 修 Plot Controls Apply 後 diagram 分頁不刷新
 
 使用者回報:在 Summary 頁 Plot Controls 改 X/Y 按 Apply,所有 diagram 分頁的圖不更新,要點開該分頁才反應。
