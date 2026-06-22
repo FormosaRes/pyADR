@@ -8,6 +8,28 @@ GitHub Releases（tag）最新仍為 **v3.8.54（Latest，彙整 v3.8.9 → v3.8
 
 ---
 
+## V3.8.90（2026-06-22）— Help 中英雙語切換 + 新增 σ(T₀) 分頁
+
+延續 v3.8.89。掃過 help 與 FORMULAS.md 後盤點缺口，並依使用者需求把 Formulas & References dialog 做成中英可切換。
+
+### 做法（`NTNU_DataReduction._show_diagram_plot_help` + help HTML 常數）
+- **中英切換**：dialog 頂端加「Language / 語言」combo（English / 中文），即時換所有分頁內容 + tab 標題 + Close 鈕，不用重開。用 module global `_HELP_LANG` 記住 session 內上次選擇。
+- **資料結構**：每個 `_HELP_*_HTML` 配一個 `_HELP_*_HTML_ZH`，由 `tab_defs` 串成 (en_title, zh_title, en_html, zh_html)。公式行（上下標、希臘字母）兩語言共用同一段 HTML，只翻譯說明文字 → 中英渲染同一份數學，不會走樣。
+- **7 頁全中譯**：Plateau/WMA、Isochron、MSWD、Age formula、Ar components、3D Plane Fit、References。
+- **新增分頁「σ(T₀) methods / σ(T₀) 兩種慣例」**（中英）：說明 CalcT0Page 的 `std(|r|)/√n`（李建成教授指定保留）vs AutoPipeline 的 `pcov[-1,-1]` SE-from-covariance（Li et al. 2019），含閉式 `s·√(1/n + x̄²/Sxx)`、為何差約 4×（外插槓桿項 x̄²/Sxx），與「勿把 SE 改動 port 回 CalcT0Page」警告（對齊 CLAUDE.md §3.1 / v3.8.2）。
+
+### 影響
+- 純文件（help dialog UI + HTML）。不動任何計算或科學輸出。
+
+### 驗證
+- `ast.parse` 通過；16 個 help 常數（8 EN + 8 ZH）全部定義。
+
+### 檔案改動
+- `NTNU_DataReduction.py`：`_show_diagram_plot_help` 改雙語 + 加語言 combo；新增 `_HELP_SIGMAT0_HTML`(+ZH) 與 7 個 `_HELP_*_HTML_ZH`。
+- `.work/.app_info.txt`：3.8.89 → 3.8.90
+
+---
+
 ## V3.8.89（2026-06-22）— Help 補 isochron 兩種回歸方法的物理意義
 
 使用者問 inverse isochron 兩種回歸（OLS vs York 2004）差異與意義，並要求把說明寫進 help。盤點現況：tooltip 與 Help → Formulas & References「Isochron」分頁已有 OLS/York 基本定義，但缺兩個關鍵點，且有一處敘述與實作不符。

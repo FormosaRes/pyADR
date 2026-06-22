@@ -134,33 +134,68 @@ def _make_select_page_responsive(window):
 # v3.8.6: shared help dialog used by DiagramPlot SH page + AutoPipeline window.
 # Content focuses on what each displayed number means and which formula / paper
 # it comes from — so users can defend the numbers in a paper / meeting.
+# v3.8.90: Help dialog language, remembered across opens within a session.
+_HELP_LANG = "en"   # "en" or "zh"
+
+
 def _show_diagram_plot_help(parent):
-    """Open a tabbed Help dialog covering plateau / isochron / MSWD / age math."""
+    """Open a tabbed Help dialog (English / 中文 toggle) covering plateau /
+    isochron / MSWD / σ(T0) / age math.  v3.8.90: bilingual."""
+    global _HELP_LANG
     dlg = QtWidgets.QDialog(parent)
     dlg.setWindowTitle("pyADR — Formulas & References")
-    dlg.resize(820, 640)
+    dlg.resize(820, 660)
     lay = QtWidgets.QVBoxLayout(dlg)
+
+    # (en_title, zh_title, en_html, zh_html)
+    tab_defs = [
+        ("Plateau / WMA", "平台 / 加權平均", _HELP_PLATEAU_HTML,  _HELP_PLATEAU_HTML_ZH),
+        ("Isochron",      "等時線",          _HELP_ISOCHRON_HTML, _HELP_ISOCHRON_HTML_ZH),
+        ("MSWD",          "MSWD",            _HELP_MSWD_HTML,     _HELP_MSWD_HTML_ZH),
+        ("σ(T₀) methods", "σ(T₀) 兩種慣例",  _HELP_SIGMAT0_HTML,  _HELP_SIGMAT0_HTML_ZH),
+        ("Age formula",   "年齡公式",        _HELP_AGE_HTML,      _HELP_AGE_HTML_ZH),
+        ("Ar components", "Ar 成分分解",     _HELP_AR_COMP_HTML,  _HELP_AR_COMP_HTML_ZH),
+        ("3D Plane Fit",  "3D 平面擬合",     _HELP_PLANE3D_HTML,  _HELP_PLANE3D_HTML_ZH),
+        ("References",    "參考文獻",        _HELP_REFS_HTML,     _HELP_REFS_HTML_ZH),
+    ]
+
+    # top bar: language switch
+    bar = QtWidgets.QHBoxLayout()
+    bar.addWidget(QtWidgets.QLabel("Language / 語言:"))
+    langCombo = QtWidgets.QComboBox()
+    langCombo.addItem("English", "en")
+    langCombo.addItem("中文",     "zh")
+    langCombo.setCurrentIndex(0 if _HELP_LANG == "en" else 1)
+    bar.addWidget(langCombo)
+    bar.addStretch()
+    lay.addLayout(bar)
 
     tabs = QtWidgets.QTabWidget()
     lay.addWidget(tabs)
 
-    def _add_tab(title, html):
+    browsers = []   # [(browser, en_title, zh_title, en_html, zh_html), ...]
+    for en_t, zh_t, en_h, zh_h in tab_defs:
         w = QtWidgets.QTextBrowser()
         w.setOpenExternalLinks(True)
-        w.setHtml(html)
-        tabs.addTab(w, title)
-
-    _add_tab("Plateau / WMA", _HELP_PLATEAU_HTML)
-    _add_tab("Isochron",      _HELP_ISOCHRON_HTML)
-    _add_tab("MSWD",          _HELP_MSWD_HTML)
-    _add_tab("Age formula",   _HELP_AGE_HTML)
-    _add_tab("Ar components", _HELP_AR_COMP_HTML)
-    _add_tab("3D Plane Fit",  _HELP_PLANE3D_HTML)
-    _add_tab("References",    _HELP_REFS_HTML)
+        tabs.addTab(w, en_t)
+        browsers.append((w, en_t, zh_t, en_h, zh_h))
 
     btn_close = QtWidgets.QPushButton("Close")
     btn_close.clicked.connect(dlg.accept)
     lay.addWidget(btn_close, 0, QtCore.Qt.AlignRight)
+
+    def _apply_lang(lang):
+        global _HELP_LANG
+        _HELP_LANG = lang
+        for i, (w, en_t, zh_t, en_h, zh_h) in enumerate(browsers):
+            w.setHtml(en_h if lang == "en" else zh_h)
+            tabs.setTabText(i, en_t if lang == "en" else zh_t)
+        btn_close.setText("Close" if lang == "en" else "關閉")
+
+    langCombo.currentIndexChanged.connect(
+        lambda _i: _apply_lang(langCombo.currentData()))
+    _apply_lang(_HELP_LANG)
+
     dlg.exec_()
 
 
@@ -470,6 +505,345 @@ on the use of decay constants in geo- and cosmochronology.</i> EPSL 36: 359&ndas
 <ul>
 <li>Lee J.-Y. et al. (2006) <i>A redetermination of the isotopic abundances of
 atmospheric Ar.</i> GCA 70: 4507&ndash;4512.  (<sup>40</sup>Ar/<sup>36</sup>Ar = 298.56)</li>
+</ul>
+"""
+
+
+# ===========================================================================
+# v3.8.90: σ(T0) conventions tab (EN) + Chinese (ZH) translations of all tabs.
+# Formula lines are language-neutral and kept identical across EN/ZH so the two
+# render the same math; only the prose is translated.
+# ===========================================================================
+
+_HELP_SIGMAT0_HTML = """
+<h2>&sigma;(T<sub>0</sub>): two conventions in pyADR</h2>
+<p>T<sub>0</sub> is the signal extrapolated back to the inlet time (t = 0) by
+fitting the voltage&ndash;time decay (linear or average) and evaluating the fit
+at t = 0.  pyADR computes the uncertainty &sigma;(T<sub>0</sub>) of that
+extrapolated value in <b>two different ways</b>, depending on the subprogram.</p>
+<h3>1. Residual scatter (Calculate T<sub>0</sub> page)</h3>
+<p style="margin-left:20px"><b>&sigma;(T<sub>0</sub>) = std(|v<sub>i</sub> &minus; f(t<sub>i</sub>)|) / &radic;n</b></p>
+<p>Standard deviation of the absolute fit residuals divided by &radic;n.
+Used in <code>NTNU_DataReduction.calculateT0</code> (the Calculate T<sub>0</sub>
+page).  <b>Retained on the explicit instruction of Prof. Jian-Cheng Lee</b> and
+must not be changed without his approval.</p>
+<h3>2. SE-from-covariance (AutoPipeline)</h3>
+<p style="margin-left:20px"><b>&sigma;(T<sub>0</sub>) = &radic;(pcov[intercept, intercept])</b></p>
+<p>The standard error of the intercept taken directly from the least-squares
+covariance matrix (Li et al. 2019 Eq. 1).  Closed-form equivalent:</p>
+<p style="margin-left:20px"><b>&sigma;(T<sub>0</sub>) = s &middot; &radic;(1/n + x&#772;<sup>2</sup> / S<sub>xx</sub>)</b>,&nbsp;&nbsp;
+S<sub>xx</sub> = &Sigma;(t<sub>i</sub> &minus; t&#772;)<sup>2</sup></p>
+<p>Used in AutoPipeline (v3.8.2+), selectable via the <code>SIGMA_METHOD</code>
+toggle ('standard' = this; 'calc_t0' = method 1).</p>
+<h3>Why they differ (~4&times;)</h3>
+<p>Method 1 treats the points as repeated estimates of a single mean and ignores
+that t = 0 lies <i>outside</i> the measured time window.  Extrapolation inflates
+the true uncertainty through the lever-arm term x&#772;<sup>2</sup>/S<sub>xx</sub>,
+which method 2 includes but method 1 omits.  Empirically (v3.8.2) method 1
+underestimates &sigma;(T<sub>0</sub>) by a factor of ~4 relative to the
+covariance SE.</p>
+<p style="background:#fff4d0;padding:6px;border:1px solid #c0a020;">
+<b>&#9888; Do not port the SE-from-covariance change back into the Calculate
+T<sub>0</sub> page.</b>  The two subprograms intentionally use different
+conventions: AutoPipeline reports the statistically rigorous SE; the Calculate
+T<sub>0</sub> page keeps Prof. Lee's residual-scatter definition for continuity
+with the NTNU workflow.</p>
+"""
+
+_HELP_SIGMAT0_HTML_ZH = """
+<h2>&sigma;(T<sub>0</sub>)：pyADR 的兩種慣例</h2>
+<p>T<sub>0</sub> 是把訊號擬合電壓&ndash;時間衰減（linear 或 average）後外插回進樣時刻（t = 0）、
+並在 t = 0 取值得到。pyADR 依子程式不同，用<b>兩種方式</b>計算這個外插值的不確定度
+&sigma;(T<sub>0</sub>)。</p>
+<h3>1. 殘差散布（Calculate T<sub>0</sub> 頁）</h3>
+<p style="margin-left:20px"><b>&sigma;(T<sub>0</sub>) = std(|v<sub>i</sub> &minus; f(t<sub>i</sub>)|) / &radic;n</b></p>
+<p>擬合殘差絕對值的標準差除以 &radic;n。用於 <code>NTNU_DataReduction.calculateT0</code>
+（Calculate T<sub>0</sub> 頁）。<b>依李建成教授明確指示保留</b>，未經他同意不得更改。</p>
+<h3>2. 共變異 SE（AutoPipeline）</h3>
+<p style="margin-left:20px"><b>&sigma;(T<sub>0</sub>) = &radic;(pcov[intercept, intercept])</b></p>
+<p>直接取最小二乘共變異矩陣中截距的標準誤（Li et al. 2019 Eq. 1）。閉式等價：</p>
+<p style="margin-left:20px"><b>&sigma;(T<sub>0</sub>) = s &middot; &radic;(1/n + x&#772;<sup>2</sup> / S<sub>xx</sub>)</b>,&nbsp;&nbsp;
+S<sub>xx</sub> = &Sigma;(t<sub>i</sub> &minus; t&#772;)<sup>2</sup></p>
+<p>用於 AutoPipeline（v3.8.2+），由 <code>SIGMA_METHOD</code> 切換
+（'standard' = 此法；'calc_t0' = 方法 1）。</p>
+<h3>為何兩者差約 4&times;</h3>
+<p>方法 1 把各點當成對同一平均值的重複估計，忽略了 t = 0 落在量測時間窗<i>之外</i>。
+外插會透過槓桿項 x&#772;<sup>2</sup>/S<sub>xx</sub> 放大真實不確定度，方法 2 含此項、方法 1 沒有。
+實測（v3.8.2）方法 1 相對共變異 SE 低估約 4 倍。</p>
+<p style="background:#fff4d0;padding:6px;border:1px solid #c0a020;">
+<b>&#9888; 不要把共變異 SE 的改動 port 回 Calculate T<sub>0</sub> 頁。</b>
+兩個子程式刻意採不同慣例：AutoPipeline 報統計上嚴謹的 SE；Calculate T<sub>0</sub> 頁保留
+李教授的殘差散布定義，以延續 NTNU 工作流程。</p>
+"""
+
+_HELP_PLATEAU_HTML_ZH = """
+<h2>加權平均年齡（WMA）與平台</h2>
+<p>平台年齡彙整一段連續、且在各自分析誤差內彼此一致的階段年齡。</p>
+<h3>加權平均公式</h3>
+<p style="margin-left:20px"><b>WMA = &Sigma;(T<sub>i</sub> / &sigma;<sub>i</sub><sup>2</sup>) /
+&Sigma;(1 / &sigma;<sub>i</sub><sup>2</sup>)</b></p>
+<p style="margin-left:20px"><b>&sigma;<sub>WMA, internal</sub> = 1 / &radic;&Sigma;(1/&sigma;<sub>i</sub><sup>2</sup>)</b></p>
+<p>高斯誤差下等於最大概似估計。Vermeesch (2018) IsoplotR Eq. 5；Schaen et al. (2021) GSA Bull. p.470。</p>
+<h3>外部 &sigma;（Wendt &amp; Carl 1991）</h3>
+<p>當 MSWD &gt; 1，放大 internal &sigma; 以涵蓋多餘散布：</p>
+<p style="margin-left:20px"><b>&sigma;<sub>WMA, external</sub> = &sigma;<sub>WMA, internal</sub> &middot; &radic;MSWD</b>
+&nbsp;&nbsp;（僅當 MSWD &gt; 1）</p>
+<p>若 MSWD &le; 1，直接用 internal &sigma;。</p>
+<h3>全熔年齡（Total Fusion）</h3>
+<p>把整顆樣品當成一次脫氣，加總所有放射成因 <sup>40</sup>Ar 與所有 K 來源 <sup>39</sup>Ar：</p>
+<p style="margin-left:20px"><b>F<sub>total</sub> = &Sigma;<sup>40</sup>Ar*<sub>i</sub> / &Sigma;<sup>39</sup>Ar<sub>K,i</sub></b></p>
+<p style="margin-left:20px"><b>T<sub>total</sub> = ln(1 + J &middot; F<sub>total</sub>) / &lambda;</b></p>
+<p>等同 K/Ar 年齡，忽略階段結構，可作為平台年齡的交叉檢核。</p>
+"""
+
+_HELP_ISOCHRON_HTML_ZH = """
+<h2>等時線回歸</h2>
+<p>等時線是比值圖上兩端元之間的混合線。Ar/Ar 常用兩種參數化：</p>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th></th><th>正等時線（DFN）</th><th>反等時線（DFI）</th></tr>
+<tr><td>X 軸</td><td><sup>39</sup>Ar / <sup>36</sup>Ar</td><td><sup>39</sup>Ar / <sup>40</sup>Ar</td></tr>
+<tr><td>Y 軸</td><td><sup>40</sup>Ar / <sup>36</sup>Ar</td><td><sup>36</sup>Ar / <sup>40</sup>Ar</td></tr>
+<tr><td>Y 截距</td><td>(<sup>40</sup>/<sup>36</sup>)<sub>trapped</sub></td><td>(<sup>36</sup>/<sup>40</sup>)<sub>trapped</sub> = 1/(<sup>40</sup>/<sup>36</sup>)<sub>trapped</sub></td></tr>
+<tr><td>斜率</td><td>F = <sup>40</sup>Ar* / <sup>39</sup>Ar<sub>K</sub></td><td>&minus;F &middot; (<sup>36</sup>/<sup>40</sup>)<sub>trapped</sub></td></tr>
+<tr><td>F 公式</td><td>F = slope</td><td><b>F = &minus;slope / intercept</b></td></tr>
+</table>
+<p>以 Y = a + bX（York 慣例，a = 截距，b = 斜率）：</p>
+<p style="margin-left:20px">正：&nbsp;&nbsp; F = b</p>
+<p style="margin-left:20px">反：F = &minus;b / a&nbsp;&nbsp;(Vermeesch 2024 Eq. 2；Li &amp; Vermeesch 2021 Eq. 5)</p>
+<h3>回歸方法（Plot Controls 可切換）</h3>
+<p><b>OLS（普通最小二乘）</b> &mdash; <code>scipy.curve_fit(linear, x, y)</code>。
+假設 &sigma;<sub>x</sub> = 0（誤差全在 Y）。舊式 Ar/Ar 慣例。</p>
+<p><b>York 2004</b> &mdash; 雙變量加權回歸：同時考慮 &sigma;<sub>x</sub> 與 &sigma;<sub>y</sub>
+（並可選每點 x&ndash;y 相關係數 &rho;）。迭代求斜率至收斂。Schaen et al. (2021) Ar/Ar 標準；IsoplotR 預設。</p>
+<p>當 &sigma;<sub>x</sub> 不可忽略時，York 給的斜率通常比 OLS 小，因此 F 與年齡會不同，可切換比較。</p>
+<h3>為何不能忽略 &sigma;<sub>x</sub>（回歸稀釋）</h3>
+<p>等時線兩軸都是<i>共用同一分母的比值</i>（反等時線：x = <sup>39</sup>Ar/<sup>40</sup>Ar、
+y = <sup>36</sup>Ar/<sup>40</sup>Ar，皆除以 <sup>40</sup>Ar）。<sup>40</sup>Ar 的量測誤差因此<b>同時</b>進入
+x 與 y，兩軸真實相關，&sigma;<sub>x</sub> 永遠不為零。</p>
+<p>OLS 假設 &sigma;<sub>x</sub> = 0，會造成<b>回歸稀釋（衰減偏差）</b>：x 方向的散布把擬合線壓向較平的斜率。
+這不只偏到斜率（進而 F &rarr; 年齡），因為擬合錨定在資料重心，壓平的斜率也會<b>移動 y 截距</b>，
+所以 trapped (<sup>40</sup>/<sup>36</sup>)<sub>trapped</sub> 同樣偏掉。York 以每點完整二維誤差加權移除此偏差，
+是 error-in-both-variables 問題的正確估計，凡要報告的結果都應採用。</p>
+<p><i>實作註記：</i>共用 <sup>40</sup>Ar 分母造成的 x&ndash;y 誤差相關真實存在，但 pyADR 目前以
+&rho; = 0 呼叫 York（只傳 &sigma;<sub>x</sub>、&sigma;<sub>y</sub>）。補上解析 &rho; 可讓擬合更緊，屬已知可改進項。</p>
+<h3>反等時線的 &sigma;<sub>F</sub></h3>
+<p>F = &minus;b/a，依高斯誤差傳播（含斜率&ndash;截距共變異）：</p>
+<p style="margin-left:20px"><b>&sigma;<sub>F</sub><sup>2</sup> = (&sigma;<sub>b</sub>/a)<sup>2</sup>
++ (b &middot; &sigma;<sub>a</sub> / a<sup>2</sup>)<sup>2</sup>
+&minus; 2 (b/a<sup>3</sup>) &middot; cov(a, b)</b></p>
+<p>反等時線的 cov(a, b) 通常為負（斜率變陡時截距下降），所以交叉項會縮小 &sigma;<sub>F</sub>。
+pyADR 由 <code>pcov</code>（OLS）或 York 解析公式（Mahon 1996、Schaen 2021 Eq. 14b）算得。</p>
+"""
+
+_HELP_MSWD_HTML_ZH = """
+<h2>MSWD &mdash; 兩種，不可混用</h2>
+<p>pyADR 會報兩個看起來像、其實量的是不同東西的 MSWD。對不均質／受擾動的樣品，兩者可能背離。</p>
+<h3>平台 MSWD&nbsp;<i>（右側統計面板）</i></h3>
+<p style="margin-left:20px"><b>MSWD<sub>plateau</sub> = &Sigma;((T<sub>i</sub> &minus; WMA) /
+&sigma;<sub>T,i</sub>)<sup>2</sup> / (N &minus; 1)</b></p>
+<p>量的是各階段<i>年齡</i>相對加權平均年齡的散布，反映年齡均質性（時間上的一致性）。
+自由度 = N&minus;1（一個自由參數：平均）。</p>
+<h3>回歸 MSWD&nbsp;<i>（DFN/DFI 圖上方的常駐標籤）</i></h3>
+<p style="margin-left:20px"><b>MSWD<sub>regression</sub> = &Sigma;((y<sub>i</sub> &minus; a &minus; b&middot;x<sub>i</sub>) /
+&sigma;<sub>y,i</sub>)<sup>2</sup> / (N &minus; 2)</b></p>
+<p>量的是<i>資料點</i>相對等時線的散布，反映線性混合模型擬合得好不好。
+自由度 = N&minus;2（斜率＋截距）。</p>
+<h3>不同組合的意義</h3>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th></th><th>MSWD<sub>plateau</sub> &asymp; 1</th><th>MSWD<sub>plateau</sub> &gt; 1</th></tr>
+<tr><th>MSWD<sub>reg</sub> &asymp; 1</th><td>理想 &mdash; 樣品乖巧</td><td>年齡不一致但點落在等時線上 &mdash; trapped 組成一致、年齡分散（部分重置？）</td></tr>
+<tr><th>MSWD<sub>reg</sub> &gt; 1</th><td>階段年齡一致但點在等時線上散開 &mdash; 各階段 trapped 組成不同</td><td>兩者皆散 &mdash; 明顯地質複雜性（過剩 Ar、不均質、部分流失）</td></tr>
+</table>
+<h3>臨界 MSWD</h3>
+<p>Schaen et al. (2021) Eq. 2：<b>MSWD<sub>crit</sub> &asymp; 1 + 2&radic;(2/df)</b>。
+df = 8 時 MSWD<sub>crit</sub> &asymp; 2.0。超過此值即否定「散布純為分析誤差」的假設。</p>
+<p>當 MSWD &gt; 1，pyADR（依 Wendt &amp; Carl 1991）把 internal &sigma; 乘 &radic;MSWD
+得到「external」&sigma; 以涵蓋多餘散布。</p>
+"""
+
+_HELP_AGE_HTML_ZH = """
+<h2>Ar/Ar 年齡公式</h2>
+<p>來自 <sup>40</sup>K 衰變為 <sup>40</sup>Ar：</p>
+<p style="margin-left:20px"><b>T = (1/&lambda;) &middot; ln(1 + J &middot; F)</b></p>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th>符號</th><th>意義</th><th>來源</th></tr>
+<tr><td>T</td><td>年齡（yr）</td><td>所求</td></tr>
+<tr><td>&lambda;</td><td><sup>40</sup>K 總衰變常數（1/yr）</td><td>讀自 <code>parameters.csv</code> 的「λ for age calculation」。pyADR 預設 5.49e-10（介於 Steiger-J&auml;ger 1977 = 5.543e-10 與 Renne 2010 = 5.5305e-10 之間）。</td></tr>
+<tr><td>J</td><td>照射參數</td><td>由共照標準品求得（J Calculation 頁）。</td></tr>
+<tr><td>F</td><td><sup>40</sup>Ar* / <sup>39</sup>Ar<sub>K</sub></td><td>來自階段（平台路徑）或等時線斜率（DFN/DFI）。</td></tr>
+</table>
+<h3>&sigma;<sub>T</sub> 傳播（Renne 2010 偏導）</h3>
+<p style="margin-left:20px"><b>&sigma;<sub>T</sub><sup>2</sup> = ((J &middot; &sigma;<sub>F</sub>)<sup>2</sup>
++ (F &middot; &sigma;<sub>J</sub>)<sup>2</sup>) / (&lambda;(1+JF))<sup>2</sup></b></p>
+<p>pyADR 預設<i>不</i>納入 &sigma;<sub>&lambda;</sub>（對地質上年輕的樣品通常 &lt; 0.5%）。</p>
+<h3>其他處用到的衰變常數</h3>
+<ul>
+<li><b><sup>37</sup>Ar 半衰期</b> = 35.011 天（AutoPipeline 的 LAMBDA_37）。用於把干擾性 <sup>37</sup>Ar 從照射回推到分析時刻。</li>
+<li><b><sup>39</sup>Ar 半衰期</b> = 269 年（LAMBDA_39）。同樣用途，衰變慢，數月內通常可忽略但仍校正。</li>
+</ul>
+"""
+
+_HELP_AR_COMP_HTML_ZH = """
+<h2>Ar 同位素成分分解</h2>
+<p>從量測的 <sup>36, 37, 38, 39, 40</sup>Ar，pyADR 用 <code>parameters.csv</code> 的生成比值，
+解出 trapped、生成相關與放射成因各成分。</p>
+<h3>校正順序（Utilities.py 的 calcAge）</h3>
+<ol>
+<li><b><sup>37</sup>Ar(Ca)</b> = 量測 <sup>37</sup>Ar &mdash; 來自 Ca 干擾，衰變校正回照射中點。</li>
+<li><b><sup>36</sup>Ar(Ca)</b> = <sup>37</sup>Ar(Ca) &times; PR(<sup>36</sup>/<sup>37</sup>Ca)</li>
+<li><b><sup>36</sup>Ar(air)</b> = 量測 <sup>36</sup>Ar &minus; <sup>36</sup>Ar(Ca)。（NTNU 實驗室：<sup>36</sup>Ar(Cl) 視為可忽略。）</li>
+<li><b><sup>39</sup>Ar(Ca)</b> = <sup>37</sup>Ar(Ca) &times; PR(<sup>39</sup>/<sup>37</sup>Ca)</li>
+<li><b><sup>39</sup>Ar(K)</b> = 量測 <sup>39</sup>Ar &minus; <sup>39</sup>Ar(Ca)</li>
+<li><b><sup>40</sup>Ar(air)</b> = <sup>36</sup>Ar(air) &times; R(<sup>40</sup>/<sup>36</sup>)<sub>atm</sub>（預設 R = 298.56）</li>
+<li><b><sup>40</sup>Ar(K)</b> = <sup>39</sup>Ar(K) &times; PR(<sup>40</sup>/<sup>39</sup>K)</li>
+<li><b><sup>40</sup>Ar*</b> = 量測 <sup>40</sup>Ar &minus; <sup>40</sup>Ar(air) &minus; <sup>40</sup>Ar(K)</li>
+</ol>
+<p>F = <sup>40</sup>Ar* / <sup>39</sup>Ar(K)。年齡 T = ln(1 + JF)/&lambda;。</p>
+<h3>Ca/K 比值</h3>
+<p style="margin-left:20px"><b>Ca/K = (<sup>37</sup>Ar(Ca) / <sup>39</sup>Ar(K)) &middot; R<sub>Ca/K</sub></b></p>
+<p>pyADR 的 R<sub>Ca/K</sub> = 0.52（NTNU 反應器校正，硬寫）。文獻標準為 1.83
+（McDougall &amp; Harrison 1999 Eq. 4.30），但那是不同反應器。</p>
+"""
+
+_HELP_PLANE3D_HTML_ZH = """
+<h2>3D 平面擬合（PlaneFit3D.py）</h2>
+<p>2D 等時線投影的替代法：直接在 (³⁶Ar, ³⁹Ar, ⁴⁰Ar) 空間回歸。避免比值計算的誤差累積，
+並可看見樣品內同位素系統的空間結構。</p>
+<p><b>參考</b>：Kent et al. (1990) 最大概似平面回歸，依 Wu C.-Y. (2007) 台大碩論
+（R94224113，指導 羅清華）實作。驗證樣品 SYL31（Sylhet Trap 玄武岩，115.4 ± 3.9 Ma）。</p>
+<h3>平面方程</h3>
+<p style="margin-left:20px">
+<b><sup>40</sup>Ar = &alpha; &middot; <sup>36</sup>Ar + &beta; &middot; <sup>39</sup>Ar</b></p>
+<ul>
+<li><b>&alpha;</b> = (<sup>40</sup>Ar/<sup>36</sup>Ar)<sub>trapped</sub>
+    &mdash; 初始（大氣／繼承）組成（純大氣 &asymp; 298.56）</li>
+<li><b>&beta;</b> = <sup>40</sup>Ar* / <sup>39</sup>Ar<sub>K</sub> = F &mdash;
+    放射成因對 K 的比值（進入年齡公式）</li>
+</ul>
+<p>年齡：&nbsp;&nbsp; <b>T = (1/&lambda;) &middot; ln(1 + &beta; &middot; J)</b></p>
+<h3>最大概似目標函數</h3>
+<p>每個資料點 x<sub>i</sub> = (<sup>36</sup>Ar, <sup>39</sup>Ar, <sup>40</sup>Ar)
+建模為 N<sub>3</sub>(&mu;<sub>i</sub>, A<sub>i</sub>)，其中 &mu;<sub>i</sub> 落在平面上。
+定義平面法向量 &gamma; = [&alpha;, &beta;, &minus;1]<sup>T</sup>：</p>
+<p style="margin-left:20px">s<sub>i</sub> = &gamma;<sup>T</sup>x<sub>i</sub> = &alpha;&middot;<sup>36</sup>Ar<sub>i</sub> + &beta;&middot;<sup>39</sup>Ar<sub>i</sub> &minus; <sup>40</sup>Ar<sub>i</sub>（帶號距離）</p>
+<p style="margin-left:20px">q<sub>i</sub> = &gamma;<sup>T</sup>A<sub>i</sub>&gamma;（投影到法向量的變異）</p>
+<p>消去 &mu;<sub>i</sub>（Lagrange 乘子，Wu 2007 eq 3-5 → 3-7）後，得<b>剖面對數概似</b>：</p>
+<p style="margin-left:20px"><b>L<sub>p</sub>(&delta;) = &minus;&frac12; &Sigma;<sub>i</sub> s<sub>i</sub>&sup2; / q<sub>i</sub></b>
+&nbsp;&nbsp;其中 &delta; = [&alpha;, &beta;]<sup>T</sup></p>
+<p>最大化 L<sub>p</sub> = 以三個同位素軸共同決定權重的加權最小二乘（不偏好任一軸）。</p>
+<h3>每點共變異矩陣 A<sub>i</sub>（3×3）</h3>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><td>&sigma;<sub>36</sub>&sup2;</td><td>0</td><td>0</td></tr>
+<tr><td>0</td><td>&sigma;<sub>39</sub>&sup2;</td><td>&minus;k<sub>0</sub>&middot;&sigma;<sub>39</sub>&sup2;</td></tr>
+<tr><td>0</td><td>&minus;k<sub>0</sub>&middot;&sigma;<sub>39</sub>&sup2;</td><td>&sigma;<sub>40</sub>&sup2;</td></tr>
+</table>
+<p>其中 k<sub>0</sub> = PR(<sup>40</sup>Ar/<sup>39</sup>Ar)<sub>K</sub>（預設 0.025004）。
+非對角的 cov(<sup>39</sup>, <sup>40</sup>) 反映 ⁴⁰Ar(K) 回扣造成的反相關。</p>
+<h3>Newton–Raphson 最佳化</h3>
+<p>從 OLS &delta;<sub>0</sub> 起，迭代：</p>
+<p style="margin-left:20px"><b>&delta;<sub>k+1</sub> = &delta;<sub>k</sub> + H<sup>&minus;1</sup>&middot;g</b></p>
+<p>梯度 g = &part;L<sub>p</sub>/&part;&delta;，Hessian H = &minus;&part;&sup2;L<sub>p</sub>/&part;&delta;&part;&delta;<sup>T</sup>
+（在 MLE 為正定，= 觀測 Fisher information）。</p>
+<p><b>回溯線搜尋</b>（pyADR v3.4 加入）：步長最多減半 20 次，直到 L<sub>p</sub> 嚴格上升，
+避免 Newton 過衝。收斂：|&Delta;&delta;|/|&delta;| &lt; 10<sup>&minus;10</sup>。</p>
+<h3>MSWD 與 95% CI</h3>
+<p style="margin-left:20px"><b>S&sup2; = &Sigma;<sub>i</sub> s<sub>i</sub>&sup2; / q<sub>i</sub>,&nbsp;&nbsp;&nbsp;
+df = n &minus; 2,&nbsp;&nbsp;&nbsp; MSWD = S&sup2; / df</b></p>
+<p>(Wu 2007 eq 3-24；Mahon 1996。)</p>
+<p>95% CI 以 &chi;<sup>2</sup><sub>df</sub> 分位數精確計算（scipy.stats.chi2），非常態近似。
+若 MSWD &gt; 上界，pyADR 套用 Wendt-Carl &sigma; 放大：</p>
+<p style="margin-left:20px">&tau;&sup2; = MSWD,&nbsp;&nbsp; &sigma;<sub>&delta;</sub> &rarr; &radic;&tau;&sup2; &middot; &sigma;<sub>&delta;</sub></p>
+<h3>參數共變異</h3>
+<p style="margin-left:20px"><b>cov(&delta;&#x0302;) = &tau;&sup2; &middot; H<sup>&minus;1</sup></b></p>
+<p>1&sigma; 不確定度：&sigma;<sub>&alpha;</sub> = &radic;cov<sub>11</sub>，&sigma;<sub>&beta;</sub> = &radic;cov<sub>22</sub>。</p>
+<p style="background:#fff4d0;padding:6px;border:1px solid #c0a020;">
+<b>&#9888; Wu (2007) eq 3-27 符號錯誤修正</b>：論文寫
+cov(&delta;&#x0302;) = &tau;&sup2; &middot; (&part;&sup2;L<sub>p</sub>/&part;&delta;&part;&delta;<sup>T</sup>)<sup>&minus;1</sup>。
+在 MLE 處 &part;&sup2;L<sub>p</sub> 為<i>負</i>定，其逆給出<i>負變異</i>，顯然錯誤。正確的 ML 漸近共變異為
+&tau;&sup2; &middot; (&minus;&part;&sup2;L<sub>p</sub>/&part;&delta;&part;&delta;<sup>T</sup>)<sup>&minus;1</sup> = &tau;&sup2; &middot; H<sup>&minus;1</sup>。
+pyADR 用修正後形式。</p>
+<h3>年齡誤差傳播（Renne 1998、Min 2000）</h3>
+<p style="margin-left:20px"><b>&sigma;<sub>T</sub>&sup2; = (&part;T/&part;&beta;)&sup2; &sigma;<sub>&beta;</sub>&sup2;
++ (&part;T/&part;J)&sup2; &sigma;<sub>J</sub>&sup2;
++ (&part;T/&part;&lambda;)&sup2; &sigma;<sub>&lambda;</sub>&sup2;</b></p>
+<p>其中</p>
+<ul>
+<li>&part;T/&part;&beta; = J / [&lambda;(1 + &beta;J)]</li>
+<li>&part;T/&part;J = &beta; / [&lambda;(1 + &beta;J)]</li>
+<li>&part;T/&part;&lambda; = &minus;ln(1 + &beta;J) / &lambda;&sup2;</li>
+</ul>
+<h3>Mahon (1996) σ 上限（選用）</h3>
+<p>對背景主導、&sigma;<sub>i</sub>/|x<sub>i</sub>| &gt;&gt; 1 的階段，古典 Kent 權重會讓這些點影響過大。
+設每軸上限以限制：</p>
+<p style="margin-left:20px"><b>&sigma;<sub>i,eff</sub> = min(&sigma;<sub>i</sub>, c &middot; |x<sub>i</sub>|)</b></p>
+<p>典型 c = 0.2–0.5。None（預設）停用（古典 Kent）。</p>
+<p>完整推導見 FORMULAS.md §11。</p>
+"""
+
+_HELP_REFS_HTML_ZH = """
+<h2>參考文獻</h2>
+<h3>3D 平面擬合（PlaneFit3D.py）</h3>
+<ul>
+<li>Kent J.T., Watson G.S., Onstott T.C. (1990) <i>Maximum likelihood estimation
+of a plane in three dimensions.</i> Statistics 21: 411&ndash;426.</li>
+<li>Wu C.-Y. (2007) <i>3-D Plane-fitting Program in 40Ar/39Ar Dating.</i>
+台大地質所碩論（R94224113），指導 羅清華。數學推導見第 3 章。</li>
+<li>Titterington D.M., Halliday A.N. (1979) <i>On the fitting of parallel isochrons
+and the method of maximum likelihood.</i> Chem. Geol. 26: 183&ndash;195.</li>
+<li>Mahon K.I. (1996) <i>The new "York" regression.</i> Int. Geol. Rev. 38: 293&ndash;303.
+（MSWD 與修正權重）</li>
+<li>Renne P.R. et al. (1998) <i>Intercalibration of standards, absolute ages and
+uncertainties in 40Ar/39Ar dating.</i> Chem. Geol. 145: 117&ndash;152.</li>
+<li>Min K. et al. (2000) <i>A test for systematic errors in 40Ar/39Ar
+geochronology.</i> GCA 64: 73&ndash;98.</li>
+<li>Koppers A.A.P. (2002) <i>ArArCALC &mdash; software for 40Ar/39Ar age calculations.</i>
+Comput. Geosci. 28: 605&ndash;619.</li>
+</ul>
+<h3>等時線回歸</h3>
+<ul>
+<li>York D., Evensen N.M., Mart&iacute;nez M.L., De Basabe Delgado J. (2004)
+<i>Unified equations for the slope, intercept, and standard errors of the best straight line.</i>
+Am. J. Phys. 72: 367&ndash;375.</li>
+<li>Vermeesch P. (2018) <i>IsoplotR: A free and open toolbox for geochronology.</i>
+Geoscience Frontiers 9: 1479&ndash;1493.  doi:10.1016/j.gsf.2018.04.001</li>
+<li>Vermeesch P. (2024) <i>Errorchrons and anchored isochrons in IsoplotR.</i>
+Geochronology 6: 397&ndash;407.  doi:10.5194/gchron-6-397-2024</li>
+<li>Li Y., Vermeesch P. (2021) <i>Short communication: Inverse isochron regression
+for Re&ndash;Os, K&ndash;Ca and other chronometers.</i> Geochronology 3: 415&ndash;420.
+doi:10.5194/gchron-3-415-2021</li>
+<li>Mahon K.I. (1996) <i>The new "York" regression: application of an improved
+statistical method to geochemistry.</i> Int. Geol. Rev. 38: 293&ndash;303.
+（斜率&ndash;截距共變異公式）</li>
+</ul>
+<h3>MSWD / 加權平均統計</h3>
+<ul>
+<li>Wendt I., Carl C. (1991) <i>The statistical distribution of the mean squared
+weighted deviation.</i> Chem. Geol. 86: 275&ndash;285.
+（&radic;MSWD 外部 &sigma; 放大）</li>
+<li>Schaen A.J. et al. (2021) <i>Interpreting and reporting <sup>40</sup>Ar/<sup>39</sup>Ar
+geochronologic data.</i> GSA Bulletin 133: 461&ndash;487.
+doi:10.1130/B35560.1（Ar/Ar 社群標準）</li>
+</ul>
+<h3>Ar/Ar 方法與衰變常數</h3>
+<ul>
+<li>McDougall I., Harrison T.M. (1999) <i>Geochronology and Thermochronology
+by the <sup>40</sup>Ar/<sup>39</sup>Ar Method</i>, 2nd ed., Oxford University Press.
+（Ar 成分數學標準）</li>
+<li>Renne P.R. et al. (2010) <i>Joint determination of <sup>40</sup>K decay constants and
+<sup>40</sup>Ar*/<sup>40</sup>K for the Fish Canyon sanidine standard.</i> GCA 74: 5349&ndash;5367.
+（現代 &lambda; 值）</li>
+<li>Renne P.R. et al. (2011) <i>Response to the comment by W.H. Schwarz et al.
+on "Joint determination of...".</i> GCA 75: 5097&ndash;5100.</li>
+<li>Steiger R.H., J&auml;ger E. (1977) <i>Subcommission on geochronology: Convention
+on the use of decay constants in geo- and cosmochronology.</i> EPSL 36: 359&ndash;362.
+（歷史 &lambda; = 5.543e-10/yr）</li>
+<li>Kuiper K.F. (2002) <i>The interpretation of inverse isochron diagrams in
+<sup>40</sup>Ar/<sup>39</sup>Ar geochronology.</i> EPSL 203: 499&ndash;506.</li>
+</ul>
+<h3>大氣組成</h3>
+<ul>
+<li>Lee J.-Y. et al. (2006) <i>A redetermination of the isotopic abundances of
+atmospheric Ar.</i> GCA 70: 4507&ndash;4512.（<sup>40</sup>Ar/<sup>36</sup>Ar = 298.56）</li>
 </ul>
 """
 
