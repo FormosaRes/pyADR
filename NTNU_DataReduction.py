@@ -16,20 +16,25 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 _BOOT_APP = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 _BOOT_SPLASH = None
 _BOOT_T0 = None
-try:
-    import time as _bt
-    _sp = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.work', 'splash.png')
-    if os.path.exists(_sp):
-        _spm = QtGui.QPixmap(_sp)
-        if not _spm.isNull():
-            _spm = _spm.copy(0, 0, _spm.width(), 455)  # crop grey footer (v3.8.19)
-            _BOOT_SPLASH = QtWidgets.QSplashScreen(_spm, QtCore.Qt.WindowStaysOnTopHint)
-            _BOOT_SPLASH.setMask(_spm.mask())
-            _BOOT_SPLASH.show()
-            _BOOT_APP.processEvents()
-            _BOOT_T0 = _bt.monotonic()
-except Exception:
-    _BOOT_SPLASH = None
+# v3.8.93: only show the boot splash when this module is the launched program
+# (run as __main__).  AutoPipeline lazily `import NTNU_DataReduction` on
+# Help → Formulas; without this guard that import would re-trigger the boot
+# splash and pop it up on top of the Help dialog.
+if __name__ == '__main__':
+    try:
+        import time as _bt
+        _sp = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.work', 'splash.png')
+        if os.path.exists(_sp):
+            _spm = QtGui.QPixmap(_sp)
+            if not _spm.isNull():
+                _spm = _spm.copy(0, 0, _spm.width(), 455)  # crop grey footer (v3.8.19)
+                _BOOT_SPLASH = QtWidgets.QSplashScreen(_spm, QtCore.Qt.WindowStaysOnTopHint)
+                _BOOT_SPLASH.setMask(_spm.mask())
+                _BOOT_SPLASH.show()
+                _BOOT_APP.processEvents()
+                _BOOT_T0 = _bt.monotonic()
+    except Exception:
+        _BOOT_SPLASH = None
 
 import numpy as np
 import requests

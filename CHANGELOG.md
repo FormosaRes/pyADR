@@ -8,6 +8,31 @@ GitHub Releases（tag）最新仍為 **v3.8.54（Latest，彙整 v3.8.9 → v3.8
 
 ---
 
+## V3.8.93（2026-06-22）— 修 AutoPipeline 按 Help 跳出開機 splash 畫面
+
+使用者回報：在 AutoPipeline 按 Help → Formulas，會冒出開機 splash（pyADR logo / NTNU Ar/Ar Lab）蓋在 Help dialog 上。
+
+### 根因
+AutoPipeline 啟動時**不** import NTNU_DataReduction，只有按 Help 時才 lazy `import NTNU_DataReduction as _N`（`AutoPipeline.py:7297`）。而 NTNU_DataReduction.py **module 最上層**（v3.8.83 splash-first）在被 import 的當下就 `_BOOT_SPLASH.show()`。所以第一次按 Help 觸發 import → 開機 splash 被 show 出來，且因 AutoPipeline 不是建立 NTNU 的 App，沒有人呼叫 `splash.finish()`，它就帶著 WindowStaysOnTopHint 卡在最上層。
+
+### 修法（`NTNU_DataReduction.py` 最上層）
+- 把 boot splash 的建立／`show()` 區塊包進 `if __name__ == '__main__':`。只有 NTNU_DataReduction 被「直接執行」時才顯示 splash；被 import（AutoPipeline 的 Help）時略過。
+- `_BOOT_SPLASH` / `_BOOT_T0` 仍預設 None（守衛外），App.__init__ 的既有 splash 重用邏輯不受影響。
+- `_BOOT_APP = QApplication.instance() or ...` 維持不變（被 import 時重用既有 instance，無副作用）。
+
+### 影響
+- 直接啟動 pyADR（NTNU 為主程式）：splash 行為完全不變。
+- AutoPipeline 按 Help：不再跳 splash，只開 Formulas dialog。
+
+### 驗證
+- `ast.parse` 通過。NTNU 主程式進入點 `if __name__ == '__main__': App().run()`（行 6020）確認 import 時 `__name__` 非 `'__main__'`。
+
+### 檔案改動
+- `NTNU_DataReduction.py`：boot splash 區塊加 `if __name__ == '__main__':` 守衛。
+- `.work/.app_info.txt`：3.8.92 → 3.8.93
+
+---
+
 ## V3.8.92（2026-06-22）— DiagramPlot SH isochron 預設改 York + 補齊 call site
 
 修 v3.8.89 盤點到的兩個不一致：DiagramPlot SH 的 isochron 預設與 AutoPipeline 不同，且多數重畫路徑沒把使用者選的方法傳下去。
