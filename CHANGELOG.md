@@ -8,6 +8,33 @@ GitHub Releases（tag）最新仍為 **v3.8.54（Latest，彙整 v3.8.9 → v3.8
 
 ---
 
+## V3.8.92（2026-06-22）— DiagramPlot SH isochron 預設改 York + 補齊 call site
+
+修 v3.8.89 盤點到的兩個不一致：DiagramPlot SH 的 isochron 預設與 AutoPipeline 不同，且多數重畫路徑沒把使用者選的方法傳下去。
+
+### 根因
+- `isochronMethodCombo` 預設 OLS（index 0 = "OLS"），但 AutoPipeline v3.8.76 已改 York 預設 → 同一份數據兩個子程式給不同 isochron。
+- 5 個 `getDFStatistics_sh` 呼叫只有主 `SH_apply_axes` 路徑傳 `isochron_method`，其餘 4 個（reselect / 初次載入 / Excel 前重算 / DFSH_save）沒傳 → fallback 到函式預設 `'ols'`。使用者切 York 後走到這些路徑會被靜默還原成 OLS。
+
+### 修法（`NTNU_DataReduction.py`）
+- combo 改成 York 在前（index 0）、OLS 在後，預設即 York，與 AutoPipeline 一致。
+- 4 個未傳的 call site（行 2712 / 4445 / 4657 / 5520）全部補
+  `isochron_method=...isochronMethodCombo.currentData() or 'york'`。
+- 主路徑 fallback `or 'ols'` → `or 'york'`，與新預設一致。
+
+### 影響
+- 預設輸出改用 York（正確的 error-in-both-variables 估計）。使用者仍可手動切回 OLS（legacy）。
+- `Utilities.getDFStatistics_sh` 的函式預設參數維持 `'ols'` 未動（其他 caller 不受影響；DiagramPlot 現在全部明確傳值）。
+
+### 驗證
+- `ast.parse` 通過；5 個 call site 全部帶 `isochron_method`。
+
+### 檔案改動
+- `NTNU_DataReduction.py`：combo 順序/預設；4 個 call site 補傳；主路徑 fallback。
+- `.work/.app_info.txt`：3.8.91 → 3.8.92
+
+---
+
 ## V3.8.91（2026-06-22）— Help 語言切換改成左下角 CN/EN 按鈕
 
 使用者回報 v3.8.90 的頂部「Language / 語言」combo 不夠直覺，希望改成左下角一顆 CN/EN 切換鈕。

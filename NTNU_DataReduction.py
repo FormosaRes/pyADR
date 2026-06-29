@@ -1154,9 +1154,9 @@ class DiagramPlots_SH(QtWidgets.QMainWindow, UI.DiagramPlots_SH.Ui_MainWindow):
         rowIM = QtWidgets.QHBoxLayout()
         self.isochronMethodLabel = QtWidgets.QLabel("Isochron method:")
         self.isochronMethodCombo = QtWidgets.QComboBox()
-        self.isochronMethodCombo.addItem("OLS",      "ols")
         self.isochronMethodCombo.addItem("York 2004", "york")
-        self.isochronMethodCombo.setCurrentIndex(0)
+        self.isochronMethodCombo.addItem("OLS",       "ols")
+        self.isochronMethodCombo.setCurrentIndex(0)  # v3.8.92: York default (match AutoPipeline)
         self.isochronMethodCombo.setToolTip(
             "OLS: scipy.curve_fit, assumes σ_x = 0 (older Ar/Ar convention).\n"
             "York 2004: bivariate weighted regression with both σ_x and σ_y\n"
@@ -2161,7 +2161,7 @@ class App():
                 # FIX: pass pname so only target diagram gets xlim/ylim
                 _show_leg = self.DiagramPlots_SHPage.showLegendCheckbox.isChecked()
                 # v3.8.6 (A2): pass isochron_method from Plot Controls dropdown
-                _iso_method = self.DiagramPlots_SHPage.isochronMethodCombo.currentData() or 'ols'
+                _iso_method = self.DiagramPlots_SHPage.isochronMethodCombo.currentData() or 'york'
                 result, limits = Utilities.getDFStatistics_sh(
                     self.Dfilename, self.mask, self.parameters, 'r', 'o',
                     xlim=xlim, ylim=ylim, legend_name=legend,
@@ -2719,6 +2719,7 @@ class App():
                     show_legend=_show_leg,
                     show_group_fits=self.DiagramPlots_SHPage.showGroupFitsCheckbox.isChecked(),
                     show_overall_fit=self.DiagramPlots_SHPage.showOverallFitCheckbox.isChecked(),
+                    isochron_method=self.DiagramPlots_SHPage.isochronMethodCombo.currentData() or 'york',  # v3.8.92
 )
                 self.iso_pts_DFN = limits.get('DFN_pts', self.iso_pts_DFN)
                 self.iso_pts_DFI = limits.get('DFI_pts', self.iso_pts_DFI)
@@ -4449,6 +4450,7 @@ class App():
                         return_limits=True, return_points=True,
                         show_group_fits=self.DiagramPlots_SHPage.showGroupFitsCheckbox.isChecked(),
                         show_overall_fit=self.DiagramPlots_SHPage.showOverallFitCheckbox.isChecked(),
+                        isochron_method=self.DiagramPlots_SHPage.isochronMethodCombo.currentData() or 'york',  # v3.8.92
 )
                     if isinstance(_df_call, tuple) and len(_df_call) == 2:
                         self.DF_result, _df_limits = _df_call
@@ -4662,6 +4664,7 @@ class App():
                 return_limits=True, return_points=True,
                 show_group_fits=self.DiagramPlots_SHPage.showGroupFitsCheckbox.isChecked(),
                 show_overall_fit=self.DiagramPlots_SHPage.showOverallFitCheckbox.isChecked(),
+                isochron_method=self.DiagramPlots_SHPage.isochronMethodCombo.currentData() or 'york',  # v3.8.92
 )
             if isinstance(_iso_result, tuple) and len(_iso_result) == 2:
                 _iso_limits = _iso_result[1]
@@ -5523,6 +5526,7 @@ class App():
             style=self._get_plot_style(),
             show_group_fits=self.DiagramPlots_SHPage.showGroupFitsCheckbox.isChecked(),
             show_overall_fit=self.DiagramPlots_SHPage.showOverallFitCheckbox.isChecked(),
+            isochron_method=self.DiagramPlots_SHPage.isochronMethodCombo.currentData() or 'york',  # v3.8.92
 )
         result = Utilities.getSHStatistics(self.Dfilename, self.mask, self.parameters,
                                            style=self._get_plot_style())
