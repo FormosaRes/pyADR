@@ -159,17 +159,6 @@ def _show_diagram_plot_help(parent):
         ("References",    "參考文獻",        _HELP_REFS_HTML,     _HELP_REFS_HTML_ZH),
     ]
 
-    # top bar: language switch
-    bar = QtWidgets.QHBoxLayout()
-    bar.addWidget(QtWidgets.QLabel("Language / 語言:"))
-    langCombo = QtWidgets.QComboBox()
-    langCombo.addItem("English", "en")
-    langCombo.addItem("中文",     "zh")
-    langCombo.setCurrentIndex(0 if _HELP_LANG == "en" else 1)
-    bar.addWidget(langCombo)
-    bar.addStretch()
-    lay.addLayout(bar)
-
     tabs = QtWidgets.QTabWidget()
     lay.addWidget(tabs)
 
@@ -180,9 +169,18 @@ def _show_diagram_plot_help(parent):
         tabs.addTab(w, en_t)
         browsers.append((w, en_t, zh_t, en_h, zh_h))
 
+    # v3.8.91: bottom bar — CN/EN language toggle (bottom-left), Close (right).
+    btn_lang = QtWidgets.QPushButton()
+    btn_lang.setFixedWidth(56)
+    btn_lang.setToolTip("Switch language / 切換中英文")
     btn_close = QtWidgets.QPushButton("Close")
     btn_close.clicked.connect(dlg.accept)
-    lay.addWidget(btn_close, 0, QtCore.Qt.AlignRight)
+
+    bottom = QtWidgets.QHBoxLayout()
+    bottom.addWidget(btn_lang)
+    bottom.addStretch()
+    bottom.addWidget(btn_close)
+    lay.addLayout(bottom)
 
     def _apply_lang(lang):
         global _HELP_LANG
@@ -191,9 +189,11 @@ def _show_diagram_plot_help(parent):
             w.setHtml(en_h if lang == "en" else zh_h)
             tabs.setTabText(i, en_t if lang == "en" else zh_t)
         btn_close.setText("Close" if lang == "en" else "關閉")
+        # button shows the language you switch TO (EN → click for CN, vice-versa)
+        btn_lang.setText("CN" if lang == "en" else "EN")
 
-    langCombo.currentIndexChanged.connect(
-        lambda _i: _apply_lang(langCombo.currentData()))
+    btn_lang.clicked.connect(
+        lambda: _apply_lang("zh" if _HELP_LANG == "en" else "en"))
     _apply_lang(_HELP_LANG)
 
     dlg.exec_()

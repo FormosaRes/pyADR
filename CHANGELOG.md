@@ -8,6 +8,25 @@ GitHub Releases（tag）最新仍為 **v3.8.54（Latest，彙整 v3.8.9 → v3.8
 
 ---
 
+## V3.8.91（2026-06-22）— Help 語言切換改成左下角 CN/EN 按鈕
+
+使用者回報 v3.8.90 的頂部「Language / 語言」combo 不夠直覺，希望改成左下角一顆 CN/EN 切換鈕。
+
+### 做法（`NTNU_DataReduction._show_diagram_plot_help`）
+- 移除頂部語言 combo。
+- 底部列改成：左下角 `btn_lang`（CN/EN 切換鈕，固定寬 56px）＋ 右側 Close。
+- 鈕上文字顯示「切換後」的語言碼：英文模式顯示「CN」（按了變中文），中文模式顯示「EN」（按了變英文）。tooltip「Switch language / 切換中英文」。
+- 仍用 module global `_HELP_LANG` 記住 session 內選擇；切換即時換分頁內容 + tab 標題 + Close 鈕文字。
+
+### 影響
+- 純 UI 位置／元件調整，help 內容與計算皆不變。
+
+### 檔案改動
+- `NTNU_DataReduction.py`：`_show_diagram_plot_help` 底部列加 CN/EN toggle 鈕，移除頂部 combo。
+- `.work/.app_info.txt`：3.8.90 → 3.8.91
+
+---
+
 ## V3.8.90（2026-06-22）— Help 中英雙語切換 + 新增 σ(T₀) 分頁
 
 延續 v3.8.89。掃過 help 與 FORMULAS.md 後盤點缺口，並依使用者需求把 Formulas & References dialog 做成中英可切換。
