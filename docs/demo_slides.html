@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pyADR — DiagramPlot &amp; Argon Pipeline 功能介紹</title>
+<style>
+  :root{
+    --bg:#0f1419; --slidebg:#ffffff; --ink:#1a2733; --sub:#5a6b7a;
+    --accent:#1d6fa5; --accent2:#138a72; --warn:#c2410c; --gold:#d9a400;
+    --line:#d8dee4; --soft:#f5f6f4; --blue:#1d6fa5; --amber:#d9a400; --red:#c0392b;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  html,body{background:var(--bg);font-family:"Segoe UI","Microsoft JhengHei","PingFang TC",sans-serif;color:var(--ink)}
+  .deck{}
+  .slide{
+    position:relative;width:1280px;height:720px;margin:24px auto;background:var(--slidebg);
+    border-radius:10px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.45);
+    padding:54px 64px;display:flex;flex-direction:column;
+  }
+  .tag{display:inline-block;font-size:13px;letter-spacing:2px;color:var(--accent);font-weight:700;text-transform:uppercase;margin-bottom:10px}
+  h1{font-size:46px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
+  h2{font-size:34px;font-weight:800;letter-spacing:-.3px;margin-bottom:6px}
+  h2 .em{color:var(--accent)}
+  .rule{height:4px;width:64px;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;margin:14px 0 22px}
+  p,li{font-size:19px;line-height:1.55;color:var(--ink)}
+  .sub{color:var(--sub)}
+  .pageno{position:absolute;right:26px;bottom:18px;font-size:13px;color:var(--sub)}
+  .foot{position:absolute;left:64px;bottom:18px;font-size:13px;color:var(--sub);letter-spacing:.5px}
+  .cols{display:flex;gap:30px;flex:1;min-height:0}
+  .col{flex:1;min-width:0}
+  ul{margin-left:4px;list-style:none}
+  li{position:relative;padding-left:24px;margin:11px 0}
+  li::before{content:"";position:absolute;left:2px;top:11px;width:9px;height:9px;border-radius:2px;background:var(--accent);transform:rotate(45deg)}
+  li.g::before{background:var(--accent2)}
+  li.w::before{background:var(--warn)}
+  .card{background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:20px 22px}
+  .card h3{font-size:19px;color:var(--accent);margin-bottom:8px;display:flex;align-items:center;gap:8px}
+  table{border-collapse:collapse;width:100%;font-size:16.5px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#eef3f7;color:var(--accent);font-weight:700;font-size:14px;letter-spacing:.5px}
+  td.bad{color:var(--red)} td.good{color:var(--accent2);font-weight:600}
+  code,.mono{font-family:"Consolas","SF Mono",monospace;font-size:.92em;background:#eef1f3;padding:1px 6px;border-radius:5px;color:#163e57}
+  .pill{display:inline-block;font-size:13px;font-weight:700;padding:3px 11px;border-radius:999px;background:#e6f0f6;color:var(--accent);margin:0 6px 6px 0}
+  .pill.g{background:#e3f2ec;color:var(--accent2)}
+  .pill.gold{background:#fbf2d6;color:#9a7400}
+  .big{font-size:60px;font-weight:800;color:var(--accent);line-height:1}
+  .kpi{font-size:30px;font-weight:800;color:var(--accent2)}
+  .center{display:flex;flex-direction:column;justify-content:center;align-items:flex-start}
+  .lead{font-size:25px;line-height:1.5;font-weight:500}
+  .quote{border-left:5px solid var(--accent);background:var(--soft);padding:16px 22px;border-radius:0 10px 10px 0;font-size:21px;line-height:1.5}
+  .hint{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);color:#7c8a96;font-size:12px;background:rgba(0,0,0,.35);padding:5px 14px;border-radius:999px;z-index:50}
+  @media print{
+    html,body{background:#fff}
+    @page{size:1280px 720px;margin:0}
+    .slide{margin:0;border-radius:0;box-shadow:none;page-break-after:always;width:1280px;height:720px}
+    body.present .slide{display:flex !important}
+    .hint{display:none}
+  }
+  /* nav: show one slide at a time on screen */
+  body.present .slide{display:none}
+  body.present .slide.active{display:flex}
+</style>
+</head>
+<body class="present">
+
+<!-- 1 TITLE -->
+<section class="slide active center">
+  <span class="tag">Academia Sinica · NTNU ⁴⁰Ar/³⁹Ar Lab</span>
+  <h1>pyADR<br><span style="font-size:30px;font-weight:700;color:var(--sub)">DiagramPlot &amp; Argon Pipeline 功能介紹</span></h1>
+  <div class="rule" style="width:120px"></div>
+  <p class="lead" style="max-width:880px">把 ⁴⁰Ar/³⁹Ar data reduction 的 isochron 數學對齊現代文獻，<br>並做成可檢視、可調參的自動化流程與互動式判讀工具。</p>
+  <div style="margin-top:26px">
+    <span class="pill">DiagramPlot 數學修正</span>
+    <span class="pill">互動式 isochron</span>
+    <span class="pill g">Argon Pipeline 自動化</span>
+    <span class="pill g">內建判讀輔助</span>
+  </div>
+  <p class="sub" style="margin-top:30px;font-size:16px">報告人：An-Jun (Andrew) Liu　·　pyADR v3.8.88　·　2026</p>
+  <div class="foot">pyADR — Ar/Ar geochronology data reduction</div>
+  <div class="pageno">01</div>
+</section>
+
+<!-- 2 POSITIONING -->
+<section class="slide">
+  <span class="tag">定位</span>
+  <h2>我做了<span class="em">兩件事</span></h2>
+  <div class="rule"></div>
+  <div class="cols">
+    <div class="col card">
+      <h3>① DiagramPlot — 把數學做對</h3>
+      <ul>
+        <li>修正沿用多年、<b>影響每一份歷史 Int age 與 WMA</b> 的 isochron 公式 bug</li>
+        <li>全部對齊 community standard：<br>Vermeesch 2018/2024、Schaen 2021、IsoplotR</li>
+        <li>再把出圖升級成<b>互動判讀工具</b>（切方法、選 group、查公式）</li>
+      </ul>
+    </div>
+    <div class="col card" style="background:#eef6f2;border-color:#cfe6db">
+      <h3 style="color:var(--accent2)">② Argon Pipeline — 把流程自動化</h3>
+      <ul>
+        <li class="g">從 <code>.dat</code> 一路到年代，<b>三頁式流程</b>全自動</li>
+        <li class="g">T₀ / MassRatio / AgeCalc 每一步<b>都看得到、改得動</b></li>
+        <li class="g">內建 z-score、σ budget、MSWD 顏色等<b>判讀輔助</b></li>
+      </ul>
+    </div>
+  </div>
+  <div class="quote" style="margin-top:22px">先講「正確性」（有文獻撐腰的硬實力），再講「自動化與好用」。</div>
+  <div class="foot">定位</div><div class="pageno">02</div>
+</section>
+
+<!-- 3 DIAGRAMPLOT MATH -->
+<section class="slide">
+  <span class="tag">DiagramPlot · 數學核心</span>
+  <h2>修正 <span class="em">5 類</span> 公式 bug，每條都有 primary literature</h2>
+  <div class="rule"></div>
+  <table>
+    <tr><th style="width:18%">項目</th><th style="width:33%">舊版（錯）</th><th style="width:31%">修正後</th><th style="width:18%">文獻</th></tr>
+    <tr><td><b>Inverse isochron F</b></td><td class="bad"><code>F = 1/slope</code>；LS 用 trapped 36/40 當 F（物理錯誤）</td><td class="good"><code>F = −slope / intercept</code>（York convention）</td><td>Vermeesch 2024 / 2018</td></tr>
+    <tr><td><b>WMA 加權平均</b></td><td class="bad">loop 內 1/σ² 互消 → 退化成 <code>ΣTᵢ</code>（純加總）</td><td class="good"><code>Σ(T/σ²) / Σ(1/σ²)</code></td><td>Schaen 2021</td></tr>
+    <tr><td><b>MSWD 參考點</b></td><td class="bad">算術平均</td><td class="good">改用 WMA</td><td>Schaen 2021</td></tr>
+    <tr><td><b>σ_J 誤差傳播</b></td><td class="bad">括號錯位 → σ_J <b>高估數個數量級</b></td><td class="good"><code>(e^λt−1)/F_r²</code> 正確偏導</td><td>Bevington &amp; Robinson 1992</td></tr>
+    <tr><td><b>σ₃₆ / σ₃₉</b></td><td class="bad">corrections σ 被<b>雙重計算</b></td><td class="good">從 raw component 扣回 <code>σ²₃₆ₘ=σ²₃₆ₐ−σ²₃₆c…</code></td><td>quadrature 一致化</td></tr>
+  </table>
+  <div class="quote" style="margin-top:20px;font-size:18px">這幾條不是我自己想的，是把程式對齊 IsoplotR / Schaen 的 community convention。</div>
+  <div class="foot">DiagramPlot · 數學</div><div class="pageno">03</div>
+</section>
+
+<!-- 4 IMPACT -->
+<section class="slide">
+  <span class="tag">DiagramPlot · 影響範圍</span>
+  <h2>這些 bug <span style="color:var(--warn)">影響每一份過去的結果</span></h2>
+  <div class="rule"></div>
+  <div class="cols">
+    <div class="col">
+      <ul>
+        <li class="w"><b>SH 樣品 Int age</b>：舊版 F 用 1/slope → age 系統性偏低</li>
+        <li class="w"><b>LS 樣品 Int age</b>：舊版 F 用 trapped 36/40 → <b>完全錯</b></li>
+        <li class="w"><b>所有 WMA</b>：舊版等同 ΣTᵢ，不是加權平均</li>
+        <li class="w"><b>所有 MSWD</b>：舊版用算術平均當參考點</li>
+        <li class="w"><b>所有 σ_age</b>：舊版 σ_J 高估 → σ_age 整條系統性高估</li>
+      </ul>
+      <p class="sub" style="margin-top:8px">※ <b>age 中心值修正後不變</b> 的只有 σ_J 那條（只縮小誤差）。</p>
+    </div>
+    <div class="col card" style="background:#fbf3ee;border-color:#f0d3c2">
+      <h3 style="color:var(--warn)">⚠ 給老師的提醒</h3>
+      <p>已投稿 / 已發表結果若用到舊的 <b>Int age 或 WMA</b>，建議評估是否需要 <b>erratum</b>。</p>
+      <div style="margin-top:16px"></div>
+      <h3 style="color:var(--accent2)">✓ 怎麼證明修對了</h3>
+      <p><b>SYL31 LS</b>（Sylhet Trap 玄武岩）<br>論文值 <span class="kpi">115.4 ± 3.9 Ma</span><br>修正後 Date / WMA ≈ <b>115 Ma</b> ✔</p>
+    </div>
+  </div>
+  <div class="foot">DiagramPlot · 影響</div><div class="pageno">04</div>
+</section>
+
+<!-- 5 DIAGRAMPLOT INTERACTIVE -->
+<section class="slide">
+  <span class="tag">DiagramPlot · 互動功能</span>
+  <h2>從「靜態出圖」升級成 <span class="em">互動判讀工具</span></h2>
+  <div class="rule"></div>
+  <div class="cols">
+    <div class="col" style="flex:1.15">
+      <!-- isochron mockup -->
+      <svg viewBox="0 0 520 360" width="100%" style="background:#fff;border:1px solid var(--line);border-radius:10px">
+        <!-- infoLabel bar -->
+        <rect x="0" y="0" width="520" height="26" fill="#eceff1"/>
+        <text x="10" y="17" font-size="11" fill="#5a6b7a" font-family="monospace">x=0.01182  y=0.00251 ｜ Regression: York 2004 ｜ MSWD 1.07 (n=6)</text>
+        <!-- axes -->
+        <line x1="60" y1="40" x2="60" y2="320" stroke="#9aa7b2"/>
+        <line x1="60" y1="320" x2="500" y2="320" stroke="#9aa7b2"/>
+        <text x="250" y="345" font-size="12" fill="#5a6b7a" text-anchor="middle">³⁹Ar/⁴⁰Ar</text>
+        <text x="22" y="180" font-size="12" fill="#5a6b7a" transform="rotate(-90 22 180)" text-anchor="middle">³⁶Ar/⁴⁰Ar</text>
+        <!-- regression line -->
+        <line x1="60" y1="90" x2="470" y2="300" stroke="#1d6fa5" stroke-width="2.5"/>
+        <!-- atm marker as red X -->
+        <g stroke="#c0392b" stroke-width="2.4">
+          <line x1="56" y1="86" x2="64" y2="94"/><line x1="64" y1="86" x2="56" y2="94"/>
+        </g>
+        <text x="72" y="86" font-size="10.5" fill="#c0392b">atm ⁴⁰/³⁶ = 1/intercept</text>
+        <!-- data points: group A (blue) and group B (teal) -->
+        <g fill="#1d6fa5">
+          <circle cx="120" cy="118" r="5.5"/><circle cx="165" cy="142" r="5.5"/><circle cx="205" cy="165" r="5.5"/>
+        </g>
+        <g fill="#138a72">
+          <circle cx="300" cy="218" r="5.5"/><circle cx="360" cy="252" r="5.5"/><circle cx="430" cy="290" r="5.5"/>
+        </g>
+        <!-- group X-intercept markers -->
+        <g stroke="#138a72" stroke-width="2.2"><line x1="462" y1="296" x2="470" y2="304"/><line x1="470" y1="296" x2="462" y2="304"/></g>
+        <text x="335" y="200" font-size="10.5" fill="#138a72">group fit</text>
+        <text x="135" y="106" font-size="10.5" fill="#1d6fa5">group fit</text>
+      </svg>
+      <p class="sub" style="margin-top:8px;font-size:14px">Inverse isochron：滑鼠座標 + 回歸方法/MSWD 併入上方 infoLabel；大氣值與 group 交點用紅/彩 <b>X</b>。</p>
+    </div>
+    <div class="col">
+      <ul>
+        <li><b>方法可切換</b>：<span class="mono">OLS ↔ York 2004</span> dropdown，即時 re-render</li>
+        <li><b>互動選點</b>：圖上直接點 data point 分 group，各自算 isochron（初開頁面就能點）</li>
+        <li><b>infoLabel</b>：即時顯示滑鼠資料座標 + 回歸 MSWD</li>
+        <li class="g"><b>marker 修正</b>：大氣值紅圓→紅 X、group 交點→彩色 X，不再被誤認 data point</li>
+        <li class="g"><b>Int age std</b> 標籤補回（之前被截斷空白）</li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot">DiagramPlot · 互動</div><div class="pageno">05</div>
+</section>
+
+<!-- 6 PLOT CONTROLS + HELP -->
+<section class="slide">
+  <span class="tag">DiagramPlot · 控制與輔助</span>
+  <h2>軸全可調，公式<span class="em">當場查得到</span></h2>
+  <div class="rule"></div>
+  <div class="cols">
+    <div class="col card">
+      <h3>Plot Controls 面板</h3>
+      <ul>
+        <li><b>X/Y 軸範圍 per-panel 獨立</b>（isochron 與三譜尺度天差地遠，不再綁同一組軸）</li>
+        <li><b>Style</b>：pyADR / Classic PDF 兩種出圖風格</li>
+        <li><b>Log Y</b>（Ca/K、Cl/K、Degassing）、<b>Group Span</b></li>
+        <li>legend / group fits / overall fit 開關</li>
+      </ul>
+    </div>
+    <div class="col card" style="background:#eef6f2;border-color:#cfe6db">
+      <h3 style="color:var(--accent2)">Main / Help 選單 + 內建公式</h3>
+      <p style="margin-bottom:8px">menubar：<b>Main</b>（回首頁）· <b>Help → Formulas &amp; References</b></p>
+      <p class="sub" style="margin-bottom:6px">Help 對話框 7 個 tab，HTML 渲染含表格 / 上下標 / 文獻外連：</p>
+      <div>
+        <span class="pill gold">Plateau / WMA</span><span class="pill gold">Isochron</span>
+        <span class="pill gold">MSWD</span><span class="pill gold">Age formula</span>
+        <span class="pill gold">Ar components</span><span class="pill gold">3D Plane Fit</span>
+        <span class="pill gold">References</span>
+      </div>
+      <p style="margin-top:12px;font-size:16px">「看圖看到一半想確認公式，當場查得到，引文都列好。」</p>
+    </div>
+  </div>
+  <p class="sub" style="margin-top:18px">7 張圖：Age Spectrum · ⁴⁰Ar(r)% · Inverse Isochron · Normal Isochron · Ca/K · Cl/K · Degassing</p>
+  <div class="foot">DiagramPlot · 控制</div><div class="pageno">06</div>
+</section>
+
+<!-- 7 PIPELINE FLOW -->
+<section class="slide">
+  <span class="tag">Argon Pipeline · 總覽</span>
+  <h2>三頁式流程：<span class="em">.dat → 年代</span>，每步可檢視</h2>
+  <div class="rule"></div>
+  <svg viewBox="0 0 1150 230" width="100%" style="margin-top:6px">
+    <defs><marker id="arr" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#1d6fa5"/></marker></defs>
+    <!-- nodes -->
+    <g font-family="Segoe UI">
+      <rect x="10" y="80" width="120" height="70" rx="12" fill="#eef3f7" stroke="#1d6fa5"/>
+      <text x="70" y="112" text-anchor="middle" font-size="16" font-weight="700" fill="#163e57">.dat</text>
+      <text x="70" y="132" text-anchor="middle" font-size="11" fill="#5a6b7a">原始訊號</text>
+
+      <rect x="190" y="70" width="190" height="90" rx="12" fill="#dceaf3" stroke="#1d6fa5" stroke-width="2"/>
+      <text x="285" y="100" text-anchor="middle" font-size="17" font-weight="800" fill="#163e57">① Calculate T₀</text>
+      <text x="285" y="122" text-anchor="middle" font-size="12" fill="#5a6b7a">挑 cycle · 定截距</text>
+      <text x="285" y="140" text-anchor="middle" font-size="11" fill="#138a72">z-score 著色 · σ 雙軌</text>
+
+      <rect x="440" y="70" width="190" height="90" rx="12" fill="#dceaf3" stroke="#1d6fa5" stroke-width="2"/>
+      <text x="535" y="100" text-anchor="middle" font-size="17" font-weight="800" fill="#163e57">② MassRatio</text>
+      <text x="535" y="122" text-anchor="middle" font-size="12" fill="#5a6b7a">質量歧視校正</text>
+      <text x="535" y="140" text-anchor="middle" font-size="11" fill="#5a6b7a">對齊 NTNU 格式</text>
+
+      <rect x="690" y="70" width="200" height="90" rx="12" fill="#dceaf3" stroke="#1d6fa5" stroke-width="2"/>
+      <text x="790" y="100" text-anchor="middle" font-size="17" font-weight="800" fill="#163e57">③ AgeCalc + Datum</text>
+      <text x="790" y="122" text-anchor="middle" font-size="12" fill="#5a6b7a">York isochron · plateau</text>
+      <text x="790" y="140" text-anchor="middle" font-size="11" fill="#138a72">9 個分頁 · 可改 J 重算</text>
+
+      <rect x="950" y="80" width="180" height="70" rx="12" fill="#e3f2ec" stroke="#138a72" stroke-width="2"/>
+      <text x="1040" y="108" text-anchor="middle" font-size="16" font-weight="800" fill="#0f6b56">年代 ± σ</text>
+      <text x="1040" y="130" text-anchor="middle" font-size="11" fill="#5a6b7a">表 · 圖 · datum · export</text>
+
+      <!-- arrows -->
+      <line x1="132" y1="115" x2="186" y2="115" stroke="#1d6fa5" stroke-width="2.5" marker-end="url(#arr)"/>
+      <line x1="382" y1="115" x2="436" y2="115" stroke="#1d6fa5" stroke-width="2.5" marker-end="url(#arr)"/>
+      <line x1="632" y1="115" x2="686" y2="115" stroke="#1d6fa5" stroke-width="2.5" marker-end="url(#arr)"/>
+      <line x1="892" y1="115" x2="946" y2="115" stroke="#1d6fa5" stroke-width="2.5" marker-end="url(#arr)"/>
+    </g>
+    <!-- side rail -->
+    <rect x="190" y="186" width="700" height="34" rx="8" fill="#f5f6f4" stroke="#d8dee4"/>
+    <text x="540" y="208" text-anchor="middle" font-size="13" fill="#5a6b7a">左側固定按鈕列 ｜ <tspan font-weight="700" fill="#1d6fa5">Parameter</tspan> 鈕可隨時跳去調 J 等常數再切回，session 不丟</text>
+  </svg>
+  <div class="quote" style="margin-top:16px;font-size:18px">不是黑盒子：T₀ 挑哪些 cycle、用哪條 σ、plateau 選哪幾階，全部攤在 UI 上可檢視、可手動覆蓋。</div>
+  <div class="foot">Argon Pipeline · 流程</div><div class="pageno">07</div>
+</section>
+
+<!-- 8 CALC T0 -->
+<section class="slide">
+  <span class="tag">Argon Pipeline · ① Calculate T₀</span>
+  <h2>智慧挑訊號，<span class="em">每顆 cycle 都看得到為什麼</span></h2>
+  <div class="rule"></div>
+  <div class="cols">
+    <div class="col">
+      <!-- mockup cycle grid + boxplot -->
+      <svg viewBox="0 0 520 320" width="100%" style="background:#fff;border:1px solid var(--line);border-radius:10px">
+        <!-- chips -->
+        <rect x="14" y="12" width="492" height="26" rx="6" fill="#eceff1"/>
+        <text x="24" y="29" font-size="12" fill="#163e57" font-family="monospace">Sample: NO.65 ｜ Mineral: Muscovite ｜ Mode: Auto ｜ Fit: Linear</text>
+        <!-- step tabs -->
+        <g font-size="11" font-family="Segoe UI">
+          <rect x="14" y="48" width="56" height="22" rx="4" fill="#dceaf3" stroke="#1d6fa5"/><text x="42" y="63" text-anchor="middle" fill="#163e57">Blank</text>
+          <rect x="74" y="48" width="50" height="22" rx="4" fill="#f0f2f4"/><text x="99" y="63" text-anchor="middle" fill="#5a6b7a">700°C</text>
+          <rect x="128" y="48" width="50" height="22" rx="4" fill="#f0f2f4"/><text x="153" y="63" text-anchor="middle" fill="#5a6b7a">900°C</text>
+          <rect x="182" y="48" width="56" height="22" rx="4" fill="#f0f2f4"/><text x="210" y="63" text-anchor="middle" fill="#5a6b7a">1100°C</text>
+        </g>
+        <text x="14" y="92" font-size="12" font-weight="700" fill="#163e57">Cycle 選取（robust z-score 著色）</text>
+        <!-- cycle buttons -->
+        <g font-size="11" font-family="monospace">
+          <!-- row -->
+          <rect x="14" y="100" width="44" height="30" rx="5" fill="#1d6fa5"/><text x="36" y="119" text-anchor="middle" fill="#fff">c1</text>
+          <rect x="62" y="100" width="44" height="30" rx="5" fill="#1d6fa5"/><text x="84" y="119" text-anchor="middle" fill="#fff">c2</text>
+          <rect x="110" y="100" width="44" height="30" rx="5" fill="#d9a400"/><text x="132" y="119" text-anchor="middle" fill="#fff">c3</text>
+          <rect x="158" y="100" width="44" height="30" rx="5" fill="#1d6fa5"/><text x="180" y="119" text-anchor="middle" fill="#fff">c4</text>
+          <rect x="206" y="100" width="44" height="30" rx="5" fill="#c0392b"/><text x="228" y="119" text-anchor="middle" fill="#fff">c5</text>
+          <rect x="254" y="100" width="44" height="30" rx="5" fill="#1d6fa5"/><text x="276" y="119" text-anchor="middle" fill="#fff">c6</text>
+          <rect x="302" y="100" width="44" height="30" rx="5" fill="#eceff1" stroke="#c0392b"/><text x="324" y="119" text-anchor="middle" fill="#c0392b">c7</text>
+        </g>
+        <!-- legend -->
+        <g font-size="10.5" font-family="Segoe UI">
+          <rect x="14" y="140" width="11" height="11" fill="#1d6fa5"/><text x="30" y="150" fill="#5a6b7a">healthy z&lt;1.8</text>
+          <rect x="120" y="140" width="11" height="11" fill="#d9a400"/><text x="136" y="150" fill="#5a6b7a">suspicious</text>
+          <rect x="220" y="140" width="11" height="11" fill="#c0392b"/><text x="236" y="150" fill="#5a6b7a">outlier z≥3</text>
+          <rect x="320" y="140" width="11" height="11" fill="#eceff1" stroke="#c0392b"/><text x="336" y="150" fill="#5a6b7a">excluded</text>
+        </g>
+        <!-- T0 range boxplot -->
+        <text x="14" y="178" font-size="12" font-weight="700" fill="#163e57">Signal T₀ Range（挑 blank cycle）</text>
+        <line x1="40" y1="300" x2="500" y2="300" stroke="#9aa7b2"/>
+        <line x1="40" y1="190" x2="40" y2="300" stroke="#9aa7b2"/>
+        <!-- blank box -->
+        <rect x="70" y="250" width="40" height="30" fill="#e6f0f6" stroke="#1d6fa5"/><line x1="90" y1="240" x2="90" y2="250" stroke="#1d6fa5"/><line x1="90" y1="280" x2="90" y2="292" stroke="#1d6fa5"/>
+        <text x="90" y="314" font-size="10" text-anchor="middle" fill="#5a6b7a">Blank</text>
+        <!-- yellow current band -->
+        <rect x="150" y="190" width="60" height="110" fill="#fdf3cf" opacity=".7"/>
+        <rect x="160" y="225" width="40" height="34" fill="#e6f0f6" stroke="#1d6fa5"/><line x1="180" y1="214" x2="180" y2="225" stroke="#1d6fa5"/><line x1="180" y1="259" x2="180" y2="272" stroke="#1d6fa5"/>
+        <text x="180" y="314" font-size="10" text-anchor="middle" font-weight="700" fill="#9a7400">700°C ◀</text>
+        <rect x="250" y="222" width="40" height="30" fill="#e6f0f6" stroke="#1d6fa5"/><text x="270" y="314" font-size="10" text-anchor="middle" fill="#5a6b7a">900°C</text>
+        <rect x="340" y="232" width="40" height="26" fill="#e6f0f6" stroke="#1d6fa5"/><text x="360" y="314" font-size="10" text-anchor="middle" fill="#5a6b7a">1100°C</text>
+        <rect x="430" y="244" width="40" height="22" fill="#e6f0f6" stroke="#1d6fa5"/><text x="450" y="314" font-size="10" text-anchor="middle" fill="#5a6b7a">1300°C</text>
+      </svg>
+    </div>
+    <div class="col">
+      <ul>
+        <li><b>Serial 挑 cycle</b>：按物理依賴順序 Ar37→Ar36→Ar38/39/40，不再各 isotope 獨立亂挑</li>
+        <li><b>z-score 著色</b>：MAD-based robust z，藍/琥珀/紅一眼看出 outlier，hover 顯示 t / mV / z</li>
+        <li><b>σ 雙軌可切換</b>：<span class="mono">pcov[-1,-1]</span>（Li 2019）vs <span class="mono">std(|r|)/√n</span>，圖上同時印兩式</li>
+        <li class="g"><b>T₀ Range 盒鬚圖</b>：blank box + 各 step T₀±σ，黃帶標目前 step，輔助挑 blank cycle</li>
+      </ul>
+      <div class="card" style="margin-top:10px;background:#eef6f2;border-color:#cfe6db;padding:14px 16px">
+        <p style="font-size:16px"><b>對老師強調：</b>AutoPipeline 的 σ_T0 改 SE-from-covariance，但<b>主程式 CalcT0Page 您指定的 <span class="mono">std(|r|)/√n</span> 我沒動。</b></p>
+      </div>
+    </div>
+  </div>
+  <div class="foot">Argon Pipeline · T₀</div><div class="pageno">08</div>
+</section>
+
+<!-- 9 AGECALC -->
+<section class="slide">
+  <span class="tag">Argon Pipeline · ③ AgeCalc + Datum</span>
+  <h2>Excel 風格 <span class="em">9 分頁</span>：左圖 + 右資訊面板</h2>
+  <div class="rule"></div>
+  <div class="cols">
+    <div class="col" style="flex:1.2">
+      <svg viewBox="0 0 560 320" width="100%" style="background:#fff;border:1px solid var(--line);border-radius:10px">
+        <!-- control bar -->
+        <rect x="10" y="10" width="540" height="28" rx="6" fill="#eceff1"/>
+        <text x="20" y="28" font-size="11.5" fill="#163e57" font-family="monospace">J = 0.0008912</text>
+        <rect x="170" y="14" width="70" height="20" rx="4" fill="#fff" stroke="#9aa7b2"/><text x="205" y="28" font-size="10.5" text-anchor="middle" fill="#5a6b7a">atm 298.56</text>
+        <rect x="250" y="14" width="92" height="20" rx="4" fill="#138a72"/><text x="296" y="28" font-size="11" text-anchor="middle" fill="#fff" font-weight="700">Recalculate</text>
+        <text x="440" y="28" font-size="11" fill="#c2410c" font-weight="700">MSWD 1.07 ext</text>
+        <!-- age spectrum plot -->
+        <line x1="46" y1="60" x2="46" y2="250" stroke="#9aa7b2"/><line x1="46" y1="250" x2="430" y2="250" stroke="#9aa7b2"/>
+        <text x="240" y="272" font-size="11" text-anchor="middle" fill="#5a6b7a">Cumulative ³⁹Ar(K) %</text>
+        <text x="22" y="155" font-size="11" fill="#5a6b7a" transform="rotate(-90 22 155)" text-anchor="middle">Age (Ma)</text>
+        <!-- staircase steps with plateau highlight -->
+        <g stroke="#1d6fa5" stroke-width="2.5" fill="none">
+          <rect x="46" y="150" width="40" height="18" fill="#dceaf3"/>
+          <rect x="86" y="135" width="70" height="14" fill="#cfe6db"/>
+          <rect x="156" y="132" width="90" height="12" fill="#cfe6db"/>
+          <rect x="246" y="133" width="80" height="12" fill="#cfe6db"/>
+          <rect x="326" y="148" width="60" height="16" fill="#dceaf3"/>
+        </g>
+        <!-- plateau band -->
+        <rect x="86" y="128" width="240" height="22" fill="#138a72" opacity=".12"/>
+        <text x="206" y="118" font-size="11" text-anchor="middle" fill="#0f6b56" font-weight="700">Plateau 9.77 ± 0.28 Ma (2σ)</text>
+        <!-- bottom tabs -->
+        <g font-size="10" font-family="Segoe UI">
+          <rect x="10" y="286" width="64" height="24" fill="#1d6fa5"/><text x="42" y="302" text-anchor="middle" fill="#fff">Summary</text>
+          <rect x="76" y="286" width="50" height="24" fill="#eef3f7"/><text x="101" y="302" text-anchor="middle" fill="#5a6b7a">Datum</text>
+          <rect x="128" y="286" width="84" height="24" fill="#eef3f7"/><text x="170" y="302" text-anchor="middle" fill="#5a6b7a">Age Spectrum</text>
+          <rect x="214" y="286" width="60" height="24" fill="#eef3f7"/><text x="244" y="302" text-anchor="middle" fill="#5a6b7a">⁴⁰Ar(r)%</text>
+          <rect x="276" y="286" width="58" height="24" fill="#eef3f7"/><text x="305" y="302" text-anchor="middle" fill="#5a6b7a">Inverse</text>
+          <rect x="336" y="286" width="56" height="24" fill="#eef3f7"/><text x="364" y="302" text-anchor="middle" fill="#5a6b7a">Normal</text>
+          <rect x="394" y="286" width="44" height="24" fill="#eef3f7"/><text x="416" y="302" text-anchor="middle" fill="#5a6b7a">Ca/K</text>
+          <rect x="440" y="286" width="44" height="24" fill="#eef3f7"/><text x="462" y="302" text-anchor="middle" fill="#5a6b7a">Cl/K</text>
+          <rect x="486" y="286" width="64" height="24" fill="#eef3f7"/><text x="518" y="302" text-anchor="middle" fill="#5a6b7a">Degassing</text>
+        </g>
+      </svg>
+    </div>
+    <div class="col">
+      <ul>
+        <li><b>9 分頁</b>：Summary · Datum · Age Spectrum · ⁴⁰Ar(r)% · Inverse · Normal · Ca/K · Cl/K · Degassing</li>
+        <li><b>York 2004 isochron</b> + Wendt-Carl 1991 <b>√MSWD 外部誤差</b>（MSWD&gt;1 誠實放大 σ）</li>
+        <li><b>plateau 可手動勾</b> 或 Auto-plateau；改完即時更新</li>
+        <li class="g"><b>可編輯 J + Recalculate</b>：走完整 pipeline 重算，表 / banner / 圖 / datum 一致更新</li>
+        <li class="g"><b>Plot Controls</b>：軸範圍、Style、Log Y、Group Span 全可調</li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot">Argon Pipeline · AgeCalc</div><div class="pageno">09</div>
+</section>
+
+<!-- 10 INTERPRETATION AIDS -->
+<section class="slide">
+  <span class="tag">Argon Pipeline · 判讀輔助</span>
+  <h2>不用心算就知道<span class="em">數據健不健康</span></h2>
+  <div class="rule"></div>
+  <div class="cols">
+    <div class="col card">
+      <h3>σ uncertainty budget</h3>
+      <p class="sub" style="margin-bottom:10px">total fusion σ² 拆三來源，一眼分 J-limited / signal-limited</p>
+      <svg viewBox="0 0 360 56" width="100%">
+        <rect x="0" y="14" width="54" height="26" fill="#1d6fa5"/><text x="27" y="31" font-size="11" text-anchor="middle" fill="#fff">J 15%</text>
+        <rect x="54" y="14" width="262" height="26" fill="#138a72"/><text x="185" y="31" font-size="11" text-anchor="middle" fill="#fff">⁴⁰Ar* 73%</text>
+        <rect x="316" y="14" width="44" height="26" fill="#d9a400"/><text x="338" y="31" font-size="10" text-anchor="middle" fill="#fff">³⁹K 12%</text>
+      </svg>
+    </div>
+    <div class="col card" style="background:#eef6f2;border-color:#cfe6db">
+      <h3 style="color:var(--accent2)">³⁶Ar blank → Inverse Isochron 敏感度</h3>
+      <ul>
+        <li class="g">滑桿拉 ³⁶ blank ×k，看點垂直滑動、trapped ⁴⁰/³⁶ 與 age 怎麼動</li>
+        <li class="g">即時讀數 <span class="mono">trapped = 1/intercept</span>、<span class="mono">age (F=−slope/intercept)</span></li>
+        <li class="g">純 what-if 預覽，<b>不改任何科學輸出</b></li>
+      </ul>
+    </div>
+  </div>
+  <div class="cols" style="flex:0;margin-top:18px">
+    <div class="col card" style="padding:14px 18px"><h3 style="margin-bottom:4px">MSWD 顏色提示</h3><p class="sub" style="font-size:16px">MSWD&gt;1 → banner 標「ext」，σ_age ×√MSWD（對齊 IsoplotR model-1）</p></div>
+    <div class="col card" style="padding:14px 18px"><h3 style="margin-bottom:4px">⁴⁰Ar(r)% &gt; 100% 警示</h3><p class="sub" style="font-size:16px">net ³⁶Ar(atm)&lt;0 自動標紅，提示 ³⁶ blank 扣過頭</p></div>
+  </div>
+  <div class="foot">Argon Pipeline · 判讀</div><div class="pageno">10</div>
+</section>
+
+<!-- 11 VALIDATION -->
+<section class="slide">
+  <span class="tag">驗證</span>
+  <h2>怎麼讓老師<span class="em">相信數字</span></h2>
+  <div class="rule"></div>
+  <div class="cols">
+    <div class="col card center" style="align-items:center;text-align:center">
+      <p class="sub">標準樣品（K-rich 雲母）</p>
+      <div class="kpi" style="font-size:26px;margin:6px 0">NO.65 muscovite</div>
+      <p style="font-size:16px">irradiation 0621-01C</p>
+      <div class="big" style="margin-top:14px">9.77<span style="font-size:24px">± 0.28 Ma</span></div>
+      <p class="sub" style="margin-top:6px">plateau WMA 目標值</p>
+    </div>
+    <div class="col card center" style="align-items:center;text-align:center;background:#eef6f2;border-color:#cfe6db">
+      <p class="sub">論文對照（玄武岩）</p>
+      <div class="kpi" style="font-size:26px;margin:6px 0">SYL31 LS</div>
+      <p style="font-size:16px">Sylhet Trap 玄武岩</p>
+      <div class="big" style="margin-top:14px;color:var(--accent2)">115.4<span style="font-size:24px">± 3.9 Ma</span></div>
+      <p class="sub" style="margin-top:6px">修正後 Date / WMA ≈ 115 Ma ✔</p>
+    </div>
+    <div class="col card center" style="align-items:center;text-align:center">
+      <p class="sub">第三方交叉比對</p>
+      <div class="kpi" style="font-size:26px;margin:6px 0">IsoplotR</div>
+      <p style="font-size:16px">同一份 0621-01C</p>
+      <div style="margin-top:14px;font-size:22px;font-weight:800;color:var(--accent)">MSWD · p(χ²)<br>對得上</div>
+      <p class="sub" style="margin-top:6px">York / inverse isochron 一致</p>
+    </div>
+  </div>
+  <div class="foot">驗證</div><div class="pageno">11</div>
+</section>
+
+<!-- 12 CLOSING -->
+<section class="slide center">
+  <span class="tag">小結</span>
+  <h2 style="font-size:40px">把 pyADR 從「能跑」做到<span class="em">「能信、好用」</span></h2>
+  <div class="rule" style="width:120px"></div>
+  <div class="cols" style="flex:0;margin-top:8px">
+    <div class="col">
+      <ul>
+        <li><b>DiagramPlot</b>：5 類 isochron 公式對齊文獻 + 互動選點 / 切方法 / 內建公式查詢</li>
+        <li class="g"><b>Argon Pipeline</b>：.dat→年代三頁自動化，每步可檢視、可調 J 重算</li>
+        <li><b>判讀輔助</b>：z-score、σ budget、MSWD 顏色、敏感度 what-if</li>
+        <li class="g"><b>驗證</b>：NO.65 9.77 Ma、SYL31 115 Ma、IsoplotR 交叉比對</li>
+      </ul>
+    </div>
+    <div class="col card" style="background:#eef6f2;border-color:#cfe6db">
+      <h3 style="color:var(--accent2)">下一步（已知 backlog）</h3>
+      <ul>
+        <li class="g"><span class="mono">LAMBDA_K</span> 正式定義為 Renne 2010 (5.531e-10)</li>
+        <li class="g">plateau 的 σ budget + w/o-J 分析誤差</li>
+        <li class="g">Errorchron Model 3 / anchored isochron（少 step 備援）</li>
+      </ul>
+    </div>
+  </div>
+  <p class="lead" style="margin-top:24px">謝謝老師，歡迎指教 🙏</p>
+  <div class="foot">An-Jun (Andrew) Liu · pyADR v3.8.88</div><div class="pageno">12</div>
+</section>
+
+<div class="hint">← / → 翻頁 ·  F 全螢幕 ·  P 列印 (匯出 PDF) ·  G 一覽模式</div>
+
+<script>
+  const slides=[...document.querySelectorAll('.slide')];
+  let i=0;
+  function show(n){i=Math.max(0,Math.min(slides.length-1,n));slides.forEach((s,k)=>s.classList.toggle('active',k===i));}
+  function grid(){document.body.classList.toggle('present');}
+  document.addEventListener('keydown',e=>{
+    if(e.key==='ArrowRight'||e.key==='PageDown'||e.key===' '){show(i+1);e.preventDefault();}
+    else if(e.key==='ArrowLeft'||e.key==='PageUp'){show(i-1);}
+    else if(e.key==='Home'){show(0);} else if(e.key==='End'){show(slides.length-1);}
+    else if(e.key.toLowerCase()==='f'){if(!document.fullscreenElement)document.documentElement.requestFullscreen();else document.exitFullscreen();}
+    else if(e.key.toLowerCase()==='p'){document.body.classList.remove('present');window.print();}
+    else if(e.key.toLowerCase()==='g'){grid();}
+  });
+  show(0);
+</script>
+</body>
+</html>
