@@ -10,7 +10,7 @@
     --accent:#1d6fa5; --accent2:#138a72; --warn:#c2410c; --gold:#d9a400;
     --line:#d8dee4; --soft:#f5f6f4; --blue:#1d6fa5; --amber:#d9a400; --red:#c0392b;
   }
-  *{box-sizing:border-box;margin:0;padding:0}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   html,body{background:var(--bg);font-family:"Segoe UI","Microsoft JhengHei","PingFang TC",sans-serif;color:var(--ink)}
   .deck{}
   .slide{
@@ -52,7 +52,9 @@
   .hint{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);color:#7c8a96;font-size:12px;background:rgba(0,0,0,.35);padding:5px 14px;border-radius:999px;z-index:50}
   @media print{
     html,body{background:#fff}
-    .slide{margin:0;border-radius:0;box-shadow:none;page-break-after:always;width:100%;height:100vh}
+    @page{size:1280px 720px;margin:0}
+    .slide{margin:0;border-radius:0;box-shadow:none;page-break-after:always;width:1280px;height:720px}
+    body.present .slide{display:flex !important}
     .hint{display:none}
   }
   /* nav: show one slide at a time on screen */
