@@ -2105,7 +2105,7 @@ class App():
         try:
             if not hasattr(Utilities, 'set_style_overrides'):
                 QtWidgets.QMessageBox.warning(
-                    self, 'Style Editor',
+                    self.widget, 'Style Editor',
                     'Utilities.py 版本過舊(缺 set_style_overrides)。\n'
                     '請把 DEV 的 Utilities.py 同步到執行資料夾後重開。')
                 return
@@ -2120,8 +2120,13 @@ class App():
             if dlg is None:
                 work = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                     '.work')
+                # parent must be a QWidget; App is a plain controller, not a
+                # widget, so use self.widget (the top-level QStackedWidget).
+                # Passing App raised TypeError in QDialog.__init__ and aborted
+                # the app on gear click (v3.9.2).
                 dlg = DiagramStyleEditor(
-                    self, host_get_style=self._get_plot_style, on_apply=_apply,
+                    self.widget,
+                    host_get_style=self._get_plot_style, on_apply=_apply,
                     work_dir=work, current_target=self._current_sh_target())
                 self._style_editor = dlg
             dlg.show()
@@ -2130,7 +2135,7 @@ class App():
         except Exception:
             import traceback
             QtWidgets.QMessageBox.critical(
-                self, 'Style Editor 開啟失敗', traceback.format_exc())
+                self.widget, 'Style Editor 開啟失敗', traceback.format_exc())
 
     def _dfs_load_panel_into_spinboxes(self):
         """DFS only: load the selected panel's saved (xlim, ylim) into the

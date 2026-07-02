@@ -8,6 +8,33 @@ GitHub Releases（tag）最新仍為 **v3.8.54（Latest，彙整 v3.8.9 → v3.8
 
 ---
 
+## V3.9.2（2026-07-02）— 修 DiagramPlot SH 按 ⚙ 一按就整個程式關閉（crash）
+
+使用者回報：DiagramPlot SH 按 ⚙ 開 Style Editor，視窗還沒出來整個 app 就直接關閉，且沒有任何錯誤視窗（v3.9.0 aaee652 加的 try/except 守衛沒擋住）。
+
+### 根因（faulthandler / 真實 traceback）
+`NTNU_DataReduction.App` 是純控制器類別，**不是** QWidget（QApplication 與各頁面是它的屬性）。`_open_style_editor` 卻用 `DiagramStyleEditor(self, ...)` 把 `App` 當 parent 傳給 `QDialog.__init__` →
+`TypeError: QDialog argument 1 has unexpected type 'App'`。
+接著守衛的 `QtWidgets.QMessageBox.critical(self, ...)` **又**把 `App` 當 parent → 再拋一次 TypeError → 未捕捉 → PyQt5 直接 abort 整個進程。這就是「一按就關、連錯誤框都沒有」的原因。AutoPipeline 端在 `AgeCalcPage(QWidget)` 內，`self` 本身是 widget，不受影響。
+
+### 修法（`NTNU_DataReduction.py` `_open_style_editor`）
+- dialog parent 由 `self` 改為 `self.widget`（App 的頂層 `QStackedWidget`，是 QWidget）。
+- 守衛內 warning / critical 兩個 QMessageBox 的 parent 一併由 `self` 改 `self.widget`，避免例外處理本身又炸。
+
+### 影響
+- 純 UI/parent 修正，**不動科學輸出**，NO.65 驗證不受影響。
+- DiagramPlot SH 按 ⚙ 正常開 Style Editor，不再閃退。
+
+### 驗證
+- `ast.parse` 通過。
+- 以 QStackedWidget 當 parent 實測建構 DiagramStyleEditor 成功；以非 widget 當 parent 精準重現原始 `TypeError`（證明就是此因）。
+
+### 檔案改動
+- `NTNU_DataReduction.py`：`_open_style_editor` 三處 parent `self` → `self.widget`。
+- `.work/.app_info.txt`：3.9.1 → 3.9.2
+
+---
+
 ## V3.9.1（2026-07-02）— 修更新檢查誤報（本地比 GitHub 新時仍跳「有更新」）
 
 使用者回報：啟動 toast 顯示「pyADR Update Available: v3.8.93 / You're on v3.9.0」——本地明明比較新，卻被通知去更新到舊版。
