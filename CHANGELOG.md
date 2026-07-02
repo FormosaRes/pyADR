@@ -8,6 +8,32 @@ GitHub Releases（tag）最新仍為 **v3.8.54（Latest，彙整 v3.8.9 → v3.8
 
 ---
 
+## V3.9.1（2026-07-02）— 修更新檢查誤報（本地比 GitHub 新時仍跳「有更新」）
+
+使用者回報：啟動 toast 顯示「pyADR Update Available: v3.8.93 / You're on v3.9.0」——本地明明比較新，卻被通知去更新到舊版。
+
+### 根因
+`_bg_check_update` 與 `checkVersion` 的版本比較用 `current == latest`，只判斷「相不相等」，不看大小。抓 `main` 的 `.app_info.txt` 版本與本地一不相同就報「有更新」。依現行工作流（main 版本號會領先 GitHub Release、開發機本地也常領先，raw.githubusercontent 又有約 5 分鐘 CDN 快取），本地版本領先或短暫不一致時就會誤報。
+
+### 修法（`NTNU_DataReduction.py`）
+- 新增 `App._ver_newer(remote, local)` 靜態方法：去 `v` 前綴、`[.\-_]` 切段、非數字段落當 0、補零對齊後做**數字序 tuple 比較**（`3.10.0 > 3.9.0`，不會被字串序誤判）。
+- `_bg_check_update`：改成 `if not _ver_newer(latest, current): return`——只有遠端**嚴格較新**才跳 toast；本地領先或相等一律靜默。
+- `checkVersion`（手動 Menu → Check Update）：同樣改用 `_ver_newer`，本地領先或相等都回「No updates available」。
+
+### 影響
+- 只有 UI 更新提示邏輯，**不動任何科學輸出**，NO.65 驗證不受影響。
+- 本地/開發版領先 GitHub main 時不再被誤報要求「更新到舊版」。
+
+### 驗證
+- `ast.parse` 通過。
+- `_ver_newer` 單元測試 8 例全過（含回報情境 `3.8.93` vs `3.9.0` → False、`v` 前綴、長度不一 `3.9` vs `3.9.0`、`3.10.0` vs `3.9.0` 數字序）。
+
+### 檔案改動
+- `NTNU_DataReduction.py`：`_ver_newer` 新增；`_bg_check_update` / `checkVersion` 比較邏輯。
+- `.work/.app_info.txt`：3.9.0 → 3.9.1
+
+---
+
 ## V3.9.0（2026-07-02）— Diagram Style Editor：可視化編輯圖表樣式/軸/標籤
 
 新功能。讓使用者針對 AgeCalc diagram（DFN/DFI/DFW/DFA/DFC/DFD/DFR）的顏色、字型、線寬、軸刻度、legend、以及各圖的 title/x/y 標籤做互動式編輯，不必改 code。整合進現有 DiagramPlot 的 refresh 迴路，**不是**獨立子程式。

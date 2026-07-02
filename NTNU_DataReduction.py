@@ -3193,6 +3193,29 @@ class App():
     def systemInfo(self):
         self.Popup(1, "System Info", "".join(self.app_info))
 
+    @staticmethod
+    def _ver_newer(remote, local):
+        """True iff remote version string is strictly newer than local.
+
+        Handles 'v' prefix and dotted parts; non-numeric segments -> 0. Ordered
+        compare (not ==), so a local build ahead of GitHub main (normal for the
+        developer / pre-Release) is NOT flagged as an update."""
+        import re
+
+        def key(v):
+            v = (v or '').strip().lstrip('vV')
+            out = []
+            for p in re.split(r'[.\-_]', v):
+                m = re.match(r'\d+', p)
+                out.append(int(m.group()) if m else 0)
+            return tuple(out) or (0,)
+
+        r, l = key(remote), key(local)
+        n = max(len(r), len(l))
+        r += (0,) * (n - len(r))
+        l += (0,) * (n - len(l))
+        return r > l
+
     # Background update check on startup (silent, no popup if up-to-date)
     def _bg_check_update(self):
         """Run on startup in a thread. Show Windows toast if new version exists."""
@@ -3205,9 +3228,9 @@ class App():
                 return
             latest_version = page.text.split('\n')[1].rstrip()
             current_version = self.app_info[1].rstrip()
-            if current_version == latest_version:
-                return  # already up-to-date, silent
-            # New version available — show Windows toast notification
+            if not self._ver_newer(latest_version, current_version):
+                return  # up-to-date or local build is ahead — stay silent
+            # Remote is strictly newer — show Windows toast notification
             try:
                 from winotify import Notification, audio
                 logo_path = os.path.abspath(self.work_dir + '.work/logo.png')
@@ -3238,11 +3261,11 @@ class App():
                 latest_version = page.text.split('\n')[1].rstrip()
                 current_version = self.app_info[1].rstrip()
                 version_msg = "Installed Version: {}\nLatest Version: {}\n".format(current_version, latest_version)
-                if current_version == latest_version:
-                    self.Popup(1, "No updates available at this time", version_msg)
-                else:
+                if self._ver_newer(latest_version, current_version):
                     git_repo_url = "https://github.com/FormosaRes/pyADR.git"
                     self.Popup(1, "There are updates available at this time", version_msg+"Please go to {} to update to the latest version!\n".format(git_repo_url))
+                else:
+                    self.Popup(1, "No updates available at this time", version_msg)
             else:
                 self.Popup(2, "HTTP request failed!", "HTTP status {}".format(page.status_code))
         except:
