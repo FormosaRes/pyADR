@@ -2097,30 +2097,40 @@ class App():
         return 'DFW'
 
     def _open_style_editor(self):
-        """Open the shared DiagramStyleEditor (non-modal singleton)."""
+        """Open the shared DiagramStyleEditor (non-modal singleton).
+
+        Whole body is guarded: an unhandled exception in a Qt slot aborts the
+        app, so on failure we show the traceback in a dialog instead of dying.
+        """
         try:
+            if not hasattr(Utilities, 'set_style_overrides'):
+                QtWidgets.QMessageBox.warning(
+                    self, 'Style Editor',
+                    'Utilities.py 版本過舊(缺 set_style_overrides)。\n'
+                    '請把 DEV 的 Utilities.py 同步到執行資料夾後重開。')
+                return
             from UI.DiagramStyleEditor import DiagramStyleEditor
-        except Exception as e:
-            QtWidgets.QMessageBox.warning(self, 'Style Editor',
-                                          '無法載入樣式編輯器:\n{}'.format(e))
-            return
 
-        def _apply(overrides, preset):
-            Utilities.set_style_overrides(overrides)
-            self._diagram_style_overrides = overrides
-            self.SH_apply_axes()
+            def _apply(overrides, preset):
+                Utilities.set_style_overrides(overrides)
+                self._diagram_style_overrides = overrides
+                self.SH_apply_axes()
 
-        dlg = getattr(self, '_style_editor', None)
-        if dlg is None:
-            work = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                '.work')
-            dlg = DiagramStyleEditor(
-                self, host_get_style=self._get_plot_style, on_apply=_apply,
-                work_dir=work, current_target=self._current_sh_target())
-            self._style_editor = dlg
-        dlg.show()
-        dlg.raise_()
-        dlg.activateWindow()
+            dlg = getattr(self, '_style_editor', None)
+            if dlg is None:
+                work = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    '.work')
+                dlg = DiagramStyleEditor(
+                    self, host_get_style=self._get_plot_style, on_apply=_apply,
+                    work_dir=work, current_target=self._current_sh_target())
+                self._style_editor = dlg
+            dlg.show()
+            dlg.raise_()
+            dlg.activateWindow()
+        except Exception:
+            import traceback
+            QtWidgets.QMessageBox.critical(
+                self, 'Style Editor 開啟失敗', traceback.format_exc())
 
     def _dfs_load_panel_into_spinboxes(self):
         """DFS only: load the selected panel's saved (xlim, ylim) into the

@@ -5230,31 +5230,42 @@ class AgeCalcPage(QtWidgets.QWidget):
         return 'DFW'
 
     def _open_style_editor(self):
-        """開啟 DiagramStyleEditor(non-modal 單例)。"""
+        """開啟 DiagramStyleEditor(non-modal 單例)。
+
+        整段包 try:Qt slot 未捕捉例外會讓整個 app abort,失敗時改用
+        對話框顯示 traceback 而非直接關閉。
+        """
         try:
+            if not hasattr(Utilities, 'set_style_overrides'):
+                QtWidgets.QMessageBox.warning(
+                    self, 'Style Editor',
+                    'Utilities.py 版本過舊(缺 set_style_overrides)。\n'
+                    '請把 DEV 的 Utilities.py 同步到執行資料夾後重開。')
+                return
             from UI.DiagramStyleEditor import DiagramStyleEditor
-        except Exception as e:
-            QtWidgets.QMessageBox.warning(self, 'Style Editor',
-                                          f'無法載入樣式編輯器:\n{e}')
-            return
 
-        def _apply(overrides, preset):
-            Utilities.set_style_overrides(overrides)
-            self._style_overrides = overrides      # 供 session 持久化
-            self._refresh_diagrams()
+            def _apply(overrides, preset):
+                Utilities.set_style_overrides(overrides)
+                self._style_overrides = overrides      # 供 session 持久化
+                self._refresh_diagrams()
 
-        dlg = getattr(self, '_style_editor', None)
-        if dlg is None:
-            # diagram PNGs 由 Utilities 寫到 repo/.work
-            work = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), '.work')
-            dlg = DiagramStyleEditor(
-                self, host_get_style=self._plot_style, on_apply=_apply,
-                work_dir=work, current_target=self._current_diagram_target())
-            self._style_editor = dlg
-        dlg.show()
-        dlg.raise_()
-        dlg.activateWindow()
+            dlg = getattr(self, '_style_editor', None)
+            if dlg is None:
+                # diagram PNGs 由 Utilities 寫到 repo/.work
+                work = os.path.join(
+                    os.path.dirname(os.path.abspath(__file__)), '.work')
+                dlg = DiagramStyleEditor(
+                    self, host_get_style=self._plot_style, on_apply=_apply,
+                    work_dir=work,
+                    current_target=self._current_diagram_target())
+                self._style_editor = dlg
+            dlg.show()
+            dlg.raise_()
+            dlg.activateWindow()
+        except Exception:
+            import traceback
+            QtWidgets.QMessageBox.critical(
+                self, 'Style Editor 開啟失敗', traceback.format_exc())
 
     def populate(self, steps, datum_csv, work_dir, consts=None):
         self._steps = steps
