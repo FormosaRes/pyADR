@@ -1110,11 +1110,17 @@ class DiagramPlots_SH(QtWidgets.QMainWindow, UI.DiagramPlots_SH.Ui_MainWindow):
         # Style selector
         # styleCombo created here; placed on left sidebar by _place_btn3D timer
         self.styleCombo = QtWidgets.QComboBox(self.centralwidget)
-        self.styleCombo.addItems(["pyADR", "Classic (PDF)"])
-        self.styleCombo.setToolTip("pyADR: colored fills  |  Classic (PDF): black & white")
+        self.styleCombo.addItems(["pyADR", "Classic (PDF)", "Publication", "Presentation"])
+        self.styleCombo.setToolTip("pyADR: colored fills  |  Classic (PDF): black & white  |  "
+                                   "Publication: muted, journal ticks  |  Presentation: large fonts")
         self.styleCombo.hide()  # will be repositioned in _place_btn3D
         self._styleLbl = QtWidgets.QLabel("Style:", self.centralwidget)
         self._styleLbl.hide()
+        # ⚙ Diagram Style Editor(v3.9.0);positioned in _place_btn3D
+        self.styleEditBtn = QtWidgets.QPushButton("⚙", self.centralwidget)
+        self.styleEditBtn.setToolTip("Diagram Style Editor:編輯顏色/字型/軸/標籤")
+        self.styleEditBtn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.styleEditBtn.hide()
 
         # Legend
         # Legend (own row, full width) -- per user request, replaces DISPLAY header
@@ -1387,8 +1393,12 @@ class DiagramPlots_SH(QtWidgets.QMainWindow, UI.DiagramPlots_SH.Ui_MainWindow):
             style_y = ag.y() + (bh + gap) * 6
             self._styleLbl.setGeometry(bx, style_y, lbl_w, bh)
             self._styleLbl.show()
-            self.styleCombo.setGeometry(bx + lbl_w + 2, style_y, bw - lbl_w - 2, bh)
+            gear_w = 26
+            self.styleCombo.setGeometry(bx + lbl_w + 2, style_y,
+                                        bw - lbl_w - 2 - gear_w - 2, bh)
             self.styleCombo.show()
+            self.styleEditBtn.setGeometry(bx + bw - gear_w, style_y, gear_w, bh)
+            self.styleEditBtn.show()
         QtCore.QTimer.singleShot(0, _place_btn3D)
 
         # FIX#9: Group selector row inside ctrlBox (top, above active diagram label)
@@ -2060,9 +2070,57 @@ class App():
 
 
     def _get_plot_style(self):
-        """Return 'pyADR' or 'classic' based on UI selector."""
+        """Map the UI style selector to a Utilities preset name."""
         txt = self.DiagramPlots_SHPage.styleCombo.currentText()
-        return 'classic' if 'Classic' in txt else 'pyADR'
+        if 'Classic' in txt:
+            return 'classic'
+        if 'Publication' in txt:
+            return 'publication'
+        if 'Presentation' in txt:
+            return 'presentation'
+        return 'pyADR'
+
+    def _current_sh_target(self):
+        """Best-effort current SH diagram code for style-editor preview."""
+        try:
+            txt = self.DiagramPlots_SHPage.box.currentText().lower()
+        except Exception:
+            return 'DFW'
+        if 'inverse' in txt:
+            return 'DFI'
+        if 'normal' in txt or 'isochron' in txt:
+            return 'DFN'
+        if 'ca/k' in txt:
+            return 'DFA'
+        if 'cl/k' in txt:
+            return 'DFC'
+        return 'DFW'
+
+    def _open_style_editor(self):
+        """Open the shared DiagramStyleEditor (non-modal singleton)."""
+        try:
+            from UI.DiagramStyleEditor import DiagramStyleEditor
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, 'Style Editor',
+                                          '無法載入樣式編輯器:\n{}'.format(e))
+            return
+
+        def _apply(overrides, preset):
+            Utilities.set_style_overrides(overrides)
+            self._diagram_style_overrides = overrides
+            self.SH_apply_axes()
+
+        dlg = getattr(self, '_style_editor', None)
+        if dlg is None:
+            work = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                '.work')
+            dlg = DiagramStyleEditor(
+                self, host_get_style=self._get_plot_style, on_apply=_apply,
+                work_dir=work, current_target=self._current_sh_target())
+            self._style_editor = dlg
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
 
     def _dfs_load_panel_into_spinboxes(self):
         """DFS only: load the selected panel's saved (xlim, ylim) into the
@@ -3023,6 +3081,7 @@ class App():
         self.DiagramPlots_SHPage.showGroupFitsCheckbox.stateChanged.connect(self.SH_apply_axes)
         self.DiagramPlots_SHPage.showOverallFitCheckbox.stateChanged.connect(self.SH_apply_axes)
         self.DiagramPlots_SHPage.styleCombo.currentIndexChanged.connect(self.SH_apply_axes)
+        self.DiagramPlots_SHPage.styleEditBtn.clicked.connect(self._open_style_editor)
         self.DiagramPlots_SHPage.logYCheckbox.stateChanged.connect(self.SH_apply_axes)
         self.DiagramPlots_SHPage.showGroupSpanCheckbox.stateChanged.connect(self.SH_apply_axes)
         self.DiagramPlots_SHPage.showAllCompCheckbox.stateChanged.connect(self.SH_apply_axes)

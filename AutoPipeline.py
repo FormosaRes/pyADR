@@ -4852,10 +4852,18 @@ class AgeCalcPage(QtWidgets.QWidget):
         opts2_hl = QtWidgets.QHBoxLayout()
         opts2_hl.addWidget(QtWidgets.QLabel('Style:'))
         self._plot_style_combo = QtWidgets.QComboBox()
-        self._plot_style_combo.addItems(['pyADR', 'Classic (PDF)'])
+        self._plot_style_combo.addItems(['pyADR', 'Classic (PDF)',
+                                         'Publication', 'Presentation'])
         self._plot_style_combo.setToolTip(
-            'pyADR: colored fills  |  Classic (PDF): black & white')
+            'pyADR: colored fills  |  Classic (PDF): black & white  |  '
+            'Publication: muted journal style  |  Presentation: large fonts')
         opts2_hl.addWidget(self._plot_style_combo)
+        self._styleEditBtn = QtWidgets.QPushButton('⚙')
+        self._styleEditBtn.setFixedSize(24, 22)
+        self._styleEditBtn.setToolTip('Diagram Style Editor:編輯顏色/字型/軸/標籤')
+        self._styleEditBtn.setCursor(QtCore.Qt.PointingHandCursor)
+        self._styleEditBtn.clicked.connect(self._open_style_editor)
+        opts2_hl.addWidget(self._styleEditBtn)
         opts2_hl.addSpacing(10)
         self._plot_cb_logy = QtWidgets.QCheckBox('Log Y')
         self._plot_cb_logy.setToolTip('Log-scale Y axis (Ca/K, Cl/K, Degassing).')
@@ -5194,12 +5202,59 @@ class AgeCalcPage(QtWidgets.QWidget):
                 ed[3].setPlaceholderText(f'auto ({self._fmt_axis(ay[k][1], k)})')
 
     def _plot_style(self):
-        """'pyADR' or 'classic' from the Style combo (default pyADR)."""
+        """Map the Style combo to a Utilities preset name (default pyADR)."""
         try:
-            return ('classic' if 'Classic' in self._plot_style_combo.currentText()
-                    else 'pyADR')
+            txt = self._plot_style_combo.currentText()
         except Exception:
             return 'pyADR'
+        if 'Classic' in txt:
+            return 'classic'
+        if 'Publication' in txt:
+            return 'publication'
+        if 'Presentation' in txt:
+            return 'presentation'
+        return 'pyADR'
+
+    def _current_diagram_target(self):
+        """回傳目前顯示中的 diagram code(給 style editor 預覽跟隨)。"""
+        try:
+            name = self._tabs.tabText(self._tabs.currentIndex())
+        except Exception:
+            return 'DFW'
+        _map = {'Age Spectrum': 'DFW', 'Inverse': 'DFI', 'Inverse Isochron': 'DFI',
+                'Normal': 'DFN', 'Normal Isochron': 'DFN', 'Ca/K': 'DFA',
+                'Cl/K': 'DFC', 'Degassing': 'DFD', '⁴⁰Ar(r)%': 'DFR'}
+        for k, v in _map.items():
+            if k in name:
+                return v
+        return 'DFW'
+
+    def _open_style_editor(self):
+        """開啟 DiagramStyleEditor(non-modal 單例)。"""
+        try:
+            from UI.DiagramStyleEditor import DiagramStyleEditor
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, 'Style Editor',
+                                          f'無法載入樣式編輯器:\n{e}')
+            return
+
+        def _apply(overrides, preset):
+            Utilities.set_style_overrides(overrides)
+            self._style_overrides = overrides      # 供 session 持久化
+            self._refresh_diagrams()
+
+        dlg = getattr(self, '_style_editor', None)
+        if dlg is None:
+            # diagram PNGs 由 Utilities 寫到 repo/.work
+            work = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), '.work')
+            dlg = DiagramStyleEditor(
+                self, host_get_style=self._plot_style, on_apply=_apply,
+                work_dir=work, current_target=self._current_diagram_target())
+            self._style_editor = dlg
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
 
     def populate(self, steps, datum_csv, work_dir, consts=None):
         self._steps = steps

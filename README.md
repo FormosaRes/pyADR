@@ -1,9 +1,9 @@
 ![logo](.work/logo.png)
-# pyADR — NTNU modified fork (v3.8.93)
+# pyADR — NTNU modified fork (v3.9.0)
 
 40Ar/39Ar data reduction tool with GUI. Modified fork of [pyADR](https://github.com/AndrewLiu0725/pyADR) (original by **An-Jun (Andrew) Liu**), now maintained by **PANG Chi-Hsiu (Academia Sinica)**.
 
-This fork adds: a full batch-automation pipeline (**Argon Pipeline**: Calculate T₀ → MassRatio → AgeCalc + Datum), modern isochron math (York 2004 default, Vermeesch 2018/2024), editable J / parameters with on-the-fly recompute, ³⁶Ar-blank sensitivity tools (age spectrum + inverse isochron), 2σ reporting with uncertainty budgets, a bilingual (中 / EN) in-app Help & formulas reference, Excel native chart export, step-heating diagram types (DFD/DFS/DFM + grouped 3D plane fit), performance optimization, and auto-update notification.
+This fork adds: a full batch-automation pipeline (**Argon Pipeline**: Calculate T₀ → MassRatio → AgeCalc + Datum), modern isochron math (York 2004 default, Vermeesch 2018/2024), editable J / parameters with on-the-fly recompute, ³⁶Ar-blank sensitivity tools (age spectrum + inverse isochron), 2σ reporting with uncertainty budgets, a **Diagram Style Editor** (interactive colours / fonts / axes / per-diagram labels with publication & presentation presets), a bilingual (中 / EN) in-app Help & formulas reference, Excel native chart export, step-heating diagram types (DFD/DFS/DFM + grouped 3D plane fit), performance optimization, and auto-update notification.
 
 Original README → `README_origin.md` ｜ Full changelog → `CHANGELOG.md`
 
@@ -126,8 +126,9 @@ python NTNU_DataReduction.py
 
 ## Changelog 摘要
 
-### v3.8.9 – v3.8.93 (2026-05 → 2026-06) — 摘要
+### v3.9.0 – v3.8.9 (2026-07 → 2026-05) — 摘要
 
+> **v3.9.0**：新增 **Diagram Style Editor**。AgeCalc 各圖（age spectrum / inverse & normal isochron / Ca/K / Cl/K / degassing / ⁴⁰Ar(r)%）的顏色、字型、線寬、軸刻度、legend、以及每張圖的 title/x/y 標籤都能互動式編輯，不必改 code。DiagramPlots_SH 與 AgeCalcPage 各有一顆 ⚙ 開同一個 dialog（左控件 + 右大圖預覽），Style 下拉新增 **Publication**（期刊 muted 風）與 **Presentation**（大字投影片風）preset。內部把散落的 matplotlib hardcode 收斂成單一 style dict、GROUP_COLORS 集中去重；pyADR/classic preset 輸出保持不變。
 > **v3.8.89–93**：in-app Help 改**中英雙語**（左下角 CN/EN 切換）+ 補 isochron 兩種回歸方法（OLS / York）物理意義 + 新增 σ(T₀) 分頁；DiagramPlot SH isochron 預設也改 **York**；修「在 AutoPipeline 按 Help 會跳出開機 splash」。
 > **v3.8.88**：修 Plot Controls 改軸範圍按 Apply 後，切到 diagram 分頁圖才刷新（分頁顯示時自動重新縮放 PNG）。
 > **v3.8.87**：³⁶Ar-blank 敏感度對話框加「Inverse Isochron」檢視（拉 ³⁶ blank 看 trapped ⁴⁰/³⁶、age、各溫階共線性怎麼動）。
