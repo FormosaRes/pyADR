@@ -8,6 +8,89 @@ GitHub Releases（tag）最新仍為 **v3.8.54（Latest，彙整 v3.8.9 → v3.8
 
 ---
 
+## V3.9.2（2026-07-02）— 修 DiagramPlot SH 按 ⚙ 一按就整個程式關閉（crash）
+
+使用者回報：DiagramPlot SH 按 ⚙ 開 Style Editor，視窗還沒出來整個 app 就直接關閉，且沒有任何錯誤視窗（v3.9.0 aaee652 加的 try/except 守衛沒擋住）。
+
+### 根因（faulthandler / 真實 traceback）
+`NTNU_DataReduction.App` 是純控制器類別，**不是** QWidget（QApplication 與各頁面是它的屬性）。`_open_style_editor` 卻用 `DiagramStyleEditor(self, ...)` 把 `App` 當 parent 傳給 `QDialog.__init__` →
+`TypeError: QDialog argument 1 has unexpected type 'App'`。
+接著守衛的 `QtWidgets.QMessageBox.critical(self, ...)` **又**把 `App` 當 parent → 再拋一次 TypeError → 未捕捉 → PyQt5 直接 abort 整個進程。這就是「一按就關、連錯誤框都沒有」的原因。AutoPipeline 端在 `AgeCalcPage(QWidget)` 內，`self` 本身是 widget，不受影響。
+
+### 修法（`NTNU_DataReduction.py` `_open_style_editor`）
+- dialog parent 由 `self` 改為 `self.widget`（App 的頂層 `QStackedWidget`，是 QWidget）。
+- 守衛內 warning / critical 兩個 QMessageBox 的 parent 一併由 `self` 改 `self.widget`，避免例外處理本身又炸。
+
+### 影響
+- 純 UI/parent 修正，**不動科學輸出**，NO.65 驗證不受影響。
+- DiagramPlot SH 按 ⚙ 正常開 Style Editor，不再閃退。
+
+### 驗證
+- `ast.parse` 通過。
+- 以 QStackedWidget 當 parent 實測建構 DiagramStyleEditor 成功；以非 widget 當 parent 精準重現原始 `TypeError`（證明就是此因）。
+
+### 檔案改動
+- `NTNU_DataReduction.py`：`_open_style_editor` 三處 parent `self` → `self.widget`。
+- `.work/.app_info.txt`：3.9.1 → 3.9.2
+
+---
+
+## V3.9.1（2026-07-02）— 修更新檢查誤報（本地比 GitHub 新時仍跳「有更新」）
+
+使用者回報：啟動 toast 顯示「pyADR Update Available: v3.8.93 / You're on v3.9.0」——本地明明比較新，卻被通知去更新到舊版。
+
+### 根因
+`_bg_check_update` 與 `checkVersion` 的版本比較用 `current == latest`，只判斷「相不相等」，不看大小。抓 `main` 的 `.app_info.txt` 版本與本地一不相同就報「有更新」。依現行工作流（main 版本號會領先 GitHub Release、開發機本地也常領先，raw.githubusercontent 又有約 5 分鐘 CDN 快取），本地版本領先或短暫不一致時就會誤報。
+
+### 修法（`NTNU_DataReduction.py`）
+- 新增 `App._ver_newer(remote, local)` 靜態方法：去 `v` 前綴、`[.\-_]` 切段、非數字段落當 0、補零對齊後做**數字序 tuple 比較**（`3.10.0 > 3.9.0`，不會被字串序誤判）。
+- `_bg_check_update`：改成 `if not _ver_newer(latest, current): return`——只有遠端**嚴格較新**才跳 toast；本地領先或相等一律靜默。
+- `checkVersion`（手動 Menu → Check Update）：同樣改用 `_ver_newer`，本地領先或相等都回「No updates available」。
+
+### 影響
+- 只有 UI 更新提示邏輯，**不動任何科學輸出**，NO.65 驗證不受影響。
+- 本地/開發版領先 GitHub main 時不再被誤報要求「更新到舊版」。
+
+### 驗證
+- `ast.parse` 通過。
+- `_ver_newer` 單元測試 8 例全過（含回報情境 `3.8.93` vs `3.9.0` → False、`v` 前綴、長度不一 `3.9` vs `3.9.0`、`3.10.0` vs `3.9.0` 數字序）。
+
+### 檔案改動
+- `NTNU_DataReduction.py`：`_ver_newer` 新增；`_bg_check_update` / `checkVersion` 比較邏輯。
+- `.work/.app_info.txt`：3.9.0 → 3.9.1
+
+---
+
+## V3.9.0（2026-07-02）— Diagram Style Editor：可視化編輯圖表樣式/軸/標籤
+
+新功能。讓使用者針對 AgeCalc diagram（DFN/DFI/DFW/DFA/DFC/DFD/DFR）的顏色、字型、線寬、軸刻度、legend、以及各圖的 title/x/y 標籤做互動式編輯，不必改 code。整合進現有 DiagramPlot 的 refresh 迴路，**不是**獨立子程式。
+
+### 設計
+- **中央 style dict（Step 1）**：`Utilities._get_style()` 從只有 pyADR/classic 兩檔擴充為「base 預設 ← preset ← 使用者 overrides」三層合併。新增 `publication`（IsoplotR 風 muted 色 + tick 朝內 + 四邊框 + minor ticks）與 `presentation`（同配色、字級/線寬放大）兩個 preset。散落在各 plot function 的 hardcode（legend loc/fontsize/framealpha、label/tick/annot 字級、迴歸/連接/WMA/邊框線寬、tick 方向、grid、大氣 marker 色、軸標籤文字）一律改讀 dict。
+- **向後相容**：pyADR / classic 兩 preset 的合併結果與舊 dict 逐鍵一致；字級類 override 為 None 時以 `_fs()` 完全略過該 kwarg，matplotlib 預設不變，既有輸出保持不動（NO.65 driven 驗證前提）。
+- **GROUP_COLORS 集中 + 去重**：原本在 `NTNU_DataReduction.py` 與 `Utilities.py` 各定義一份，改由 `Utilities.GROUP_COLORS` 單一真相；新增 `GROUP_COLORS_CVD`（8 色、色盲安全，publication/presentation 用）。resolution 順序：editor override > caller 傳入 > preset 預設（`_resolve_group_colors`）。
+- **DiagramStyleEditor（Step 2）**：新檔 `UI/DiagramStyleEditor.py`。左側分頁（顏色 / 字型 / 線條&Marker / Legend / 軸 / 文字標籤）+ 頂部 preset 下拉（改任一參數自動切 custom）+ 右側大圖置中預覽（讀 `.work/<target>.png`，auto-scale，圖為主體）+ Reset/Cancel/Apply/OK。non-modal 單例。
+- **雙入口共用**：NTNU_DataReduction DiagramPlots_SH sidebar 與 AutoPipeline AgeCalcPage Plot Controls 各加一顆 ⚙，開同一個 dialog、寫同一份 overrides（`Utilities.set_style_overrides`），Apply → 既有 `SH_apply_axes` / `_refresh_diagrams` 重畫。兩 app 的 Style 下拉同步加入 Publication / Presentation 選項。
+
+### 影響
+- 預設行為不變：未開 editor、preset 維持 pyADR 時，所有圖輸出與 v3.8.93 相同。
+- **DFR（radiogenic yield）微調**：改用共用的 `_apply_frame()`，pyADR 下 axes facecolor 由預設白改為 transparent（與 DFW/DFA/DFC 一致），classic 下多了 minor ticks。純外觀一致化，中心值與誤差不變。
+
+### 驗證
+- 四檔 `ast.parse` 通過。
+- style 系統單元測試：pyADR/classic 合併結果與舊 dict 逐鍵一致；overrides merge/clear、per-target text override、group color resolution 皆正確。
+- DiagramStyleEditor 以 `QT_QPA_PLATFORM=offscreen` 實際開啟並截圖：分頁/preset 切換/target 預覽/collect_overrides→`_get_style` 合併（group[0]=#2a78d6、tick_dir=in、ticks_top_right=True）全數正常。
+- **待辦**：NO.65 muscovite 端對端數值比對（確認 pyADR preset 下輸出 bit-identical）留待有樣品資料的環境跑,再發 Release tag。
+
+### 檔案改動
+- `Utilities.py`：`_get_style` 三層合併 + `_STYLE_PRESETS`/`_STYLE_BASE`/`_STYLE_OVERRIDES`、`set_style_overrides`/`get_style_overrides`/`available_styles`、helper `_txt`/`_fs`/`_legend_kw`/`_resolve_group_colors`/`_apply_frame`；各 plot function 套用。
+- `UI/DiagramStyleEditor.py`：新檔（dialog）。
+- `NTNU_DataReduction.py`：styleCombo 加 Publication/Presentation、`_get_plot_style` 對應、sidebar ⚙ 按鈕 + `_open_style_editor`/`_current_sh_target`。
+- `AutoPipeline.py`：Plot Controls Style 加選項 + ⚙ 按鈕、`_plot_style` 對應、`_open_style_editor`/`_current_diagram_target`。
+- `.work/.app_info.txt`：3.8.93 → 3.9.0。
+
+---
+
 ## V3.8.93（2026-06-22）— 修 AutoPipeline 按 Help 跳出開機 splash 畫面
 
 使用者回報：在 AutoPipeline 按 Help → Formulas，會冒出開機 splash（pyADR logo / NTNU Ar/Ar Lab）蓋在 Help dialog 上。

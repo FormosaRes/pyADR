@@ -1110,11 +1110,17 @@ class DiagramPlots_SH(QtWidgets.QMainWindow, UI.DiagramPlots_SH.Ui_MainWindow):
         # Style selector
         # styleCombo created here; placed on left sidebar by _place_btn3D timer
         self.styleCombo = QtWidgets.QComboBox(self.centralwidget)
-        self.styleCombo.addItems(["pyADR", "Classic (PDF)"])
-        self.styleCombo.setToolTip("pyADR: colored fills  |  Classic (PDF): black & white")
+        self.styleCombo.addItems(["pyADR", "Classic (PDF)", "Publication", "Presentation"])
+        self.styleCombo.setToolTip("pyADR: colored fills  |  Classic (PDF): black & white  |  "
+                                   "Publication: muted, journal ticks  |  Presentation: large fonts")
         self.styleCombo.hide()  # will be repositioned in _place_btn3D
         self._styleLbl = QtWidgets.QLabel("Style:", self.centralwidget)
         self._styleLbl.hide()
+        # ⚙ Diagram Style Editor(v3.9.0);positioned in _place_btn3D
+        self.styleEditBtn = QtWidgets.QPushButton("⚙", self.centralwidget)
+        self.styleEditBtn.setToolTip("Diagram Style Editor:編輯顏色/字型/軸/標籤")
+        self.styleEditBtn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.styleEditBtn.hide()
 
         # Legend
         # Legend (own row, full width) -- per user request, replaces DISPLAY header
@@ -1387,8 +1393,12 @@ class DiagramPlots_SH(QtWidgets.QMainWindow, UI.DiagramPlots_SH.Ui_MainWindow):
             style_y = ag.y() + (bh + gap) * 6
             self._styleLbl.setGeometry(bx, style_y, lbl_w, bh)
             self._styleLbl.show()
-            self.styleCombo.setGeometry(bx + lbl_w + 2, style_y, bw - lbl_w - 2, bh)
+            gear_w = 26
+            self.styleCombo.setGeometry(bx + lbl_w + 2, style_y,
+                                        bw - lbl_w - 2 - gear_w - 2, bh)
             self.styleCombo.show()
+            self.styleEditBtn.setGeometry(bx + bw - gear_w, style_y, gear_w, bh)
+            self.styleEditBtn.show()
         QtCore.QTimer.singleShot(0, _place_btn3D)
 
         # FIX#9: Group selector row inside ctrlBox (top, above active diagram label)
@@ -2060,9 +2070,72 @@ class App():
 
 
     def _get_plot_style(self):
-        """Return 'pyADR' or 'classic' based on UI selector."""
+        """Map the UI style selector to a Utilities preset name."""
         txt = self.DiagramPlots_SHPage.styleCombo.currentText()
-        return 'classic' if 'Classic' in txt else 'pyADR'
+        if 'Classic' in txt:
+            return 'classic'
+        if 'Publication' in txt:
+            return 'publication'
+        if 'Presentation' in txt:
+            return 'presentation'
+        return 'pyADR'
+
+    def _current_sh_target(self):
+        """Best-effort current SH diagram code for style-editor preview."""
+        try:
+            txt = self.DiagramPlots_SHPage.box.currentText().lower()
+        except Exception:
+            return 'DFW'
+        if 'inverse' in txt:
+            return 'DFI'
+        if 'normal' in txt or 'isochron' in txt:
+            return 'DFN'
+        if 'ca/k' in txt:
+            return 'DFA'
+        if 'cl/k' in txt:
+            return 'DFC'
+        return 'DFW'
+
+    def _open_style_editor(self):
+        """Open the shared DiagramStyleEditor (non-modal singleton).
+
+        Whole body is guarded: an unhandled exception in a Qt slot aborts the
+        app, so on failure we show the traceback in a dialog instead of dying.
+        """
+        try:
+            if not hasattr(Utilities, 'set_style_overrides'):
+                QtWidgets.QMessageBox.warning(
+                    self.widget, 'Style Editor',
+                    'Utilities.py 版本過舊(缺 set_style_overrides)。\n'
+                    '請把 DEV 的 Utilities.py 同步到執行資料夾後重開。')
+                return
+            from UI.DiagramStyleEditor import DiagramStyleEditor
+
+            def _apply(overrides, preset):
+                Utilities.set_style_overrides(overrides)
+                self._diagram_style_overrides = overrides
+                self.SH_apply_axes()
+
+            dlg = getattr(self, '_style_editor', None)
+            if dlg is None:
+                work = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    '.work')
+                # parent must be a QWidget; App is a plain controller, not a
+                # widget, so use self.widget (the top-level QStackedWidget).
+                # Passing App raised TypeError in QDialog.__init__ and aborted
+                # the app on gear click (v3.9.2).
+                dlg = DiagramStyleEditor(
+                    self.widget,
+                    host_get_style=self._get_plot_style, on_apply=_apply,
+                    work_dir=work, current_target=self._current_sh_target())
+                self._style_editor = dlg
+            dlg.show()
+            dlg.raise_()
+            dlg.activateWindow()
+        except Exception:
+            import traceback
+            QtWidgets.QMessageBox.critical(
+                self.widget, 'Style Editor 開啟失敗', traceback.format_exc())
 
     def _dfs_load_panel_into_spinboxes(self):
         """DFS only: load the selected panel's saved (xlim, ylim) into the
@@ -3023,6 +3096,7 @@ class App():
         self.DiagramPlots_SHPage.showGroupFitsCheckbox.stateChanged.connect(self.SH_apply_axes)
         self.DiagramPlots_SHPage.showOverallFitCheckbox.stateChanged.connect(self.SH_apply_axes)
         self.DiagramPlots_SHPage.styleCombo.currentIndexChanged.connect(self.SH_apply_axes)
+        self.DiagramPlots_SHPage.styleEditBtn.clicked.connect(self._open_style_editor)
         self.DiagramPlots_SHPage.logYCheckbox.stateChanged.connect(self.SH_apply_axes)
         self.DiagramPlots_SHPage.showGroupSpanCheckbox.stateChanged.connect(self.SH_apply_axes)
         self.DiagramPlots_SHPage.showAllCompCheckbox.stateChanged.connect(self.SH_apply_axes)
@@ -3124,6 +3198,29 @@ class App():
     def systemInfo(self):
         self.Popup(1, "System Info", "".join(self.app_info))
 
+    @staticmethod
+    def _ver_newer(remote, local):
+        """True iff remote version string is strictly newer than local.
+
+        Handles 'v' prefix and dotted parts; non-numeric segments -> 0. Ordered
+        compare (not ==), so a local build ahead of GitHub main (normal for the
+        developer / pre-Release) is NOT flagged as an update."""
+        import re
+
+        def key(v):
+            v = (v or '').strip().lstrip('vV')
+            out = []
+            for p in re.split(r'[.\-_]', v):
+                m = re.match(r'\d+', p)
+                out.append(int(m.group()) if m else 0)
+            return tuple(out) or (0,)
+
+        r, l = key(remote), key(local)
+        n = max(len(r), len(l))
+        r += (0,) * (n - len(r))
+        l += (0,) * (n - len(l))
+        return r > l
+
     # Background update check on startup (silent, no popup if up-to-date)
     def _bg_check_update(self):
         """Run on startup in a thread. Show Windows toast if new version exists."""
@@ -3136,9 +3233,9 @@ class App():
                 return
             latest_version = page.text.split('\n')[1].rstrip()
             current_version = self.app_info[1].rstrip()
-            if current_version == latest_version:
-                return  # already up-to-date, silent
-            # New version available — show Windows toast notification
+            if not self._ver_newer(latest_version, current_version):
+                return  # up-to-date or local build is ahead — stay silent
+            # Remote is strictly newer — show Windows toast notification
             try:
                 from winotify import Notification, audio
                 logo_path = os.path.abspath(self.work_dir + '.work/logo.png')
@@ -3169,11 +3266,11 @@ class App():
                 latest_version = page.text.split('\n')[1].rstrip()
                 current_version = self.app_info[1].rstrip()
                 version_msg = "Installed Version: {}\nLatest Version: {}\n".format(current_version, latest_version)
-                if current_version == latest_version:
-                    self.Popup(1, "No updates available at this time", version_msg)
-                else:
+                if self._ver_newer(latest_version, current_version):
                     git_repo_url = "https://github.com/FormosaRes/pyADR.git"
                     self.Popup(1, "There are updates available at this time", version_msg+"Please go to {} to update to the latest version!\n".format(git_repo_url))
+                else:
+                    self.Popup(1, "No updates available at this time", version_msg)
             else:
                 self.Popup(2, "HTTP request failed!", "HTTP status {}".format(page.status_code))
         except:

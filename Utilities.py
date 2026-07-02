@@ -785,29 +785,30 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
             else:
                 ax.set_ylim(ymin, ymax)
 
-        if legend_name is not None:
-            title_str = str(legend_name).strip()
-            if title_str:
-                ax.set_title(title_str)
+        _ist = _get_style(style)
+        _title_default = str(legend_name).strip() if legend_name is not None else ''
+        _title = _txt(_ist, target, 'title', _title_default)
+        if _title:
+            ax.set_title(_title, **_fs(_ist.get('font_title')))
 
         # Classic or pyADR frame / ticks
-        _ist = _get_style(style)
-        if _ist.get('classic'):
-            ax.set_facecolor('white')
-            ax.tick_params(which='both', direction='out',
-                           top=True, right=True, bottom=True, left=True)
-            ax.minorticks_on()
-            for _sp in ax.spines.values():
-                _sp.set_visible(True); _sp.set_linewidth(1.0); _sp.set_color('black')
-        else:
-            ax.set_facecolor('none')
-            ax.tick_params(which='both', direction='out', top=False, right=False)
+        _apply_frame(ax, _ist)
 
     def _iso_savefig(fig_obj, outpath):
         """Save isochron figure with correct facecolor."""
         _ist = _get_style(style)
         fig_obj.savefig(outpath, dpi=300,
                         facecolor='white' if _ist.get('classic') else 'none')
+
+    def _iso_labels(ax, target, xdefault, ydefault):
+        """Axis labels with per-target text override + font size from style."""
+        _ist = _get_style(style)
+        ax.set_xlabel(_txt(_ist, target, 'xlabel', xdefault),
+                      **_fs(_ist.get('font_axis')))
+        ax.set_ylabel(_txt(_ist, target, 'ylabel', ydefault),
+                      **_fs(_ist.get('font_axis')))
+
+    group_colors = _resolve_group_colors(group_colors, _get_style(style))
 
     # =========================================================
     # NORMAL ISOCHRON: X = 39Ar(m)/36Ar(m), Y = 40Ar(m)/36Ar(m)
@@ -983,8 +984,7 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
     
     # Check if we have enough data points
     if len(x) < 2:
-        ax_n.set_xlabel('$^{39}$Ar/$^{36}$Ar')
-        ax_n.set_ylabel('$^{40}$Ar/$^{36}$Ar')
+        _iso_labels(ax_n, 'DFN', '$^{39}$Ar/$^{36}$Ar', '$^{40}$Ar/$^{36}$Ar')
         apply_controls(ax_n, target="DFN")
         lim_DFN = (ax_n.get_xlim(), ax_n.get_ylim())
         fig_n.savefig(os.path.join(outdir, "DFN.png"), dpi=300, facecolor=("white" if _get_style(style).get("classic") else "none"))
@@ -1003,8 +1003,7 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
         # fit (post-outlier-removal, with selected method) is the single line
         # drawn — avoids two overlapping lines on the diagram.
     except:
-        ax_n.set_xlabel('$^{39}$Ar/$^{36}$Ar')
-        ax_n.set_ylabel('$^{40}$Ar/$^{36}$Ar')
+        _iso_labels(ax_n, 'DFN', '$^{39}$Ar/$^{36}$Ar', '$^{40}$Ar/$^{36}$Ar')
         apply_controls(ax_n, target="DFN")
         lim_DFN = (ax_n.get_xlim(), ax_n.get_ylim())
         fig_n.savefig(os.path.join(outdir, "DFN.png"), dpi=300, facecolor=("white" if _get_style(style).get("classic") else "none"))
@@ -1015,8 +1014,7 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
             return result, {"DFN": lim_DFN, "DFI": lim_DFI, "DFN_pts": [], "DFI_pts": []}
         return result
     
-    ax_n.set_xlabel('$^{39}$Ar/$^{36}$Ar')
-    ax_n.set_ylabel('$^{40}$Ar/$^{36}$Ar')
+    _iso_labels(ax_n, 'DFN', '$^{39}$Ar/$^{36}$Ar', '$^{40}$Ar/$^{36}$Ar')
     
     # FIX#1: store all valid points for data-based axis range (before outlier deletion)
     x_all_pts = x.copy()
@@ -1112,7 +1110,7 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
                         _age_str_1 = f"\nT={_T_1:.2f} Ma"
                     ax_n.annotate(
                         f"G{_gn}(1pt) N={_N_g}{_age_str_1}\n⁴⁰Ar/³⁶Ar={_atm_y_dfn:.0f}(fixed)",
-                        xy=(_x0d, _y0d), fontsize=7, color=_gc, fontweight='bold',
+                        xy=(_x0d, _y0d), fontsize=_get_style(style).get('font_group', 7), color=_gc, fontweight='bold',
                         ha='center', va='bottom',
                         bbox=dict(boxstyle='round,pad=0.2', fc='white', alpha=0.7, ec=_gc))
                 continue
@@ -1120,7 +1118,8 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
                 _gopt, _ = curve_fit(linear, _gxa, _gya)
                 _x_ext = np.array([0.0, float(np.max(_gxa)) * 1.1])
                 ax_n.plot(_x_ext, linear(_x_ext, *_gopt), linestyle='-',
-                         color=_gc, linewidth=2.0, zorder=5, label=f"Group {_gn}")
+                         color=_gc, linewidth=_get_style(style).get('lw_fit', 2.0),
+                         zorder=5, label=f"Group {_gn}")
                 _g_ic = linear(0.0, *_gopt)
                 _age_str = ""
                 if (np.isfinite(_J_dfn) and np.isfinite(_Lam_dfn)
@@ -1141,7 +1140,7 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
                 ax_n.annotate(
                     f"G{_gn} N={_N_g}{_mswd_str}{_age_str}\n⁴⁰Ar/³⁶Ar={_g_ic:.0f}",
                     xy=(0.98, _ann_y_n), xycoords='axes fraction',
-                    fontsize=7, color=_gc, fontweight='bold',
+                    fontsize=_get_style(style).get('font_group', 7), color=_gc, fontweight='bold',
                     ha='right', va='top',
                     bbox=dict(boxstyle='round,pad=0.3', fc='gold', alpha=0.85, ec=_gc))
             except Exception:
@@ -1149,12 +1148,13 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
 
     # FIX#2: Legend inside axes frame (no bbox_to_anchor)
     if show_legend:
-        ax_n.legend(loc='upper left', fontsize=8, framealpha=0.85)
+        ax_n.legend(**_legend_kw(_get_style(style)))
 
     # v3.8.1 FIX: atmospheric value marker = red X (was red circle)
     # Show atmospheric value marker — top layer, no clipping
     if show_atm:
-        ax_n.plot(0, atm_value, marker='x', markersize=11, color='red',
+        ax_n.plot(0, atm_value, marker='x', markersize=11,
+                 color=_get_style(style).get('atm_marker', 'red'),
                  linestyle='None', zorder=100, markeredgewidth=2.5,
                  clip_on=False)
 
@@ -1319,8 +1319,7 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
         mask_inv = mask_inv[valid_inv]
     
     if len(x_inv) < 2:
-        ax_iv.set_xlabel('$^{39}$Ar/$^{40}$Ar')
-        ax_iv.set_ylabel('$^{36}$Ar/$^{40}$Ar')
+        _iso_labels(ax_iv, 'DFI', '$^{39}$Ar/$^{40}$Ar', '$^{36}$Ar/$^{40}$Ar')
         apply_controls(ax_iv, target="DFI")
         lim_DFI = (ax_iv.get_xlim(), ax_iv.get_ylim())
         fig_iv.savefig(os.path.join(outdir, "DFI.png"), dpi=300, facecolor=("white" if _get_style(style).get("classic") else "none"))
@@ -1339,8 +1338,7 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
         # below (with chosen isochron_method, post-outlier-removal) is the only
         # line shown — avoids visual clutter from two near-overlapping lines.
     except:
-        ax_iv.set_xlabel('$^{39}$Ar/$^{40}$Ar')
-        ax_iv.set_ylabel('$^{36}$Ar/$^{40}$Ar')
+        _iso_labels(ax_iv, 'DFI', '$^{39}$Ar/$^{40}$Ar', '$^{36}$Ar/$^{40}$Ar')
         apply_controls(ax_iv, target="DFI")
         lim_DFI = (ax_iv.get_xlim(), ax_iv.get_ylim())
         fig_iv.savefig(os.path.join(outdir, "DFI.png"), dpi=300, facecolor=("white" if _get_style(style).get("classic") else "none"))
@@ -1351,8 +1349,7 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
             return result, {"DFN": lim_DFN, "DFI": lim_DFI, "DFN_pts": [], "DFI_pts": []}
         return result
     
-    ax_iv.set_xlabel('$^{39}$Ar/$^{40}$Ar')
-    ax_iv.set_ylabel('$^{36}$Ar/$^{40}$Ar')
+    _iso_labels(ax_iv, 'DFI', '$^{39}$Ar/$^{40}$Ar', '$^{36}$Ar/$^{40}$Ar')
     
     # FIX#1: store all valid points for axis range (before outlier deletion)
     x_inv_all_pts = x_inv.copy()
@@ -1464,7 +1461,7 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
                         _age_str_i1 = f"\nT={_T_i1:.2f} Ma"
                     ax_iv.annotate(
                         f"G{_gn}(1pt) N={_N_gi}{_age_str_i1}\n⁴⁰/³⁶={_atm40_36:.0f}(fixed)",
-                        xy=(_x0i, _y0i), fontsize=7, color=_gc, fontweight='bold',
+                        xy=(_x0i, _y0i), fontsize=_get_style(style).get('font_group', 7), color=_gc, fontweight='bold',
                         ha='center', va='bottom',
                         bbox=dict(boxstyle='round,pad=0.2', fc='white', alpha=0.7, ec=_gc))
                 continue
@@ -1472,7 +1469,8 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
                 _gopt_i, _ = curve_fit(linear, _gxa, _gya)
                 _x_ext = np.array([0.0, float(np.max(_gxa)) * 1.1])
                 ax_iv.plot(_x_ext, linear(_x_ext, *_gopt_i), linestyle='-',
-                          color=_gc, linewidth=2.0, zorder=5, label=f"Group {_gn}")
+                          color=_gc, linewidth=_get_style(style).get('lw_fit', 2.0),
+                         zorder=5, label=f"Group {_gn}")
                 _g_ic_inv = linear(0.0, *_gopt_i)
                 _inv_sl = _gopt_i[0]
                 # Age from X-intercept: 39/40 at y=0 → 40*/39 = -slope/ic
@@ -1507,7 +1505,7 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
                 ax_iv.annotate(
                     f"G{_gn} N={_N_gi}{_mswd_str_i}{_age_str_i}\n⁴⁰/³⁶={_atm_inv_str}",
                     xy=(0.98, _ann_y), xycoords='axes fraction',
-                    fontsize=7, color=_gc, fontweight='bold',
+                    fontsize=_get_style(style).get('font_group', 7), color=_gc, fontweight='bold',
                     ha='right', va='top',
                     bbox=dict(boxstyle='round,pad=0.3', fc='gold', alpha=0.85, ec=_gc))
             except Exception:
@@ -1515,13 +1513,14 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
 
     # FIX#2: Legend inside axes frame
     if show_legend:
-        ax_iv.legend(loc='upper left', fontsize=8, framealpha=0.85)
+        ax_iv.legend(**_legend_kw(_get_style(style)))
 
     # v3.8.1 FIX: atmospheric value marker = red X (was red circle)
     # Show atmospheric value marker (inverse) — top layer, no clipping
     if show_atm:
         inverse_atm = 1.0 / atm_value
-        ax_iv.plot(0, inverse_atm, marker='x', markersize=11, color='red',
+        ax_iv.plot(0, inverse_atm, marker='x', markersize=11,
+                  color=_get_style(style).get('atm_marker', 'red'),
                   linestyle='None', zorder=100, markeredgewidth=2.5,
                   clip_on=False)
 
@@ -1685,8 +1684,7 @@ def getSHStatistics(file, mask, constants, xlim=None, ylim=None, legend_name=Non
     # Applied per panel below, overriding the single xlim/ylim/target_plot.
     if step_groups is None:
         step_groups = {}
-    if group_colors is None:
-        group_colors = ['#FF8C00','#1E90FF','#2ECC40','#FF4136','#B10DC9']
+    group_colors = _resolve_group_colors(group_colors, _get_style(style))
     import numpy as np
     import matplotlib.pyplot as plt
     import matplotlib.patches as patches
@@ -1784,8 +1782,8 @@ def getSHStatistics(file, mask, constants, xlim=None, ylim=None, legend_name=Non
             y_next = y_age[i + 1]
             
             # Draw line connecting steps (thinner)
-            w.plot([x_current_right, x_next_left], [y_current, y_next], 
-                   color='black', linewidth=0.5, linestyle='-')
+            w.plot([x_current_right, x_next_left], [y_current, y_next],
+                   color='black', linewidth=st.get('lw_link', 0.5), linestyle='-')
         
         # If masked (excluded), mark with red X and remove from statistics
         if i < len(mask) and mask[i] == 0:
@@ -1796,19 +1794,7 @@ def getSHStatistics(file, mask, constants, xlim=None, ylim=None, legend_name=Non
 
     # 設定顯示範圍與標籤
     plt.xlim(0, 100)
-    # Inward ticks on all 4 sides (NO.62 style)
-    # ── Classic frame: outward ticks all 4 sides, closed box ─────────────
-    if st.get('classic'):
-        w.set_facecolor('white')
-        w.tick_params(which='both', direction='out',
-                         top=True, right=True, bottom=True, left=True)
-        w.minorticks_on()
-        for _sp in w.spines.values():
-            _sp.set_visible(True); _sp.set_linewidth(1.0); _sp.set_color('black')
-    else:
-        w.set_facecolor('none')  # transparent → Qt widget bg shows through
-        w.tick_params(which='both', direction='out',
-                         top=False, right=False)
+    _apply_frame(w, st)
     
     # ── WMA overlay per group ──────────────────────────────────────────────
     if step_groups:
@@ -1839,10 +1825,12 @@ def getSHStatistics(file, mask, constants, xlim=None, ylim=None, legend_name=Non
             ar39_pct = float(sum(stepw[i] for i in gi))
             w.fill_between([x0, x1], [wma-wma_err]*2, [wma+wma_err]*2,
                            color=gc, alpha=0.25, zorder=3)
-            w.plot([x0, x1], [wma, wma], color=gc, linewidth=1.5, zorder=4)
+            w.plot([x0, x1], [wma, wma], color=gc,
+                   linewidth=st.get('lw_wma', 1.5), zorder=4)
             w.text((x0+x1)/2, wma+wma_err*1.1,
                    f'WMA={wma:.1f}±{wma_err:.1f} Ma\nMSWD={mswd:.2f} n={len(gi)}\n³⁹Ar={ar39_pct:.1f}%',
-                   ha='center', va='bottom', fontsize=7, color=gc, zorder=5)
+                   ha='center', va='bottom', fontsize=st.get('font_group', 7),
+                   color=gc, zorder=5)
 
     # Calculate Y-axis range using age ± std (robust to NaN)
     if n > 0:
@@ -1860,10 +1848,13 @@ def getSHStatistics(file, mask, constants, xlim=None, ylim=None, legend_name=Non
         _xl, _yl = panel_limits['DFW']
         if _xl is not None: w.set_xlim(_xl[0], _xl[1])
         if _yl is not None: w.set_ylim(_yl[0], _yl[1])
-    w.set_xlabel('Cumulative $^{39}$Ar Released(%)')
-    w.set_ylabel('Age (Ma)')
-    if legend_name:
-        plt.title(legend_name)
+    w.set_xlabel(_txt(st, 'DFW', 'xlabel', 'Cumulative $^{39}$Ar Released(%)'),
+                 **_fs(st.get('font_axis')))
+    w.set_ylabel(_txt(st, 'DFW', 'ylabel', 'Age (Ma)'),
+                 **_fs(st.get('font_axis')))
+    _t_dfw = _txt(st, 'DFW', 'title', legend_name if legend_name else '')
+    if _t_dfw:
+        w.set_title(_t_dfw, **_fs(st.get('font_title')))
     # ── Group span indicator for DFW ────────────────────────────────────
     if show_group_span and step_groups:
         from collections import defaultdict
@@ -1885,7 +1876,8 @@ def getSHStatistics(file, mask, constants, xlim=None, ylim=None, legend_name=Non
             _gc = group_colors[_gn - 1] if group_colors and _gn-1 < len(group_colors) else 'black'
             # arrow <->
             w.annotate('', xy=(_xe, _y_span_base), xytext=(_xs, _y_span_base),
-                       arrowprops=dict(arrowstyle='<->', color=_gc, lw=1.5))
+                       arrowprops=dict(arrowstyle='<->', color=_gc,
+                                       lw=st.get('lw_wma', 1.5)))
             # WMA & MSWD
             _g_ages = np.array([y_age[_si] for _si in _gsteps_sorted])
             _g_errs = np.array([max(y_err[_si], 1e-6) for _si in _gsteps_sorted])
@@ -1900,7 +1892,8 @@ def getSHStatistics(file, mask, constants, xlim=None, ylim=None, legend_name=Non
                     f"MSWD={_mswd:.2f}  ³⁹Ar={_cum_ar:.1f}%")
             _dy_txt = (_ylim_now[1] - _ylim_now[0]) * 0.04
             w.text(_xmid, _y_span_base + _dy_txt, _lbl,
-                   ha='center', va='bottom', fontsize=7, color=_gc)
+                   ha='center', va='bottom', fontsize=st.get('font_group', 7),
+                   color=_gc)
     # Axes bbox: use tight_layout + get_position (stable, DPI-independent, no bbox_inches='tight' shift)
     try:
         w.figure.tight_layout()
@@ -2019,26 +2012,18 @@ def getSHStatistics(file, mask, constants, xlim=None, ylim=None, legend_name=Non
         _xl, _yl = panel_limits['DFA']
         if _xl is not None: ax_a.set_xlim(_xl[0], _xl[1])
         if _yl is not None: ax_a.set_ylim(_yl[0], _yl[1])
-    # ── Classic frame: outward ticks all 4 sides, closed box ─────────────
-    if st.get('classic'):
-        ax_a.set_facecolor('white')
-        ax_a.tick_params(which='both', direction='out',
-                         top=True, right=True, bottom=True, left=True)
-        ax_a.minorticks_on()
-        for _sp in ax_a.spines.values():
-            _sp.set_visible(True); _sp.set_linewidth(1.0); _sp.set_color('black')
-    else:
-        ax_a.set_facecolor('none')  # transparent → Qt widget bg shows through
-        ax_a.tick_params(which='both', direction='out',
-                         top=False, right=False)
-    ax_a.set_xlabel('Cumulative $^{39}$Ar Released(%)')
-    ax_a.set_ylabel('Ca/K ratio')
+    _apply_frame(ax_a, st)
+    ax_a.set_xlabel(_txt(st, 'DFA', 'xlabel', 'Cumulative $^{39}$Ar Released(%)'),
+                    **_fs(st.get('font_axis')))
+    ax_a.set_ylabel(_txt(st, 'DFA', 'ylabel', 'Ca/K ratio'),
+                    **_fs(st.get('font_axis')))
     ax_a.text(0.01, 0.99,
               r'Ca/K $=\ \frac{^{37}\!\mathrm{Ar}_{Ca}}{^{39}\!\mathrm{Ar}_K}\ \times\ 0.52$',
               transform=ax_a.transAxes, ha='left', va='top',
-              fontsize=8, color='#555555', style='italic')
-    if legend_name:
-        plt.title(legend_name)
+              fontsize=st.get('font_annot', 8), color='#555555', style='italic')
+    _t_dfa = _txt(st, 'DFA', 'title', legend_name if legend_name else '')
+    if _t_dfa:
+        ax_a.set_title(_t_dfa, **_fs(st.get('font_title')))
     try:
         ax_a.figure.tight_layout()
     except Exception:
@@ -2134,26 +2119,18 @@ def getSHStatistics(file, mask, constants, xlim=None, ylim=None, legend_name=Non
         _xl, _yl = panel_limits['DFC']
         if _xl is not None: ax_cl.set_xlim(_xl[0], _xl[1])
         if _yl is not None: ax_cl.set_ylim(_yl[0], _yl[1])
-    # ── Classic frame: outward ticks all 4 sides, closed box ─────────────
-    if st.get('classic'):
-        ax_cl.set_facecolor('white')
-        ax_cl.tick_params(which='both', direction='out',
-                         top=True, right=True, bottom=True, left=True)
-        ax_cl.minorticks_on()
-        for _sp in ax_cl.spines.values():
-            _sp.set_visible(True); _sp.set_linewidth(1.0); _sp.set_color('black')
-    else:
-        ax_cl.set_facecolor('none')  # transparent → Qt widget bg shows through
-        ax_cl.tick_params(which='both', direction='out',
-                         top=False, right=False)
-    ax_cl.set_xlabel('Cumulative $^{39}$Ar Released(%)')
-    ax_cl.set_ylabel('Cl/K ratio')
+    _apply_frame(ax_cl, st)
+    ax_cl.set_xlabel(_txt(st, 'DFC', 'xlabel', 'Cumulative $^{39}$Ar Released(%)'),
+                     **_fs(st.get('font_axis')))
+    ax_cl.set_ylabel(_txt(st, 'DFC', 'ylabel', 'Cl/K ratio'),
+                     **_fs(st.get('font_axis')))
     ax_cl.text(0.01, 0.99,
                r'Cl/K $=\ \frac{^{38}\!\mathrm{Ar}_{Cl}}{^{39}\!\mathrm{Ar}_K}\ \times\ 0.22$',
                transform=ax_cl.transAxes, ha='left', va='top',
-               fontsize=8, color='#555555', style='italic')
-    if legend_name:
-        plt.title(legend_name)
+               fontsize=st.get('font_annot', 8), color='#555555', style='italic')
+    _t_dfc = _txt(st, 'DFC', 'title', legend_name if legend_name else '')
+    if _t_dfc:
+        ax_cl.set_title(_t_dfc, **_fs(st.get('font_title')))
     try:
         ax_cl.figure.tight_layout()
     except Exception:
@@ -3128,26 +3105,166 @@ def calcAge(measurement_filename, J, J_std, J_int, constants):
 # ============================================================
 
 
+# ── Diagram style system (v3.9.0) ────────────────────────────────────────
+# 中央 style dict:所有 AgeCalc diagram(DFN/DFI/DFW/DFA/DFC/DFD/DFR)的
+# 顏色/字型/線寬/legend/軸樣式集中於此。DiagramStyleEditor 透過
+# set_style_overrides() 疊加使用者自訂;plot functions 一律經 _get_style()
+# 取值,不再各自 hardcode。
+
+# 分組色。順序即色盲安全機制(相鄰對 CVD ΔE 最佳化),不要隨意重排。
+GROUP_COLORS = ['#FF8C00', '#1E90FF', '#2ECC40', '#FF4136', '#B10DC9']
+GROUP_COLORS_CVD = ['#2a78d6', '#1baf7a', '#eda100', '#008300',
+                    '#4a3aa7', '#e34948', '#e87ba4', '#eb6834']
+
+# 共通預設 = 現行 hardcode 值;font_* 為 None 表示沿用 matplotlib 預設,
+# tick 的 ticks_top_right/minor 為 None 表示沿用 classic/pyADR 分支現行行為。
+_STYLE_BASE = dict(
+    group_colors=GROUP_COLORS,
+    atm_marker='red',
+    font_axis=None, font_tick=None, font_title=None,
+    font_annot=8, font_group=7,
+    legend_loc='upper left', legend_fontsize=8, legend_framealpha=0.85,
+    lw_fit=2.0, lw_link=0.5, lw_wma=1.5, lw_spine=1.0,
+    tick_dir='out', ticks_top_right=None, minor=None,
+    text={},   # per-target 文字覆寫:{'DFW': {'title':…,'xlabel':…,'ylabel':…}}
+)
+
+_STYLE_PRESETS = {
+    'pyADR': dict(
+        age='#4040a0', cak='#6a0dad', clk='teal',
+        atm='#b05000', iso_dot='#1a5a8a',
+        edge='black', lw=0.5, alpha=1.0,
+        mean_color='navy', mean_ls='--',
+        grid=True, bg=None,
+        classic=False,
+    ),
+    'classic': dict(
+        age='white', cak='white', clk='white',
+        atm='white', iso_dot='black',
+        edge='black', lw=0.8, alpha=1.0,
+        mean_color='black', mean_ls='-',
+        grid=False, bg='white',
+        classic=True,
+    ),
+    # 期刊風:muted 色 + tick 朝內 + 四邊框 + minor ticks(IsoplotR 慣例)
+    'publication': dict(
+        age='#4C72B0', cak='#55A868', clk='#8172B3',
+        atm='#b05000', iso_dot='#1a5a8a',
+        edge='black', lw=0.8, alpha=1.0,
+        mean_color='#202020', mean_ls='-',
+        grid=False, bg=None,
+        classic=False,
+        group_colors=GROUP_COLORS_CVD,
+        tick_dir='in', ticks_top_right=True, minor=True,
+    ),
+    # 投影片風:publication 配色,字級/線寬放大
+    'presentation': dict(
+        age='#4C72B0', cak='#55A868', clk='#8172B3',
+        atm='#b05000', iso_dot='#1a5a8a',
+        edge='black', lw=1.2, alpha=1.0,
+        mean_color='#202020', mean_ls='-',
+        grid=False, bg=None,
+        classic=False,
+        group_colors=GROUP_COLORS_CVD,
+        tick_dir='in', ticks_top_right=True, minor=True,
+        font_axis=13, font_tick=11, font_title=14,
+        font_annot=11, font_group=9,
+        legend_fontsize=10,
+        lw_fit=2.5, lw_link=0.8, lw_wma=2.0,
+    ),
+}
+
+# DiagramStyleEditor 寫入的使用者覆寫(session 內有效,由 host 負責持久化)
+_STYLE_OVERRIDES = {}
+
+
+def available_styles():
+    return list(_STYLE_PRESETS.keys())
+
+
+def set_style_overrides(overrides):
+    """Replace user style overrides (dict, same keys as _get_style output).
+
+    'text' key merges per-target: {'DFW': {'ylabel': 'Age (Ma)'}, ...}.
+    Pass {} / None to clear."""
+    global _STYLE_OVERRIDES
+    _STYLE_OVERRIDES = dict(overrides) if overrides else {}
+
+
+def get_style_overrides():
+    return dict(_STYLE_OVERRIDES)
+
+
 def _get_style(style='pyADR'):
-    """Return color/appearance dict for the given plot style."""
-    if style == 'classic':
-        return dict(
-            age='white', cak='white', clk='white',
-            atm='white', iso_dot='black',
-            edge='black', lw=0.8, alpha=1.0,
-            mean_color='black', mean_ls='-',
-            grid=False, bg='white',
-            classic=True,
-        )
-    else:  # pyADR (default)
-        return dict(
-            age='#4040a0', cak='#6a0dad', clk='teal',
-            atm='#b05000', iso_dot='#1a5a8a',
-            edge='black', lw=0.5, alpha=1.0,
-            mean_color='navy', mean_ls='--',
-            grid=True, bg=None,
-            classic=False,
-        )
+    """Return the merged style dict: base defaults ← preset ← user overrides."""
+    st = dict(_STYLE_BASE)
+    st.update(_STYLE_PRESETS.get(style, _STYLE_PRESETS['pyADR']))
+    if _STYLE_OVERRIDES:
+        ov = dict(_STYLE_OVERRIDES)
+        txt = ov.pop('text', None)
+        ov.pop('preset', None)
+        st.update(ov)
+        if txt:
+            merged = {k: dict(v) for k, v in st.get('text', {}).items()}
+            for tgt, fields in txt.items():
+                merged.setdefault(tgt, {}).update(
+                    {k: v for k, v in fields.items() if v})
+            st['text'] = merged
+    return st
+
+
+def _txt(st, target, field, default):
+    """Per-target text override lookup (title/xlabel/ylabel)."""
+    try:
+        v = st.get('text', {}).get(target, {}).get(field)
+    except AttributeError:
+        v = None
+    return v if v else default
+
+
+def _fs(v, key='fontsize'):
+    """Kwargs helper: omit the kwarg entirely when value is None so the
+    matplotlib default stays bit-identical to the pre-v3.9 output."""
+    return {} if v is None else {key: v}
+
+
+def _legend_kw(st, **extra):
+    kw = dict(loc=st.get('legend_loc', 'upper left'),
+              fontsize=st.get('legend_fontsize', 8),
+              framealpha=st.get('legend_framealpha', 0.85))
+    kw.update(extra)
+    return kw
+
+
+def _resolve_group_colors(passed, st):
+    """Editor override > caller-passed list > preset default."""
+    if _STYLE_OVERRIDES.get('group_colors'):
+        return list(_STYLE_OVERRIDES['group_colors'])
+    if passed:
+        return list(passed)
+    return list(st.get('group_colors', GROUP_COLORS))
+
+
+def _apply_frame(ax, st):
+    """Shared classic/pyADR frame & tick styling (was copy-pasted per plot)."""
+    _tk = _fs(st.get('font_tick'), 'labelsize')
+    if st.get('classic'):
+        ax.set_facecolor('white')
+        ax.tick_params(which='both', direction=st.get('tick_dir', 'out'),
+                       top=True, right=True, bottom=True, left=True, **_tk)
+        if st.get('minor') is not False:
+            ax.minorticks_on()
+        for _sp in ax.spines.values():
+            _sp.set_visible(True)
+            _sp.set_linewidth(st.get('lw_spine', 1.0))
+            _sp.set_color('black')
+    else:
+        ax.set_facecolor('none')   # transparent → Qt widget bg shows through
+        _tr = bool(st.get('ticks_top_right'))
+        ax.tick_params(which='both', direction=st.get('tick_dir', 'out'),
+                       top=_tr, right=_tr, **_tk)
+        if st.get('minor'):
+            ax.minorticks_on()
 
 def _read_sh_rows(file):
     """Return (header_col_dict, data_rows, stepw, y_age, y_age_err, mask_col)."""
@@ -3223,6 +3340,7 @@ def getRadiogenicPlot(file, mask, constants,
     outdir = os.path.join(os.path.dirname(__file__), ".work")
     os.makedirs(outdir, exist_ok=True)
     _st = _get_style(style)
+    group_colors = _resolve_group_colors(group_colors, _st)
     col, rows, stepw, y_age, y_err, n = _read_sh_rows(file)
 
     atm_idx = col.get('40Ar(r)(%)', 19)
@@ -3249,17 +3367,15 @@ def getRadiogenicPlot(file, mask, constants,
         ax.set_xlim(xlim[0], xlim[1])
     if ylim is not None:
         ax.set_ylim(ylim[0], ylim[1])
-    ax.set_xlabel('Cumulative $^{39}$Ar Released(%)')
-    ax.set_ylabel('%$^{40}$Ar*')
-    if legend_name:
-        ax.set_title(str(legend_name))
-    if _st.get('classic'):
-        ax.set_facecolor('white')
-        ax.tick_params(which='both', direction='out', top=True, right=True,
-                       bottom=True, left=True)
-        for _sp in ax.spines.values():
-            _sp.set_visible(True); _sp.set_linewidth(1.0); _sp.set_color('black')
-    elif _st.get('grid'):
+    ax.set_xlabel(_txt(_st, 'DFR', 'xlabel', 'Cumulative $^{39}$Ar Released(%)'),
+                  **_fs(_st.get('font_axis')))
+    ax.set_ylabel(_txt(_st, 'DFR', 'ylabel', '%$^{40}$Ar*'),
+                  **_fs(_st.get('font_axis')))
+    _t_dfr = _txt(_st, 'DFR', 'title', str(legend_name) if legend_name else '')
+    if _t_dfr:
+        ax.set_title(_t_dfr, **_fs(_st.get('font_title')))
+    _apply_frame(ax, _st)
+    if not _st.get('classic') and _st.get('grid'):
         ax.grid(True, alpha=0.25)
 
     actual_xlim = tuple(float(v) for v in ax.get_xlim())
@@ -3546,27 +3662,21 @@ def getDegasPlot(file, mask, constants,
     if ylim is not None:
         ax.set_ylim(ylim[0], ylim[1])
 
-    ax.set_xlabel("Temperature (°C)")
-    ax.set_ylabel("Ar amount (V)")
-
     # Style frame
     st = _get_style(style)
-    if st.get('classic'):
-        ax.set_facecolor('white')
-        ax.tick_params(which='both', direction='out',
-                       top=True, right=True, bottom=True, left=True)
-        ax.minorticks_on()
-        for sp in ax.spines.values():
-            sp.set_visible(True); sp.set_linewidth(1.0); sp.set_color('black')
-    else:
-        ax.set_facecolor('none')
-        ax.tick_params(which='both', direction='out', top=False, right=False)
+    ax.set_xlabel(_txt(st, 'DFD', 'xlabel', "Temperature (°C)"),
+                  **_fs(st.get('font_axis')))
+    ax.set_ylabel(_txt(st, 'DFD', 'ylabel', "Ar amount (V)"),
+                  **_fs(st.get('font_axis')))
+    _apply_frame(ax, st)
 
     if show_legend:
-        ax.legend(loc='best', fontsize=8, ncol=2 if show_all_components else 1, frameon=False)
+        ax.legend(loc='best', fontsize=st.get('legend_fontsize', 8),
+                  ncol=2 if show_all_components else 1, frameon=False)
 
-    if legend_name:
-        ax.set_title(legend_name)
+    _t_dfd = _txt(st, 'DFD', 'title', legend_name if legend_name else '')
+    if _t_dfd:
+        ax.set_title(_t_dfd, **_fs(st.get('font_title')))
 
     try:
         fig.tight_layout()
