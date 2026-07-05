@@ -7303,6 +7303,21 @@ class AutoPipelineWindow(QtWidgets.QMainWindow):
                 'Documentation lives in NTNU_DataReduction.py '
                 '(_show_diagram_plot_help function).')
 
+    def _show_closure_temp(self):
+        """v3.8.94: open the Dodson (1973) closure-temperature calculator.
+        Standalone tool (not tied to the loaded run) for estimating the Tc of
+        Ar thermochronometers — hornblende / muscovite / biotite / K-feldspar
+        — from editable diffusion parameters, geometry, grain size and
+        cooling rate. Math + mineral DB live in ClosureTemperature.py."""
+        try:
+            import ClosureTemperature
+            dlg = ClosureTemperature.ClosureTempDialog(self)
+            dlg.exec_()
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(
+                self, 'Closure Temperature',
+                f'Closure-temperature tool unavailable: {e}')
+
     def _show_auto_guide(self):
         """v3.8.37: short standalone dialog explaining Auto Blank / Auto
         Signal — what they do, when to use them, when to fall back to
@@ -7668,6 +7683,13 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
         _act_auto_guide = QtWidgets.QAction('Auto Blank / Signal Guide', self)
         _menu_help.addAction(_act_auto_guide)
         _act_auto_guide.triggered.connect(self._show_auto_guide)
+
+        # v3.8.94: Tools menu — Dodson (1973) closure-temperature calculator.
+        _menu_tools = _mb.addMenu('Tools')
+        _act_closure = QtWidgets.QAction(
+            'Closure Temperature (Dodson 1973)…', self)
+        _menu_tools.addAction(_act_closure)
+        _act_closure.triggered.connect(self._show_closure_temp)
 
         # Top bar: Mode/Fit/Blank/Signal chips + Pipeline progress + Run button
         # v3.8.21: pipeline moved BACK inside top_bar (was a separate strip in

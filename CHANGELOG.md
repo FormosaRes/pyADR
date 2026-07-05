@@ -8,6 +8,53 @@ GitHub Releases（tag）最新仍為 **v3.8.54（Latest，彙整 v3.8.9 → v3.8
 
 ---
 
+## V3.8.94（2026-07-05）— 新增礦物 Closure Temperature 計算器（Dodson 1973）
+
+新功能：獨立的礦物封閉溫度（closure temperature）計算工具，估算 Ar 熱定年礦物（角閃石／白雲母／黑雲母／鉀長石）冷卻通過封閉溫度的 Tᴄ。跟 pipeline 數據解耦，純參數計算。
+
+### 數學（`ClosureTemperature.py`）
+Dodson (1973) CMP 40, 259–274 迭代解：
+
+    Tᴄ = E / [ R · ln( A · τ · D₀ / a² ) ],   τ = R·Tᴄ² / (E · dT/dt)
+
+Tᴄ 兩邊都有 → fixed-point 迭代（初值 600 K，200 iter，tol 1e-9）。
+- `E` 活化能（DB 存 kcal/mol，內部 ×4184 → J/mol）
+- `D₀` frequency factor（cm²/s）
+- `a` effective diffusion radius（UI µm → cm）
+- `A` 幾何因子：sphere 55 / cylinder 27 / plane sheet 8.7（Dodson slow-cooling 極限）
+- `dT/dt` 冷卻速率（UI °C/Myr → K/s）
+- 非物理輸入（負參數、log 引數 ≤1 即「不封閉」）回傳 NaN
+
+### 內建礦物擴散參數（皆可在 UI 覆寫）
+| 礦物 | E (kcal/mol) | D₀ (cm²/s) | 幾何 | a (µm) | 文獻 | Tᴄ@10°C/Myr |
+|---|---|---|---|---|---|---|
+| Hornblende | 64.1 | 0.024 | sphere | 80 | Harrison (1981) CMP 78, 324 | ~500°C |
+| Muscovite | 63.0 | 2.3 | sphere | 100 | Harrison et al. (2009) GCA 73, 1039 | ~425°C |
+| Biotite | 47.0 | 0.077 | cylinder | 150 | Harrison et al. (1985) GCA 49, 2461 | ~310°C |
+| Biotite (Fe-rich) | 47.1 | 0.40 | cylinder | 150 | Grove & Harrison (1996) Am.Min. 81, 940 | ~290°C |
+| K-feldspar | 43.8 | 0.0098 | sphere | 100 | Foland (1974) GCA 38, 151 | ~280°C |
+
+K-feldspar 為單一 domain bulk 估計；真實 K-fsp 多重擴散 domain（Lovera et al. 1989），UI 有註記。
+
+### UI（`ClosureTempDialog`）
+- 左：mineral preset 下拉（選了自動填 E/D₀/幾何/a）＋ 5 個可編輯輸入；手動改任一值即翻成「Custom…」（清掉文獻標註，避免對不上引用來源）。
+- 大字 Tᴄ 結果卡 ＋ 公式；6 段冷卻速率（1/3/10/30/100/300 °C/Myr）對照表。
+- 右：Tᴄ vs 冷卻速率曲線（log x, 0.1–1000 °C/Myr），紅點標當前選定速率。matplotlib 圖軸 y label 用 mathtext `$T_c$`（依 §3.2 慣例避免缺字下標）。
+
+### 接入
+- `AutoPipeline.py`：menu bar 新增 **Tools → Closure Temperature (Dodson 1973)…**，lazy import `ClosureTemperature`，開 modal dialog。純新增，不動既有 pipeline 路徑。
+
+### 驗證
+- `python ClosureTemperature.py` 自我測試：4 礦物 Tᴄ 與文獻值吻合（hbl 501 vs 500、musc 423 vs 425、bt 310 vs 310、Kfs 278 vs 280，皆在容差內）；冷卻越快 Tᴄ 越高（單調性）；非物理輸入回 NaN。全 PASS。
+- `ast.parse` 通過（`AutoPipeline.py` + `ClosureTemperature.py`）。
+
+### 檔案改動
+- 新增 `ClosureTemperature.py`（math + Qt dialog + self-test）。
+- `AutoPipeline.py`：Tools menu ＋ `_show_closure_temp` handler。
+- `.work/.app_info.txt`：3.8.93 → 3.8.94
+
+---
+
 ## V3.8.93（2026-06-22）— 修 AutoPipeline 按 Help 跳出開機 splash 畫面
 
 使用者回報：在 AutoPipeline 按 Help → Formulas，會冒出開機 splash（pyADR logo / NTNU Ar/Ar Lab）蓋在 Help dialog 上。
