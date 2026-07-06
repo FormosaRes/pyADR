@@ -8,6 +8,20 @@ GitHub Releases（tag）最新為 **v3.8.96（Latest，彙整 v3.8.94 → v3.8.9
 
 ---
 
+## V3.9.3（2026-07-06）— 冷卻史每列加 Show 勾選框：選擇哪些礦物畫在圖上
+
+冷卻史（T–t）表格最前面新增 **Show** 欄，每列一個勾選框（預設勾）：取消勾選的定年計不畫在 T–t 圖上（點、連線、段間冷卻速率、Tᴄ 帶全部略過），但保留在表格裡，隨時可再勾回。方便比較「納入 / 排除某些系統」對冷卻路徑的影響。
+
+- 欄序：**Show**｜Mineral｜Age｜±｜Tᴄ｜±｜Method｜Band（表格 7→8 欄，既有欄 index 全右移一格，add/read/swap/mineral-changed 同步更新）。
+- `_ch_read_rows(only_shown=True)` 過濾未勾列；`_ch_plot` / `_ch_save` 只用已勾列（全部取消勾選時提示先勾一個）。
+- 上下移動列、Save 圖片與勾選狀態一致（勾選隨列走）。
+
+驗證：self-test ALL PASS；offscreen 冒煙：5 列預設全勾、取消 K-feldspar 後圖上剩 4 點、勾選隨移動列。`py_compile` 通過。不動 pipeline 輸出。
+
+檔案：`ClosureTemperature.py`（Show 欄 + `_ch_make_show_chk`；欄 index 右移；`_ch_read_rows` 加 `only_shown`；plot/save 過濾）；`.work/.app_info.txt` 3.9.2 → 3.9.3。
+
+---
+
 ## V3.9.2（2026-07-06）— 冷卻史圖清爽化：移除點標籤 + Tᴄ 帶標籤改礦物縮寫
 
 冷卻史（T–t）圖兩項排版調整（使用者回饋）：

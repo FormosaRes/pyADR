@@ -242,7 +242,7 @@ def _build_dialog_class():
         def __init__(self, parent=None):
             super().__init__(parent)
             self.setWindowTitle('Closure Temperature — Dodson (1973)')
-            self.setMinimumSize(1010, 680)
+            self.setMinimumSize(1050, 680)
             self._building = True
             self._build()
             self._building = False
@@ -407,7 +407,7 @@ def _build_dialog_class():
             left.setSpacing(8)
             lw = QtWidgets.QWidget()
             lw.setLayout(left)
-            lw.setFixedWidth(500)
+            lw.setFixedWidth(540)
             root.addWidget(lw, 0)
 
             title = QtWidgets.QLabel('Cooling history (T–t path)')
@@ -432,14 +432,15 @@ def _build_dialog_class():
             rrow.addStretch(1)
             left.addLayout(rrow)
 
-            self.chTable = QtWidgets.QTableWidget(0, 7)
+            self.chTable = QtWidgets.QTableWidget(0, 8)
             self.chTable.setHorizontalHeaderLabels(
-                ['Mineral', 'Age (Ma)', '± (Ma)', 'Tᴄ (°C)', '± (°C)',
+                ['Show', 'Mineral', 'Age (Ma)', '± (Ma)', 'Tᴄ (°C)', '± (°C)',
                  'Method', 'Band'])
             self.chTable.verticalHeader().setVisible(False)
             chh = self.chTable.horizontalHeader()
-            chh.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
-            for c in range(1, 7):
+            chh.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+            chh.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
+            for c in range(2, 8):
                 chh.setSectionResizeMode(c, QtWidgets.QHeaderView.ResizeToContents)
             self._ch_updating = False
             self.chTable.itemChanged.connect(self._ch_on_item_changed)
@@ -560,7 +561,9 @@ def _build_dialog_class():
                 combo.setCurrentIndex(combo.count() - 1)   # Custom
             combo.currentIndexChanged.connect(
                 lambda _i, row=combo: self._ch_on_mineral_changed(row))
-            self.chTable.setCellWidget(r, 0, combo)
+            # col 0 = Show checkbox (whether this chronometer is drawn)
+            self.chTable.setCellWidget(r, 0, self._ch_make_show_chk())
+            self.chTable.setCellWidget(r, 1, combo)
 
             # auto-fill Tc from the chosen chronometer unless caller supplied one
             if not tc:
@@ -568,21 +571,35 @@ def _build_dialog_class():
                 if t is not None and not math.isnan(t):
                     tc = f'{t:.0f}'
 
-            for c, val in ((1, age), (2, age_sig), (3, tc), (4, tc_sig)):
+            for c, val in ((2, age), (3, age_sig), (4, tc), (5, tc_sig)):
                 it = _Q.QTableWidgetItem(str(val))
                 it.setTextAlignment(QtCore.Qt.AlignCenter)
                 self.chTable.setItem(r, c, it)
 
-            # Method (col 5): read-only, auto-filled from the chosen chronometer
+            # Method (col 6): read-only, auto-filled from the chosen chronometer
             mit = _Q.QTableWidgetItem(self._ch_method_for_name(combo.currentText()))
             mit.setTextAlignment(QtCore.Qt.AlignCenter)
             mit.setFlags(mit.flags() & ~QtCore.Qt.ItemIsEditable)
-            self.chTable.setItem(r, 5, mit)
+            self.chTable.setItem(r, 6, mit)
 
-            # per-row Tᴄ-band colour (col 6, click to change)
+            # per-row Tᴄ-band colour (col 7, click to change)
             self.chTable.setCellWidget(
-                r, 6, self._ch_make_color_btn(BAND_PALETTE[r % len(BAND_PALETTE)]))
+                r, 7, self._ch_make_color_btn(BAND_PALETTE[r % len(BAND_PALETTE)]))
             self._ch_updating = False
+
+        def _ch_make_show_chk(self):
+            from PyQt5 import QtWidgets as _Q
+            w = _Q.QWidget()
+            lay = _Q.QHBoxLayout(w)
+            lay.setContentsMargins(0, 0, 0, 0)
+            lay.setAlignment(QtCore.Qt.AlignCenter)
+            chk = _Q.QCheckBox()
+            chk.setChecked(True)
+            chk.setToolTip('Show this chronometer on the T–t plot')
+            chk.stateChanged.connect(lambda _s: self._ch_plot())
+            lay.addWidget(chk)
+            w._chk = chk
+            return w
 
         def _ch_make_color_btn(self, hexcol):
             from PyQt5 import QtWidgets as _Q
@@ -605,7 +622,7 @@ def _build_dialog_class():
 
         def _ch_row_of_combo(self, combo):
             for r in range(self.chTable.rowCount()):
-                if self.chTable.cellWidget(r, 0) is combo:
+                if self.chTable.cellWidget(r, 1) is combo:
                     return r
             return -1
 
@@ -615,8 +632,8 @@ def _build_dialog_class():
                 return
             t, _rd = self._ch_tc_for_name(combo.currentText())
             if t is not None and not math.isnan(t):
-                self._ch_set_cell(r, 3, f'{t:.0f}')
-            self._ch_set_cell(r, 5, self._ch_method_for_name(combo.currentText()))
+                self._ch_set_cell(r, 4, f'{t:.0f}')
+            self._ch_set_cell(r, 6, self._ch_method_for_name(combo.currentText()))
             self._ch_plot()
 
         def _ch_set_cell(self, r, c, text):
@@ -678,14 +695,14 @@ def _build_dialog_class():
             self._ch_updating = True
             # mineral combos: swap the selection without firing the change
             # handler (which would recompute/overwrite an edited Tᴄ).
-            ca = self.chTable.cellWidget(a, 0)
-            cb = self.chTable.cellWidget(b, 0)
+            ca = self.chTable.cellWidget(a, 1)
+            cb = self.chTable.cellWidget(b, 1)
             ia, ib = ca.currentIndex(), cb.currentIndex()
             ca.blockSignals(True); cb.blockSignals(True)
             ca.setCurrentIndex(ib); cb.setCurrentIndex(ia)
             ca.blockSignals(False); cb.blockSignals(False)
             # text cells (Age / ± / Tᴄ / ± / Method): swap the raw text
-            for c in range(1, 6):
+            for c in range(2, 7):
                 ta = self.chTable.item(a, c)
                 tb = self.chTable.item(b, c)
                 sa = ta.text() if ta is not None else ''
@@ -697,33 +714,45 @@ def _build_dialog_class():
                         it.setTextAlignment(QtCore.Qt.AlignCenter)
                         self.chTable.setItem(r, c, it)
                     it.setText(s)
-            # band colour swatches: swap their colour value in place
-            ba = self.chTable.cellWidget(a, 6)
-            bb = self.chTable.cellWidget(b, 6)
+            # band colour swatches (col 7): swap their colour value in place
+            ba = self.chTable.cellWidget(a, 7)
+            bb = self.chTable.cellWidget(b, 7)
             if ba is not None and bb is not None:
                 ba._color, bb._color = bb._color, ba._color
                 ba.setStyleSheet(f'background:{ba._color};border:1px solid #888;')
                 bb.setStyleSheet(f'background:{bb._color};border:1px solid #888;')
+            # Show checkboxes (col 0): swap their checked state
+            sa = self.chTable.cellWidget(a, 0)
+            sb = self.chTable.cellWidget(b, 0)
+            if sa is not None and sb is not None:
+                va, vb = sa._chk.isChecked(), sb._chk.isChecked()
+                sa._chk.blockSignals(True); sb._chk.blockSignals(True)
+                sa._chk.setChecked(vb); sb._chk.setChecked(va)
+                sa._chk.blockSignals(False); sb._chk.blockSignals(False)
             self._ch_updating = False
 
-        def _ch_read_rows(self):
+        def _ch_read_rows(self, only_shown=False):
             rows = []
             for r in range(self.chTable.rowCount()):
-                combo = self.chTable.cellWidget(r, 0)
+                schk = self.chTable.cellWidget(r, 0)
+                show = schk._chk.isChecked() if schk is not None else True
+                if only_shown and not show:
+                    continue
+                combo = self.chTable.cellWidget(r, 1)
                 name = combo.currentText() if combo is not None else ''
-                age = self._ch_cell_float(r, 1)
-                asig = self._ch_cell_float(r, 2)
-                tc = self._ch_cell_float(r, 3)
-                tsig = self._ch_cell_float(r, 4)
-                mit = self.chTable.item(r, 5)
+                age = self._ch_cell_float(r, 2)
+                asig = self._ch_cell_float(r, 3)
+                tc = self._ch_cell_float(r, 4)
+                tsig = self._ch_cell_float(r, 5)
+                mit = self.chTable.item(r, 6)
                 method = mit.text() if mit is not None else ''
-                cbtn = self.chTable.cellWidget(r, 6)
+                cbtn = self.chTable.cellWidget(r, 7)
                 color = getattr(cbtn, '_color', None) if cbtn else None
                 if age is None or tc is None:
                     continue
                 rows.append({'name': name, 'age': age, 'age_sig': asig,
                              'tc': tc, 'tc_sig': tsig, 'method': method,
-                             'color': color})
+                             'color': color, 'show': show})
             return rows
 
         def _ch_cell_float(self, r, c):
@@ -737,7 +766,7 @@ def _build_dialog_class():
 
         def _ch_plot(self):
             self.chAx.clear()
-            rows = self._ch_read_rows()
+            rows = self._ch_read_rows(only_shown=True)
             if len(rows) == 0:
                 self.chAx.set_xlabel('Age (Ma)', fontsize=10)
                 self.chAx.set_ylabel('Temperature (°C)', fontsize=10)
@@ -832,10 +861,11 @@ def _build_dialog_class():
 
         def _ch_save(self):
             from PyQt5 import QtWidgets as _Q
-            if not self._ch_read_rows():
+            if not self._ch_read_rows(only_shown=True):
                 _Q.QMessageBox.information(
                     self, 'Save figure',
-                    'Nothing to save yet — add chronometers and Plot first.')
+                    'Nothing to save yet — tick at least one chronometer and '
+                    'Plot first.')
                 return
             path, _f = _Q.QFileDialog.getSaveFileName(
                 self, 'Save cooling-history figure', 'cooling_history.png',
