@@ -1,5 +1,5 @@
 ![logo](.work/logo.png)
-# pyADR — NTNU modified fork (v3.8.99)
+# pyADR — NTNU modified fork (v3.9.0)
 
 40Ar/39Ar data reduction tool with GUI. Modified fork of [pyADR](https://github.com/AndrewLiu0725/pyADR) (original by **An-Jun (Andrew) Liu**), now maintained by **PANG Chi-Hsiu (Academia Sinica)**.
 
@@ -148,8 +148,9 @@ python NTNU_DataReduction.py
 
 ## Changelog 摘要
 
-### v3.8.9 – v3.8.99 (2026-05 → 2026-07) — 摘要
+### v3.8.9 – v3.9.0 (2026-05 → 2026-07) — 摘要
 
+> **v3.9.0**：冷卻史細節收尾 — Tᴄ 參考帶寬**與 ±(°C) 同步**、帶**顏色可選**（Band 欄）、Single mineral 算出的 Tᴄ 可**一鍵加到 Cooling history**。
 > **v3.8.99**：冷卻史（T–t）加 **Save 圖片**（PNG/PDF/SVG）、**其他定年方法**（裂變徑跡 / (U-Th)/He / U-Pb 標稱 Tᴄ，Reiners & Brandon 2006）可與 Ar/Ar 混用、**Tᴄ 參考帶**（發表級 T–t path 風格）。
 > **v3.8.98**：冷卻史表格新增 **↑ / ↓** 按鈕，可上下移動列調整礦物順序（覆寫的 Tᴄ 隨列保留）。
 > **v3.8.97**：Closure Temperature 新增 **Cooling history (T–t) 分頁**：輸入多個定年計的年代 + 封閉溫度，繪出溫度–時間降溫曲線（含年代/溫度誤差棒、依年代連線、各段冷卻速率標註）。新增純函數 `cooling_segments()`。

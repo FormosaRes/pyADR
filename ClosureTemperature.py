@@ -134,6 +134,11 @@ OTHER_CHRONOMETERS = [
 # Plot band half-width (°C) for Ar/Ar minerals (which have no tabulated range).
 DEFAULT_BAND_HALF = 12.0
 
+# Default cycle of Tᴄ-band colours (editable per row in the cooling-history
+# table). Muted so the data points/path stay readable on top.
+BAND_PALETTE = ['#d7ead1', '#f6dbe6', '#fce3cf', '#d6e8f7',
+                '#e8dcf2', '#d9efe9', '#f2ead0', '#e3e3e3']
+
 
 def closure_temperature(E_kJ, D0_m2s, radius_um, geometry,
                         cooling_C_per_Myr, max_iter=200, tol=1e-9):
@@ -343,6 +348,11 @@ def _build_dialog_class():
             right.addWidget(note)
 
             btnRow = QtWidgets.QHBoxLayout()
+            addChBtn = QtWidgets.QPushButton('Add to cooling history →')
+            addChBtn.setToolTip('Send the current mineral + Tᴄ to the '
+                                'Cooling history (T–t) tab as a new row')
+            addChBtn.clicked.connect(self._add_single_to_cooling)
+            btnRow.addWidget(addChBtn)
             btnRow.addStretch(1)
             closeBtn = QtWidgets.QPushButton('Close')
             closeBtn.setMinimumWidth(90)
@@ -392,13 +402,13 @@ def _build_dialog_class():
             rrow.addStretch(1)
             left.addLayout(rrow)
 
-            self.chTable = QtWidgets.QTableWidget(0, 5)
+            self.chTable = QtWidgets.QTableWidget(0, 6)
             self.chTable.setHorizontalHeaderLabels(
-                ['Mineral', 'Age (Ma)', '± (Ma)', 'Tᴄ (°C)', '± (°C)'])
+                ['Mineral', 'Age (Ma)', '± (Ma)', 'Tᴄ (°C)', '± (°C)', 'Band'])
             self.chTable.verticalHeader().setVisible(False)
             chh = self.chTable.horizontalHeader()
             chh.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
-            for c in range(1, 5):
+            for c in range(1, 6):
                 chh.setSectionResizeMode(c, QtWidgets.QHeaderView.ResizeToContents)
             self._ch_updating = False
             self.chTable.itemChanged.connect(self._ch_on_item_changed)
@@ -520,7 +530,30 @@ def _build_dialog_class():
                 it = _Q.QTableWidgetItem(str(val))
                 it.setTextAlignment(QtCore.Qt.AlignCenter)
                 self.chTable.setItem(r, c, it)
+
+            # per-row Tᴄ-band colour (click to change)
+            self.chTable.setCellWidget(
+                r, 5, self._ch_make_color_btn(BAND_PALETTE[r % len(BAND_PALETTE)]))
             self._ch_updating = False
+
+        def _ch_make_color_btn(self, hexcol):
+            from PyQt5 import QtWidgets as _Q
+            b = _Q.QPushButton()
+            b.setFixedSize(30, 20)
+            b._color = hexcol
+            b.setStyleSheet(f'background:{hexcol};border:1px solid #888;')
+            b.setToolTip('Click to choose this chronometer’s Tᴄ band colour')
+            b.clicked.connect(lambda _=None, bb=b: self._ch_pick_color(bb))
+            return b
+
+        def _ch_pick_color(self, btn):
+            from PyQt5 import QtWidgets as _Q, QtGui as _G
+            c = _Q.QColorDialog.getColor(_G.QColor(btn._color), self,
+                                         'Tᴄ band colour')
+            if c.isValid():
+                btn._color = c.name()
+                btn.setStyleSheet(f'background:{c.name()};border:1px solid #888;')
+                self._ch_plot()
 
         def _ch_row_of_combo(self, combo):
             for r in range(self.chTable.rowCount()):
@@ -615,6 +648,13 @@ def _build_dialog_class():
                         it.setTextAlignment(QtCore.Qt.AlignCenter)
                         self.chTable.setItem(r, c, it)
                     it.setText(s)
+            # band colour swatches: swap their colour value in place
+            ba = self.chTable.cellWidget(a, 5)
+            bb = self.chTable.cellWidget(b, 5)
+            if ba is not None and bb is not None:
+                ba._color, bb._color = bb._color, ba._color
+                ba.setStyleSheet(f'background:{ba._color};border:1px solid #888;')
+                bb.setStyleSheet(f'background:{bb._color};border:1px solid #888;')
             self._ch_updating = False
 
         def _ch_read_rows(self):
@@ -626,10 +666,12 @@ def _build_dialog_class():
                 asig = self._ch_cell_float(r, 2)
                 tc = self._ch_cell_float(r, 3)
                 tsig = self._ch_cell_float(r, 4)
+                cbtn = self.chTable.cellWidget(r, 5)
+                color = getattr(cbtn, '_color', None) if cbtn else None
                 if age is None or tc is None:
                     continue
                 rows.append({'name': name, 'age': age, 'age_sig': asig,
-                             'tc': tc, 'tc_sig': tsig})
+                             'tc': tc, 'tc_sig': tsig, 'color': color})
             return rows
 
         def _ch_cell_float(self, r, c):
@@ -664,19 +706,25 @@ def _build_dialog_class():
 
             # Tᴄ reference bands (one per distinct chronometer in the table),
             # drawn behind the data — echoes the horizontal Tᴄ bands used in
-            # published T–t paths.
+            # published T–t paths. The band half-width follows the row's own
+            # ± (°C) when given, so the band and the Tᴄ error bar match; it
+            # falls back to the tabulated nominal half-width otherwise. The
+            # band colour is the row's editable colour swatch.
             if self.chBands.isChecked():
-                palette = ['#d7ead1', '#f6dbe6', '#fce3cf', '#d6e8f7',
-                           '#e8dcf2', '#d9efe9', '#f2ead0', '#e3e3e3']
                 seen = {}
                 for r in rows:
-                    seen.setdefault(r['name'], r['tc'])
-                for i, (nm, tcv) in enumerate(seen.items()):
-                    half = self._ch_band_half(nm)
+                    if r['name'] in seen:
+                        continue
+                    if r['tc_sig'] is not None and r['tc_sig'] > 0:
+                        half = r['tc_sig']
+                    else:
+                        half = self._ch_band_half(r['name'])
+                    seen[r['name']] = (r['tc'], half, r['color'])
+                for i, (nm, (tcv, half, color)) in enumerate(seen.items()):
+                    col = color or BAND_PALETTE[i % len(BAND_PALETTE)]
                     if half > 0:
                         self.chAx.axhspan(tcv - half, tcv + half,
-                                          color=palette[i % len(palette)],
-                                          alpha=0.75, zorder=0)
+                                          color=col, alpha=0.75, zorder=0)
                     self.chAx.axhline(tcv, color='#bbbbbb', lw=0.6, zorder=0)
                     self.chAx.annotate(
                         nm.split(' (')[0] + ' Tᴄ', xy=(1.0, tcv),
@@ -750,6 +798,33 @@ def _build_dialog_class():
             except Exception as e:
                 _Q.QMessageBox.warning(
                     self, 'Save figure', f'Could not save figure:\n{e}')
+
+        def _add_single_to_cooling(self):
+            """Send the Single-mineral tab's current mineral + computed Tᴄ to
+            the Cooling history tab as a new row (age left blank to fill in)."""
+            from PyQt5 import QtWidgets as _Q
+            E = self._e_kj()
+            D0 = self._read(self.d0Edit)
+            a = self._read(self.radiusEdit)
+            rate = self._read(self.rateEdit)
+            geom = self.geomCombo.currentText()
+            tc = None
+            if None not in (E, D0, a, rate):
+                t = closure_temperature(E, D0, a, geom, rate)
+                if not math.isnan(t):
+                    tc = f'{t:.0f}'
+            if tc is None:
+                _Q.QMessageBox.information(
+                    self, 'Add to cooling history',
+                    'Enter valid parameters (a finite Tᴄ) first.')
+                return
+            name = self.presetCombo.currentText()
+            if name == 'Custom…':
+                name = None
+            self._ch_add_row(preset_name=name, tc=tc)
+            self.tabs.setCurrentIndex(1)
+            self.chTable.setCurrentCell(self.chTable.rowCount() - 1, 1)
+            self._ch_plot()
 
         def _num_edit(self):
             e = QtWidgets.QLineEdit()

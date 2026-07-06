@@ -8,6 +8,28 @@ GitHub Releases（tag）最新為 **v3.8.96（Latest，彙整 v3.8.94 → v3.8.9
 
 ---
 
+## V3.9.0（2026-07-06）— 冷卻史細節：Tᴄ 帶寬同步 ±(°C)、帶顏色可選、single→cooling 一鍵加入
+
+使用者回饋三項，Closure Temperature 冷卻史（T–t）分頁收尾：
+
+### 1. Tᴄ 參考帶寬與 ±(°C) 同步
+- 之前帶半寬用固定標稱值，跟使用者填的 Tᴄ ±(°C) 誤差棒對不上。改成：**若該列填了 ± (°C)，帶半寬就用它**（帶與誤差棒同寬），沒填才 fallback 標稱半寬。
+
+### 2. 帶顏色可選
+- 表格新增 **Band** 欄：每列一個色塊按鈕，點開 QColorDialog 改該定年計的 Tᴄ 帶顏色（預設走 `BAND_PALETTE` 循環）。上下移動列時顏色隨列走。
+
+### 3. Single mineral → Cooling history 一鍵加入
+- Single mineral 分頁新增 **Add to cooling history →** 按鈕：把當前礦物名 + 算出的 Tᴄ 送到冷卻史分頁新增一列（年代留空待填），並自動切到該分頁、選取新列。preset 對得上會自動帶礦物下拉。
+
+### 驗證
+- self-test ALL PASS；offscreen 冒煙：色塊欄存在、Biotite ±45 °C 帶與誤差棒同寬、移動列顏色同步、single→cooling 加入 Muscovite 393 °C 並切分頁。`py_compile` 通過。不動 pipeline 輸出。
+
+### 檔案改動
+- `ClosureTemperature.py`：`BAND_PALETTE`；表格加 Band 欄 + `_ch_make_color_btn`/`_ch_pick_color`；`_ch_read_rows` 加 color；band 半寬取 tc_sig；swap 交換顏色；single tab `_add_single_to_cooling` + 按鈕。
+- `.work/.app_info.txt`：3.8.99 → 3.9.0
+
+---
+
 ## V3.8.99（2026-07-06）— 冷卻史：Save 圖片 + 其他定年方法（FT/He/U-Pb）+ Tᴄ 參考帶
 
 冷卻史（T–t）分頁三項擴充，向發表級 T–t path 靠攏（參考使用者提供的 Searle 2007 / Xu 2015 型冷卻曲線）：
