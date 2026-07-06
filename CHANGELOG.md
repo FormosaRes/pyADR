@@ -8,6 +8,32 @@ GitHub Releases（tag）最新為 **v3.8.96（Latest，彙整 v3.8.94 → v3.8.9
 
 ---
 
+## V3.8.99（2026-07-06）— 冷卻史：Save 圖片 + 其他定年方法（FT/He/U-Pb）+ Tᴄ 參考帶
+
+冷卻史（T–t）分頁三項擴充，向發表級 T–t path 靠攏（參考使用者提供的 Searle 2007 / Xu 2015 型冷卻曲線）：
+
+### 1. Save 圖片
+- 按鈕列新增 **Save PNG**：QFileDialog 選路徑，支援 **PNG / PDF / SVG**，dpi=300、bbox tight、白底。表格為空時提示先加資料。
+
+### 2. 其他定年方法的年代
+- Mineral 下拉除 14 個 Ar/Ar 定年計（Schaen 2021 Table 5，走 Dodson 依 assumed rate 算 Tᴄ）外，加一條分隔線後新增 **非 Ar/Ar 熱定年系統**（標稱封閉溫度，直接填、不隨 cooling rate 變）：Zircon U–Pb (~900)、Monazite U–Th–Pb (~700)、Titanite U–Pb (~600)、Rutile U–Pb (~600)、Zircon FT (~240)、Zircon (U-Th)/He (~180)、Apatite FT (~110)、Apatite (U-Th)/He (~70)。
+- 標稱值 compilation：`OTHER_CHRONOMETERS`，Reiners & Brandon (2006) Annu. Rev. Earth Planet. Sci. 34, 419–466 及其引用文獻。
+- 改 assumed cooling rate 只重算 Ar/Ar 列，固定 Tᴄ 系統與 Custom 列不動。
+- seed 範例加一個 Apatite fission track 12 Ma 點，示範 Ar/Ar + FT 混合冷卻史。
+
+### 3. Tᴄ 參考帶
+- 新增 checkbox **Show Tᴄ reference bands**（預設開）：對表格中出現的每個 chronometer，在其 Tᴄ 畫半透明水平色帶（半寬取 `OTHER_CHRONOMETERS['half']`，Ar/Ar 用 `DEFAULT_BAND_HALF`=12 °C），右側標礦物名 + Tᴄ，如發表圖的封閉溫度帶。
+- y 範圍由資料點（非色帶）決定加 8% padding，右側留白放帶標籤（`subplots_adjust(right=0.80)`）。
+
+### 驗證
+- self-test ALL PASS；offscreen 冒煙：下拉含其他系統、seed 5 列（末列 Apatite FT 110）、三段冷卻速率、帶繪製、PNG 存檔成功。`py_compile` 通過。不動 pipeline 輸出。
+
+### 檔案改動
+- `ClosureTemperature.py`：`OTHER_CHRONOMETERS` / `DEFAULT_BAND_HALF`；combo 加其他系統 + 分隔線；`_ch_tc_for_name` / `_ch_band_half` 取代 index-based `_ch_tc_for_preset`；`_ch_save`；`_ch_plot` 加 Tᴄ 帶 + y 範圍 + 右側留白；Save PNG 按鈕 + bands checkbox；seed 加 Apatite FT。
+- `.work/.app_info.txt`：3.8.98 → 3.8.99
+
+---
+
 ## V3.8.98（2026-07-06）— 冷卻史表格可上下移動列調整礦物順序
 
 冷卻史（T–t）分頁按鈕列新增 **↑ / ↓**（Add row 與 Remove row 之後、Plot 之前）：選一列後上/下移調整礦物排列順序。

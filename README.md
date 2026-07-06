@@ -1,5 +1,5 @@
 ![logo](.work/logo.png)
-# pyADR — NTNU modified fork (v3.8.98)
+# pyADR — NTNU modified fork (v3.8.99)
 
 40Ar/39Ar data reduction tool with GUI. Modified fork of [pyADR](https://github.com/AndrewLiu0725/pyADR) (original by **An-Jun (Andrew) Liu**), now maintained by **PANG Chi-Hsiu (Academia Sinica)**.
 
@@ -140,7 +140,7 @@ python NTNU_DataReduction.py
 | **Diagram Plots** | 出圖：age spectrum、normal / inverse isochron（York 2004 / Vermeesch）、Ca-K、Cl-K、degassing pattern（DFD/DFS/DFM）、3D 平面擬合 | age / datum CSV → PNG + 統計（plateau、WMA、MSWD、isochron age） |
 | **Datum Publication** | 產出投稿級 datum 總表（88 欄）與 isochron ratio 表（ISOr） | age / measurement CSV → publication CSV |
 | **Argon Pipeline** | 上述主鏈的批次自動化（Calculate T₀ → MassRatio → AgeCalc + Datum 一次跑完），含可編輯 J 即時重算、³⁶Ar-blank 敏感度、plateau 勾選、`.adr` session 存讀 | raw `.dat` 一組 → 全套輸出（CSV + PNG + datum） |
-| **Closure Temperature** | 獨立工具，兩分頁：①**Single mineral** — Dodson (1973) 礦物封閉溫度 Tᴄ 計算器（14 個 ⁴⁰Ar/³⁹Ar 定年計 preset，Schaen et al. 2021 GSA Bull. 133, Table 5，或自訂 E / D₀ / 幾何 / 粒徑 / 冷卻速率；E 單位 kJ/kcal 可切換）②**Cooling history (T–t)** — 輸入多個定年計的年代 + Tᴄ，繪降溫曲線並標段間冷卻速率 | 擴散參數 + 冷卻速率 → Tᴄ、對照表、Tᴄ–冷卻速率曲線；多礦物 (age, Tᴄ) → T–t 冷卻路徑 + 冷卻速率 |
+| **Closure Temperature** | 獨立工具，兩分頁：①**Single mineral** — Dodson (1973) 礦物封閉溫度 Tᴄ 計算器（14 個 ⁴⁰Ar/³⁹Ar 定年計 preset，Schaen et al. 2021 GSA Bull. 133, Table 5，或自訂 E / D₀ / 幾何 / 粒徑 / 冷卻速率；E 單位 kJ/kcal 可切換）②**Cooling history (T–t)** — 輸入多個定年計（Ar/Ar 礦物 + 裂變徑跡 / (U-Th)/He / U-Pb 等其他熱定年系統）的年代 + Tᴄ，繪降溫曲線、標段間冷卻速率、Tᴄ 參考帶，可 Save PNG/PDF/SVG | 擴散參數 + 冷卻速率 → Tᴄ、對照表、Tᴄ–冷卻速率曲線；多定年計 (age, Tᴄ) → T–t 冷卻路徑 + 冷卻速率 + 圖片匯出 |
 
 > 與 pipeline 數據解耦的純工具：**Closure Temperature**（不讀 / 不寫任何樣品 CSV，只做參數計算）。
 
@@ -148,8 +148,9 @@ python NTNU_DataReduction.py
 
 ## Changelog 摘要
 
-### v3.8.9 – v3.8.98 (2026-05 → 2026-07) — 摘要
+### v3.8.9 – v3.8.99 (2026-05 → 2026-07) — 摘要
 
+> **v3.8.99**：冷卻史（T–t）加 **Save 圖片**（PNG/PDF/SVG）、**其他定年方法**（裂變徑跡 / (U-Th)/He / U-Pb 標稱 Tᴄ，Reiners & Brandon 2006）可與 Ar/Ar 混用、**Tᴄ 參考帶**（發表級 T–t path 風格）。
 > **v3.8.98**：冷卻史表格新增 **↑ / ↓** 按鈕，可上下移動列調整礦物順序（覆寫的 Tᴄ 隨列保留）。
 > **v3.8.97**：Closure Temperature 新增 **Cooling history (T–t) 分頁**：輸入多個定年計的年代 + 封閉溫度，繪出溫度–時間降溫曲線（含年代/溫度誤差棒、依年代連線、各段冷卻速率標註）。新增純函數 `cooling_segments()`。
 > **v3.8.96**：Home 頁新增 **Closure Temperature 主按鈕**（Argon Pipeline 下方）；計算器活化能 E 單位可切換 **kJ/mol ↔ kcal/mol**（切換不動 preset、Tᴄ 不變）。

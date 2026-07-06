@@ -113,6 +113,27 @@ TABLE5_CITATION = ('Schaen et al. (2021) GSA Bulletin 133, 461–487, Table 5')
 DEFAULT_PRESET = next(i for i, m in enumerate(MINERAL_DB)
                       if m['name'] == 'Muscovite')
 
+# Nominal closure temperatures for non-⁴⁰Ar/³⁹Ar thermochronometers, offered
+# in the cooling-history tab so a T–t path can mix Ar/Ar mineral ages with
+# fission-track, (U-Th)/He and U-Pb ages (as in published cooling curves).
+# These systems are NOT volume-diffusion-modelled here — 'tc' is the widely
+# cited nominal bulk closure temperature; 'half' is a rough ± band half-width
+# for the plot only. Compilation: Reiners & Brandon (2006) Annu. Rev. Earth
+# Planet. Sci. 34, 419–466 and references therein.
+OTHER_CHRONOMETERS = [
+    {'name': 'Zircon U–Pb',            'tc': 900.0, 'half': 0,  'ref': 'Pb in zircon, effectively crystallization'},
+    {'name': 'Monazite U–Th–Pb',       'tc': 700.0, 'half': 25, 'ref': 'Reiners & Brandon (2006)'},
+    {'name': 'Titanite U–Pb',          'tc': 600.0, 'half': 30, 'ref': 'Cherniak (1993)'},
+    {'name': 'Rutile U–Pb',            'tc': 600.0, 'half': 40, 'ref': 'Cherniak (2000)'},
+    {'name': 'Zircon fission track',   'tc': 240.0, 'half': 20, 'ref': 'Reiners & Brandon (2006)'},
+    {'name': 'Zircon (U-Th)/He',       'tc': 180.0, 'half': 20, 'ref': 'Reiners & Brandon (2006)'},
+    {'name': 'Apatite fission track',  'tc': 110.0, 'half': 15, 'ref': 'Reiners & Brandon (2006)'},
+    {'name': 'Apatite (U-Th)/He',      'tc': 70.0,  'half': 15, 'ref': 'Reiners & Brandon (2006)'},
+]
+
+# Plot band half-width (°C) for Ar/Ar minerals (which have no tabulated range).
+DEFAULT_BAND_HALF = 12.0
+
 
 def closure_temperature(E_kJ, D0_m2s, radius_um, geometry,
                         cooling_C_per_Myr, max_iter=200, tol=1e-9):
@@ -398,10 +419,19 @@ def _build_dialog_class():
             downBtn.clicked.connect(lambda: self._ch_move_row(+1))
             plotBtn = QtWidgets.QPushButton('Plot')
             plotBtn.clicked.connect(self._ch_plot)
-            for b in (addBtn, rmBtn, upBtn, downBtn, plotBtn):
+            saveBtn = QtWidgets.QPushButton('Save PNG')
+            saveBtn.setToolTip('Save the cooling-history figure (PNG / PDF / SVG)')
+            saveBtn.clicked.connect(self._ch_save)
+            for b in (addBtn, rmBtn, upBtn, downBtn, plotBtn, saveBtn):
                 brow.addWidget(b)
             brow.addStretch(1)
             left.addLayout(brow)
+
+            self.chBands = QtWidgets.QCheckBox(
+                'Show Tᴄ reference bands for the chronometers used')
+            self.chBands.setChecked(True)
+            self.chBands.stateChanged.connect(self._ch_plot)
+            left.addWidget(self.chBands)
 
             # RIGHT: T–t plot
             right = QtWidgets.QVBoxLayout()
@@ -419,25 +449,42 @@ def _build_dialog_class():
             self.chInfo.setStyleSheet('font-size:10px;color:#666;')
             right.addWidget(self.chInfo)
 
-            # seed a worked example (mica–feldspar cooling of a mid-crustal rock)
+            # seed a worked example: Ar/Ar minerals + an apatite fission-track
+            # age (mid-crustal rock cooling through to the near-surface).
             self._ch_add_row(preset_name='Hornblende', age='40', age_sig='1')
             self._ch_add_row(preset_name='Muscovite', age='34', age_sig='0.8')
             self._ch_add_row(preset_name='Biotite (X_phl = 0.29)',
                              age='30', age_sig='0.7')
             self._ch_add_row(preset_name='K-feldspar (orthoclase)',
                              age='26', age_sig='0.6')
+            self._ch_add_row(preset_name='Apatite fission track',
+                             age='12', age_sig='1.5')
             self._ch_plot()
             return w
 
-        def _ch_tc_for_preset(self, idx):
-            """Dodson Tᴄ (°C) for MINERAL_DB[idx] at the tab's assumed cooling
-            rate, using that mineral's own D0/geometry and a = 100 µm."""
-            m = MINERAL_DB[idx]
-            rate = self._read(self.chRateEdit)
-            if rate is None:
-                rate = 10.0
-            return closure_temperature(m['E'], m['D0'], 100.0,
-                                       m['geometry'], rate)
+        def _ch_tc_for_name(self, name):
+            """Nominal Tᴄ (°C) for a chronometer by name, and whether it is
+            cooling-rate-dependent. Ar/Ar minerals → Dodson Tᴄ at the tab's
+            assumed rate (a = 100 µm); other systems → tabulated nominal Tᴄ.
+            Returns (tc_or_None, rate_dependent)."""
+            for m in MINERAL_DB:
+                if m['name'] == name:
+                    rate = self._read(self.chRateEdit)
+                    if rate is None:
+                        rate = 10.0
+                    return closure_temperature(m['E'], m['D0'], 100.0,
+                                               m['geometry'], rate), True
+            for o in OTHER_CHRONOMETERS:
+                if o['name'] == name:
+                    return o['tc'], False
+            return None, False
+
+        def _ch_band_half(self, name):
+            """± band half-width (°C) for the Tᴄ reference band of `name`."""
+            for o in OTHER_CHRONOMETERS:
+                if o['name'] == name:
+                    return o['half']
+            return DEFAULT_BAND_HALF
 
         def _ch_add_row(self, preset_name=None, age='', age_sig='',
                         tc='', tc_sig=''):
@@ -449,6 +496,9 @@ def _build_dialog_class():
             combo = _Q.QComboBox()
             for m in MINERAL_DB:
                 combo.addItem(m['name'])
+            combo.insertSeparator(combo.count())        # Ar/Ar │ other systems
+            for o in OTHER_CHRONOMETERS:
+                combo.addItem(o['name'])
             combo.addItem('Custom…')
             if preset_name is not None:
                 i = combo.findText(preset_name)
@@ -460,10 +510,11 @@ def _build_dialog_class():
                 lambda _i, row=combo: self._ch_on_mineral_changed(row))
             self.chTable.setCellWidget(r, 0, combo)
 
-            # auto-fill Tc from the chosen preset unless caller supplied one
-            if not tc and combo.currentIndex() < len(MINERAL_DB):
-                t = self._ch_tc_for_preset(combo.currentIndex())
-                tc = '' if math.isnan(t) else f'{t:.0f}'
+            # auto-fill Tc from the chosen chronometer unless caller supplied one
+            if not tc:
+                t, _rd = self._ch_tc_for_name(combo.currentText())
+                if t is not None and not math.isnan(t):
+                    tc = f'{t:.0f}'
 
             for c, val in ((1, age), (2, age_sig), (3, tc), (4, tc_sig)):
                 it = _Q.QTableWidgetItem(str(val))
@@ -481,10 +532,9 @@ def _build_dialog_class():
             r = self._ch_row_of_combo(combo)
             if r < 0:
                 return
-            idx = combo.currentIndex()
-            if idx < len(MINERAL_DB):
-                t = self._ch_tc_for_preset(idx)
-                self._ch_set_cell(r, 3, '' if math.isnan(t) else f'{t:.0f}')
+            t, _rd = self._ch_tc_for_name(combo.currentText())
+            if t is not None and not math.isnan(t):
+                self._ch_set_cell(r, 3, f'{t:.0f}')
             self._ch_plot()
 
         def _ch_set_cell(self, r, c, text):
@@ -504,16 +554,18 @@ def _build_dialog_class():
             self._ch_plot()
 
         def _ch_refill_tc(self):
-            # Cooling-rate-for-Tc changed: refill Tc on every preset row that
-            # the user hasn't overridden is hard to know, so refill all preset
-            # rows (Custom rows keep their typed Tc).
+            # Assumed-cooling-rate changed: refill Tᴄ only on rate-dependent
+            # (Ar/Ar) rows. Fixed-Tᴄ systems (FT / He / U-Pb) and Custom rows
+            # keep their value.
             if self._ch_updating:
                 return
             for r in range(self.chTable.rowCount()):
                 combo = self.chTable.cellWidget(r, 0)
-                if combo is not None and combo.currentIndex() < len(MINERAL_DB):
-                    t = self._ch_tc_for_preset(combo.currentIndex())
-                    self._ch_set_cell(r, 3, '' if math.isnan(t) else f'{t:.0f}')
+                if combo is None:
+                    continue
+                t, rate_dep = self._ch_tc_for_name(combo.currentText())
+                if rate_dep and t is not None and not math.isnan(t):
+                    self._ch_set_cell(r, 3, f'{t:.0f}')
             self._ch_plot()
 
         def _ch_remove_row(self):
@@ -598,7 +650,8 @@ def _build_dialog_class():
                 self.chAx.grid(True, ls=':', alpha=0.4)
                 self.chInfo.setText('Add at least one chronometer '
                                     '(age + Tᴄ) to draw a cooling path.')
-                self.chFig.tight_layout()
+                self.chFig.subplots_adjust(left=0.12, right=0.80,
+                                           top=0.96, bottom=0.12)
                 self.chCanvas.draw_idle()
                 return
 
@@ -608,6 +661,29 @@ def _build_dialog_class():
                     for r in rows]
             yerr = [r['tc_sig'] if r['tc_sig'] is not None else 0.0
                     for r in rows]
+
+            # Tᴄ reference bands (one per distinct chronometer in the table),
+            # drawn behind the data — echoes the horizontal Tᴄ bands used in
+            # published T–t paths.
+            if self.chBands.isChecked():
+                palette = ['#d7ead1', '#f6dbe6', '#fce3cf', '#d6e8f7',
+                           '#e8dcf2', '#d9efe9', '#f2ead0', '#e3e3e3']
+                seen = {}
+                for r in rows:
+                    seen.setdefault(r['name'], r['tc'])
+                for i, (nm, tcv) in enumerate(seen.items()):
+                    half = self._ch_band_half(nm)
+                    if half > 0:
+                        self.chAx.axhspan(tcv - half, tcv + half,
+                                          color=palette[i % len(palette)],
+                                          alpha=0.75, zorder=0)
+                    self.chAx.axhline(tcv, color='#bbbbbb', lw=0.6, zorder=0)
+                    self.chAx.annotate(
+                        nm.split(' (')[0] + ' Tᴄ', xy=(1.0, tcv),
+                        xycoords=self.chAx.get_yaxis_transform(),
+                        xytext=(4, 0), textcoords='offset points',
+                        va='center', ha='left', fontsize=7, color='#555',
+                        annotation_clip=False)
 
             # cooling path: connect points sorted old → young
             order = sorted(range(len(rows)), key=lambda i: ages[i], reverse=True)
@@ -635,9 +711,16 @@ def _build_dialog_class():
             self.chAx.set_xlabel('Age (Ma)', fontsize=10)
             self.chAx.set_ylabel('Temperature (°C)', fontsize=10)
             self.chAx.grid(True, ls=':', alpha=0.4)
+            # y-range driven by the data points (not the bands), with padding
+            lo = min(t - e for t, e in zip(tcs, yerr))
+            hi = max(t + e for t, e in zip(tcs, yerr))
+            pad = max(20.0, 0.08 * (hi - lo))
+            self.chAx.set_ylim(lo - pad, hi + pad)
             if max(ages) > min(ages):
                 self.chAx.invert_xaxis()   # older left → younger (present) right
-            self.chFig.tight_layout()
+            # leave room on the right for the Tᴄ band labels
+            self.chFig.subplots_adjust(left=0.12, right=0.80,
+                                       top=0.96, bottom=0.12)
             self.chCanvas.draw_idle()
 
             parts = []
@@ -648,6 +731,25 @@ def _build_dialog_class():
                              f"{s['rate']:.1f} °C/Myr")
             self.chInfo.setText(('Segment cooling rates — ' + '  |  '.join(parts))
                                 if parts else 'Need ≥2 chronometers for a rate.')
+
+        def _ch_save(self):
+            from PyQt5 import QtWidgets as _Q
+            if not self._ch_read_rows():
+                _Q.QMessageBox.information(
+                    self, 'Save figure',
+                    'Nothing to save yet — add chronometers and Plot first.')
+                return
+            path, _f = _Q.QFileDialog.getSaveFileName(
+                self, 'Save cooling-history figure', 'cooling_history.png',
+                'PNG image (*.png);;PDF document (*.pdf);;SVG image (*.svg)')
+            if not path:
+                return
+            try:
+                self.chFig.savefig(path, dpi=300, bbox_inches='tight',
+                                   facecolor='white')
+            except Exception as e:
+                _Q.QMessageBox.warning(
+                    self, 'Save figure', f'Could not save figure:\n{e}')
 
         def _num_edit(self):
             e = QtWidgets.QLineEdit()
