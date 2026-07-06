@@ -824,16 +824,20 @@ def _build_dialog_class():
             # (no per-point labels — the chronometers are identified by the
             # Tᴄ reference bands on the right and the Method column.)
 
-            # segment cooling rates
+            # segment cooling rates — offset to the side of the path with a
+            # translucent white halo so the label never sits on the line/point.
             segs = cooling_segments(list(zip(ages, tcs)))
             for s in segs:
                 if math.isnan(s['rate']):
                     continue
                 xm = 0.5 * (s['age0'] + s['age1'])
                 ym = 0.5 * (s['t0'] + s['t1'])
-                self.chAx.annotate(f"{s['rate']:.0f} °C/Myr", (xm, ym),
-                                   textcoords='offset points', xytext=(6, -12),
-                                   fontsize=8, color='#1a5fb4')
+                self.chAx.annotate(
+                    f"{s['rate']:.0f} °C/Myr", (xm, ym),
+                    textcoords='offset points', xytext=(12, 12),
+                    ha='left', va='bottom', fontsize=8, color='#1a5fb4',
+                    bbox=dict(boxstyle='round,pad=0.15', fc='white',
+                              ec='none', alpha=0.7))
 
             self.chAx.set_xlabel('Age (Ma)', fontsize=10)
             self.chAx.set_ylabel('Temperature (°C)', fontsize=10)

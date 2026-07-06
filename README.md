@@ -1,5 +1,5 @@
 ![logo](.work/logo.png)
-# pyADR — NTNU modified fork (v3.9.3)
+# pyADR — NTNU modified fork (v3.9.4)
 
 40Ar/39Ar data reduction tool with GUI. Modified fork of [pyADR](https://github.com/AndrewLiu0725/pyADR) (original by **An-Jun (Andrew) Liu**), now maintained by **PANG Chi-Hsiu (Academia Sinica)**.
 
@@ -148,8 +148,9 @@ python NTNU_DataReduction.py
 
 ## Changelog 摘要
 
-### v3.8.9 – v3.9.3 (2026-05 → 2026-07) — 摘要
+### v3.8.9 – v3.9.4 (2026-05 → 2026-07) — 摘要
 
+> **v3.9.4**：冷卻史段間冷卻速率標籤移到路徑線一側 + 加半透明白底，不再壓到線與資料點。
 > **v3.9.3**：冷卻史表格每列加 **Show 勾選框**，可選擇哪些定年計畫在 T–t 圖上（取消的不畫但保留在表格）。
 > **v3.9.2**：冷卻史圖清爽化 — 移除資料點旁礦物/方法文字（改由右側 Tᴄ 帶 + Method 欄識別）；Tᴄ 帶標籤改用礦物縮寫（Apatite fission track→AFT、Hornblende→Hbl…）。
 > **v3.9.1**：Single mineral 對照表拿掉捲軸（六列全顯示）；冷卻史新增 **Method 欄**標示定年方法（⁴⁰Ar/³⁹Ar、Rb–Sr、U–Pb、FT、(U-Th)/He），下拉加 **Rb–Sr** 系統。
