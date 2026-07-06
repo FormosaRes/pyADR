@@ -8,6 +8,33 @@ GitHub Releases（tag）最新仍為 **v3.8.54（Latest，彙整 v3.8.9 → v3.8
 
 ---
 
+## V3.8.96（2026-07-06）— Home 頁 Closure Temperature 主按鈕 + E 單位可切換 kJ/kcal
+
+v3.8.95 的兩個 follow-up（使用者指定）：
+
+### Home 頁主按鈕
+- `UI/HomePage.py` `button_specs` 新增 `("CT", "Closure Temperature")`，位置在 **Argon Pipeline 正下方**（原紅框空位），含 tooltip（Dodson 1973 + Schaen et al. 2021 Table 5 出處）。
+- `NTNU_DataReduction.py`：`HomePage.CT.clicked → showClosureTemp()`（與 v3.8.95 的 Menu 項共用同一 handler；Menu 項保留，跟 Parameter Setting 按鈕/選單並存的慣例一致）。
+
+### 活化能 E 單位切換（`ClosureTemperature.py`）
+- E 輸入欄旁新增單位下拉：**kJ/mol ↔ kcal/mol**（thermochemical calorie，1 kcal = 4.184 kJ）。DB 一律存 kJ/mol，顯示值依單位換算。
+- 切換單位＝同一個物理量換表示法：顯示值原地換算、**不會**把 preset 翻成 Custom（引用標註保留）、Tᴄ 結果不變。
+- 手動改 E 數值仍照舊翻 Custom。
+
+### 驗證
+- self-test ALL PASS（14 定年計 vs Table 5 不變）。
+- offscreen 冒煙測試：264 kJ/mol ↔ 63.0975 kcal/mol 往返無損、Tᴄ = 393 °C 不變、preset 維持 Muscovite。
+- `py_compile` 通過（`ClosureTemperature.py` / `NTNU_DataReduction.py` / `UI/HomePage.py`）。
+- 不動 pipeline 科學輸出，免 NO.65 重跑。
+
+### 檔案改動
+- `UI/HomePage.py`：CT 按鈕 + tooltip。
+- `NTNU_DataReduction.py`：CT 接線。
+- `ClosureTemperature.py`：E 單位下拉 + `_e_kj()`/`_on_e_unit()` 換算。
+- `.work/.app_info.txt`：3.8.95 → 3.8.96
+
+---
+
 ## V3.8.95（2026-07-06）— Closure Temperature 入口搬家 + 礦物庫改用 Schaen et al. (2021) Table 5
 
 v3.8.94 的封閉溫度計算器兩處調整（使用者指定）：入口位置搬家、擴散參數庫全面改引 Schaen et al. (2021) 的 compilation。

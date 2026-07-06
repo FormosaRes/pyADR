@@ -2814,6 +2814,8 @@ class App():
         self.HomePage.DF.clicked.connect(self.toDS)
         self.HomePage.DP.clicked.connect(self.toDPS)
         self.HomePage.AP.clicked.connect(self.toAP)
+        # v3.8.96: Closure Temperature main button (below Argon Pipeline)
+        self.HomePage.CT.clicked.connect(self.showClosureTemp)
         self.HomePage.PS_button.clicked.connect(self.toPS)
         self.HomePage.actionParameter_Setting.triggered.connect(self.toPS)
         self.HomePage.actionAbout_pyADR.triggered.connect(self.systemInfo)

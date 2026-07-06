@@ -15,7 +15,8 @@ Dodson (1973), Contrib. Mineral. Petrol. 40, 259–274:
 
 so Tc appears on both sides and is solved by fixed-point iteration.
 
-  E      activation energy                    (J/mol; UI takes kJ/mol)
+  E      activation energy                    (J/mol; UI takes kJ/mol or
+                                               kcal/mol, selectable)
   D0     pre-exponential (frequency) factor   (m²/s)
   a      effective diffusion radius           (m; UI takes µm)
   A      geometry factor  55 sphere / 27 cylinder / 8.7 plane sheet
@@ -46,6 +47,7 @@ import math
 # ── physical constants ──────────────────────────────────────────────────────
 R_GAS = 8.314462618            # J mol⁻¹ K⁻¹
 KJ_TO_J = 1000.0
+KCAL_TO_KJ = 4.184             # thermochemical calorie
 SEC_PER_MYR = 1.0e6 * 365.25 * 24 * 3600   # seconds in 1 Myr
 
 # Dodson (1973) geometry factor A (slow-cooling limit).
@@ -202,8 +204,16 @@ def _build_dialog_class():
             self.presetCombo.currentIndexChanged.connect(self._on_preset)
             frm.addRow('Mineral preset', self.presetCombo)
 
+            # v3.8.96: E unit selectable (kJ/mol or kcal/mol); DB stores kJ.
             self.eEdit = self._num_edit()
-            frm.addRow('Activation energy E (kJ/mol)', self.eEdit)
+            self.eUnitCombo = QtWidgets.QComboBox()
+            self.eUnitCombo.addItems(['kJ/mol', 'kcal/mol'])
+            self.eUnitCombo.currentIndexChanged.connect(self._on_e_unit)
+            eRow = QtWidgets.QHBoxLayout()
+            eRow.setSpacing(4)
+            eRow.addWidget(self.eEdit)
+            eRow.addWidget(self.eUnitCombo)
+            frm.addRow('Activation energy E', eRow)
 
             self.d0Edit = self._num_edit()
             frm.addRow('Frequency factor D₀ (m²/s)', self.d0Edit)
@@ -304,11 +314,37 @@ def _build_dialog_class():
             else:
                 self._recompute()   # Custom: keep current fields
 
+        # ── E unit handling (DB stores kJ/mol) ─────────────────────────────
+        def _e_is_kcal(self):
+            return self.eUnitCombo.currentIndex() == 1
+
+        def _e_kj(self):
+            """Displayed E converted to kJ/mol (None if unparseable)."""
+            v = self._read(self.eEdit)
+            if v is None:
+                return None
+            return v * KCAL_TO_KJ if self._e_is_kcal() else v
+
+        def _on_e_unit(self):
+            # Unit toggle re-expresses the same physical E: convert the
+            # displayed number in place, without flipping the preset to
+            # Custom (the underlying parameters are unchanged).
+            if self._building:
+                return
+            v = self._read(self.eEdit)
+            if v is not None:
+                factor = (1.0 / KCAL_TO_KJ) if self._e_is_kcal() else KCAL_TO_KJ
+                self._building = True
+                self.eEdit.setText(f'{v * factor:g}')
+                self._building = False
+            self._recompute()
+
         def _load_preset(self, idx):
             m = MINERAL_DB[idx]
             self._building = True
             self.presetCombo.setCurrentIndex(idx)
-            self.eEdit.setText(f"{m['E']:g}")
+            e_val = m['E'] / KCAL_TO_KJ if self._e_is_kcal() else m['E']
+            self.eEdit.setText(f'{e_val:g}')
             self.d0Edit.setText(f"{m['D0']:g}")
             self.radiusEdit.setText(f"{m['radius']:g}")
             self.geomCombo.setCurrentText(m['geometry'])
@@ -338,7 +374,7 @@ def _build_dialog_class():
         def _recompute(self):
             if self._building:
                 return
-            E = self._read(self.eEdit)
+            E = self._e_kj()
             D0 = self._read(self.d0Edit)
             a = self._read(self.radiusEdit)
             rate = self._read(self.rateEdit)

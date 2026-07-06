@@ -1,5 +1,5 @@
 ![logo](.work/logo.png)
-# pyADR — NTNU modified fork (v3.8.95)
+# pyADR — NTNU modified fork (v3.8.96)
 
 40Ar/39Ar data reduction tool with GUI. Modified fork of [pyADR](https://github.com/AndrewLiu0725/pyADR) (original by **An-Jun (Andrew) Liu**), now maintained by **PANG Chi-Hsiu (Academia Sinica)**.
 
@@ -126,8 +126,9 @@ python NTNU_DataReduction.py
 
 ## Changelog 摘要
 
-### v3.8.9 – v3.8.95 (2026-05 → 2026-07) — 摘要
+### v3.8.9 – v3.8.96 (2026-05 → 2026-07) — 摘要
 
+> **v3.8.96**：Home 頁新增 **Closure Temperature 主按鈕**（Argon Pipeline 下方）；計算器活化能 E 單位可切換 **kJ/mol ↔ kcal/mol**（切換不動 preset、Tᴄ 不變）。
 > **v3.8.95**：Closure Temperature 入口搬家：主程式 Home 頁 **Menu → Closure Temperature** + AutoPipeline **AgeCalc+Datum 左側按鈕列**（Parameter 下方），移除 v3.8.94 的 Tools 選單。礦物擴散參數庫改引 **Schaen et al. (2021) GSA Bulletin 133, 461–487, Table 5**，5 → **14 個 ⁴⁰Ar/³⁹Ar 定年計**（單位改 kJ/mol、m²/s，可直接對照論文表格）；self-test 14 個 nominal T_cb 全數 ±6 °C 吻合（anorthoclase 為 non-Arrhenian 已知例外，UI 有警語）。
 > **v3.8.94**：新增 **Tools → Closure Temperature (Dodson 1973)** 礦物封閉溫度計算器。可選礦物 preset（角閃石／白雲母／黑雲母／鉀長石，內建 Harrison 1981/1985/2009、Grove & Harrison 1996、Foland 1974 擴散參數）或自訂 E / D₀ / 幾何 / 粒徑 / 冷卻速率，即時算 Tᴄ、對照表與 Tᴄ–冷卻速率曲線。純參數工具，與 pipeline 解耦。
 > **v3.8.89–93**：in-app Help 改**中英雙語**（左下角 CN/EN 切換）+ 補 isochron 兩種回歸方法（OLS / York）物理意義 + 新增 σ(T₀) 分頁；DiagramPlot SH isochron 預設也改 **York**；修「在 AutoPipeline 按 Help 會跳出開機 splash」。

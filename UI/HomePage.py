@@ -70,6 +70,8 @@ class Ui_MainWindow(object):
             ("DF", "Diagram Plots"),
             ("DP", "Datum Publication"),
             ("AP", "Argon Pipeline"),
+            # v3.8.96: Dodson (1973) closure-temperature calculator
+            ("CT", "Closure Temperature"),
         ]
         for name, _text in button_specs:
             btn = QtWidgets.QPushButton(self.content)
@@ -131,6 +133,8 @@ class Ui_MainWindow(object):
         self.DF.setText(_translate("MainWindow", "Diagram Plots"))
         self.DP.setText(_translate("MainWindow", "Datum Publication"))
         self.AP.setText(_translate("MainWindow", "Argon Pipeline"))
+        self.CT.setToolTip(_translate("MainWindow", "<html><head/><body><p>Closure Temperature:</p><p>Dodson (1973) closure-temperature calculator. Diffusion parameters follow Schaen et al. (2021) GSA Bulletin 133, Table 5.</p></body></html>"))
+        self.CT.setText(_translate("MainWindow", "Closure Temperature"))
         self.AC.setToolTip(_translate("MainWindow", "<html><head/><body><p>Age Calculation:</p><p>Please select one file (the measurement file output by the <span style=\" font-style:italic;\">Mass Ratio Page</span>) that you want to calculate the age for.</p></body></html>"))
         self.AC.setWhatsThis(_translate("MainWindow", "<html><head/><body><p>what is this</p></body></html>"))
         self.AC.setText(_translate("MainWindow", "Age Calculation"))
