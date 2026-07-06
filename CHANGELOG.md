@@ -4,7 +4,7 @@
 最後整理日期：2026-06-14
 整理者：Claude (based on git-style diff across all versions)
 
-GitHub Releases（tag）最新仍為 **v3.8.54（Latest，彙整 v3.8.9 → v3.8.54）**；repo `main` HEAD 已到 **v3.8.80**（v3.8.55 → v3.8.80 詳見下方各段，尚未開新 Release tag，等 NO.65 驗證後再發）。
+GitHub Releases（tag）最新為 **v3.8.96（Latest，彙整 v3.8.94 → v3.8.96 的 Closure Temperature 工具）**；先前 Release 依序為 v3.8.93 / v3.8.81 / v3.8.54。repo `main` HEAD = v3.8.96。改科學輸出的版本仍須等 NO.65 驗證後再發 Release，v3.8.94–96 為純新增工具 + UI 動線，不動 pipeline 輸出。
 
 ---
 
