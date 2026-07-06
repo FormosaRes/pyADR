@@ -119,8 +119,30 @@ python NTNU_DataReduction.py
 | `install.py` | 一鍵安裝（pip + 建資料夾 + 桌面捷徑） |
 | `setup.bat` | 雙擊版安裝（自動偵測 Anaconda） |
 | `requirements.txt` | Python 套件清單 |
-| `CHANGELOG.md` | 完整版本變更紀錄 (V2.5 → v3.8.80) |
+| `CHANGELOG.md` | 完整版本變更紀錄 (V2.5 → v3.8.96) |
 | `README_origin.md` | 原版 pyADR 的 README (Andrew Liu) |
+
+---
+
+## 子程式功能一覽（Program modules）
+
+主畫面（Home）每顆按鈕對應一個子程式。標準流程是由上而下的定年主鏈（Calculate T₀ → Mass Ratio → J → Age → Diagram / Datum），**Argon Pipeline** 把主鏈整條自動化，其餘為輔助工具。各步驟以 CSV 銜接：前一步的輸出即下一步的輸入。
+
+| 子程式（Home 按鈕） | 功能 | 輸入 → 輸出 |
+|---|---|---|
+| **Calculate T₀** | 質譜訊號外推到 inlet 時刻 t=0，逐同位素（³⁶–⁴⁰Ar）擬合 blank 與 signal 的 T₀，含 Δt decay correction | raw `.dat`（mass + preline）→ T₀ CSV |
+| **Mass Ratio** | 由各同位素 T₀ 算質量歧視校正後的同位素比值 | T₀ CSV（mass + preline）→ measurement CSV |
+| **J Calculation** | 由標準樣品年代反算中子通量參數 J（及 σ_J） | 標準樣 measurement → J、σ_J |
+| **Salt Calculation** | 鹽類 / 特殊樣品專用校正流程 | 對應 raw 檔 → 校正結果 |
+| **Parameter Setting** | 集中設定生產比、大氣比、λ、J、cycle 數等常數（全流程共用） | 手動輸入 → `.work/setting.csv` |
+| **Age Calculation** | 由 measurement + J + 常數算單樣品年代（F、T、⁴⁰Ar\*%、Ca/K、Cl/K） | measurement CSV + 參數 → age CSV |
+| **Statistics** | 多檔 T₀ / 比值統計（挑 blank cycle、離群檢查） | 多個 T₀ / 比值檔 → 統計摘要 |
+| **Diagram Plots** | 出圖：age spectrum、normal / inverse isochron（York 2004 / Vermeesch）、Ca-K、Cl-K、degassing pattern（DFD/DFS/DFM）、3D 平面擬合 | age / datum CSV → PNG + 統計（plateau、WMA、MSWD、isochron age） |
+| **Datum Publication** | 產出投稿級 datum 總表（88 欄）與 isochron ratio 表（ISOr） | age / measurement CSV → publication CSV |
+| **Argon Pipeline** | 上述主鏈的批次自動化（Calculate T₀ → MassRatio → AgeCalc + Datum 一次跑完），含可編輯 J 即時重算、³⁶Ar-blank 敏感度、plateau 勾選、`.adr` session 存讀 | raw `.dat` 一組 → 全套輸出（CSV + PNG + datum） |
+| **Closure Temperature** | 獨立工具：Dodson (1973) 礦物封閉溫度 Tᴄ 計算器。14 個 ⁴⁰Ar/³⁹Ar 定年計 preset（Schaen et al. 2021 GSA Bull. 133, Table 5）或自訂 E / D₀ / 幾何 / 粒徑 / 冷卻速率；E 單位 kJ/kcal 可切換 | 擴散參數 + 冷卻速率 → Tᴄ、對照表、Tᴄ–冷卻速率曲線 |
+
+> 與 pipeline 數據解耦的純工具：**Closure Temperature**（不讀 / 不寫任何樣品 CSV，只做參數計算）。
 
 ---
 
