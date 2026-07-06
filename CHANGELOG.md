@@ -8,6 +8,27 @@ GitHub Releases（tag）最新為 **v3.8.96（Latest，彙整 v3.8.94 → v3.8.9
 
 ---
 
+## V3.9.1（2026-07-06）— 對照表拿掉捲軸 + 冷卻史標示定年方法（Ar/Ar、Rb/Sr…）
+
+### 1. Single mineral 對照表全顯示
+- 6 段冷卻速率（1/3/10/30/100/300）對照表原本受 `maximumHeight` 限制會出現垂直捲軸。改成固定列高 30 px、關閉水平/垂直捲軸、`setFixedHeight(28 + 30×6 + 4)`，六列一次全部顯示、無捲軸。
+
+### 2. 冷卻史標示定年方法
+- 冷卻史表格新增唯讀 **Method** 欄，依所選定年計自動顯示定年方法：Ar/Ar 礦物 → ⁴⁰Ar/³⁹Ar；其他系統 → U–Pb / U–Th–Pb / **Rb–Sr** / fission track / (U-Th)/He。
+- T–t 圖每個資料點標籤加第二行 `[method]`，存出的圖自解釋是哪種定年方法。
+- Mineral 下拉新增 **Rb–Sr** 系統：Muscovite Rb–Sr (~500 °C)、Biotite Rb–Sr (~300 °C)（Jäger 1979）。同一礦物不同方法（如 muscovite Ar/Ar 393 vs Rb/Sr 500）可分列並存。
+- `_ch_method_for_name` lookup；`OTHER_CHRONOMETERS` 每項加 `method`；`ARAR_METHOD` 常數。
+- 表格欄序：Mineral｜Age｜±｜Tᴄ｜±｜Method｜Band（左面板加寬到 500、dialog min width 1010）。
+
+### 驗證
+- self-test ALL PASS；offscreen 冒煙：對照表 fixedHeight 212 無捲軸、Method 欄自動填（Ar/Ar → ⁴⁰Ar/³⁹Ar、Apatite FT → fission track）、Rb–Sr 選項存在且選後 Tᴄ=300/method=Rb–Sr、移動列 method/color 隨列。`py_compile` 通過。不動 pipeline 輸出。
+
+### 檔案改動
+- `ClosureTemperature.py`：對照表 fixed height + 關捲軸；`OTHER_CHRONOMETERS` 加 method + Rb–Sr 兩項；`ARAR_METHOD`；`_ch_method_for_name`；表格加 Method 欄（欄 index 位移、swap/read/color 同步更新）；圖標籤加方法。
+- `.work/.app_info.txt`：3.9.0 → 3.9.1
+
+---
+
 ## V3.9.0（2026-07-06）— 冷卻史細節：Tᴄ 帶寬同步 ±(°C)、帶顏色可選、single→cooling 一鍵加入
 
 使用者回饋三項，Closure Temperature 冷卻史（T–t）分頁收尾：

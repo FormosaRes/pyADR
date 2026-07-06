@@ -121,15 +121,20 @@ DEFAULT_PRESET = next(i for i, m in enumerate(MINERAL_DB)
 # for the plot only. Compilation: Reiners & Brandon (2006) Annu. Rev. Earth
 # Planet. Sci. 34, 419–466 and references therein.
 OTHER_CHRONOMETERS = [
-    {'name': 'Zircon U–Pb',            'tc': 900.0, 'half': 0,  'ref': 'Pb in zircon, effectively crystallization'},
-    {'name': 'Monazite U–Th–Pb',       'tc': 700.0, 'half': 25, 'ref': 'Reiners & Brandon (2006)'},
-    {'name': 'Titanite U–Pb',          'tc': 600.0, 'half': 30, 'ref': 'Cherniak (1993)'},
-    {'name': 'Rutile U–Pb',            'tc': 600.0, 'half': 40, 'ref': 'Cherniak (2000)'},
-    {'name': 'Zircon fission track',   'tc': 240.0, 'half': 20, 'ref': 'Reiners & Brandon (2006)'},
-    {'name': 'Zircon (U-Th)/He',       'tc': 180.0, 'half': 20, 'ref': 'Reiners & Brandon (2006)'},
-    {'name': 'Apatite fission track',  'tc': 110.0, 'half': 15, 'ref': 'Reiners & Brandon (2006)'},
-    {'name': 'Apatite (U-Th)/He',      'tc': 70.0,  'half': 15, 'ref': 'Reiners & Brandon (2006)'},
+    {'name': 'Zircon U–Pb',            'method': 'U–Pb',        'tc': 900.0, 'half': 0,  'ref': 'Pb in zircon, effectively crystallization'},
+    {'name': 'Monazite U–Th–Pb',       'method': 'U–Th–Pb',     'tc': 700.0, 'half': 25, 'ref': 'Reiners & Brandon (2006)'},
+    {'name': 'Titanite U–Pb',          'method': 'U–Pb',        'tc': 600.0, 'half': 30, 'ref': 'Cherniak (1993)'},
+    {'name': 'Rutile U–Pb',            'method': 'U–Pb',        'tc': 600.0, 'half': 40, 'ref': 'Cherniak (2000)'},
+    {'name': 'Muscovite Rb–Sr',        'method': 'Rb–Sr',       'tc': 500.0, 'half': 30, 'ref': 'Jäger (1979)'},
+    {'name': 'Biotite Rb–Sr',          'method': 'Rb–Sr',       'tc': 300.0, 'half': 25, 'ref': 'Jäger (1979)'},
+    {'name': 'Zircon fission track',   'method': 'fission track','tc': 240.0, 'half': 20, 'ref': 'Reiners & Brandon (2006)'},
+    {'name': 'Zircon (U-Th)/He',       'method': '(U-Th)/He',   'tc': 180.0, 'half': 20, 'ref': 'Reiners & Brandon (2006)'},
+    {'name': 'Apatite fission track',  'method': 'fission track','tc': 110.0, 'half': 15, 'ref': 'Reiners & Brandon (2006)'},
+    {'name': 'Apatite (U-Th)/He',      'method': '(U-Th)/He',   'tc': 70.0,  'half': 15, 'ref': 'Reiners & Brandon (2006)'},
 ]
+
+# Method label for the Ar/Ar minerals in MINERAL_DB.
+ARAR_METHOD = '⁴⁰Ar/³⁹Ar'
 
 # Plot band half-width (°C) for Ar/Ar minerals (which have no tabulated range).
 DEFAULT_BAND_HALF = 12.0
@@ -219,7 +224,7 @@ def _build_dialog_class():
         def __init__(self, parent=None):
             super().__init__(parent)
             self.setWindowTitle('Closure Temperature — Dodson (1973)')
-            self.setMinimumSize(940, 680)
+            self.setMinimumSize(1010, 680)
             self._building = True
             self._build()
             self._building = False
@@ -311,7 +316,14 @@ def _build_dialog_class():
             self.table.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
             hh = self.table.horizontalHeader()
             hh.setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
-            self.table.setMaximumHeight(38 + 30 * len(TABLE_RATES))
+            # show all rows, no scrollbar: fix row height and size the table to
+            # exactly header + N rows.
+            _rowh = 30
+            self.table.verticalHeader().setDefaultSectionSize(_rowh)
+            hh.setFixedHeight(28)
+            self.table.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+            self.table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+            self.table.setFixedHeight(28 + _rowh * len(TABLE_RATES) + 4)
             for r, rate in enumerate(TABLE_RATES):
                 it = QtWidgets.QTableWidgetItem(str(rate))
                 it.setTextAlignment(QtCore.Qt.AlignCenter)
@@ -377,7 +389,7 @@ def _build_dialog_class():
             left.setSpacing(8)
             lw = QtWidgets.QWidget()
             lw.setLayout(left)
-            lw.setFixedWidth(430)
+            lw.setFixedWidth(500)
             root.addWidget(lw, 0)
 
             title = QtWidgets.QLabel('Cooling history (T–t path)')
@@ -402,13 +414,14 @@ def _build_dialog_class():
             rrow.addStretch(1)
             left.addLayout(rrow)
 
-            self.chTable = QtWidgets.QTableWidget(0, 6)
+            self.chTable = QtWidgets.QTableWidget(0, 7)
             self.chTable.setHorizontalHeaderLabels(
-                ['Mineral', 'Age (Ma)', '± (Ma)', 'Tᴄ (°C)', '± (°C)', 'Band'])
+                ['Mineral', 'Age (Ma)', '± (Ma)', 'Tᴄ (°C)', '± (°C)',
+                 'Method', 'Band'])
             self.chTable.verticalHeader().setVisible(False)
             chh = self.chTable.horizontalHeader()
             chh.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
-            for c in range(1, 6):
+            for c in range(1, 7):
                 chh.setSectionResizeMode(c, QtWidgets.QHeaderView.ResizeToContents)
             self._ch_updating = False
             self.chTable.itemChanged.connect(self._ch_on_item_changed)
@@ -496,6 +509,17 @@ def _build_dialog_class():
                     return o['half']
             return DEFAULT_BAND_HALF
 
+        def _ch_method_for_name(self, name):
+            """Dating method label for a chronometer name (Ar/Ar minerals →
+            ⁴⁰Ar/³⁹Ar; other systems → their own method; else '')."""
+            for m in MINERAL_DB:
+                if m['name'] == name:
+                    return ARAR_METHOD
+            for o in OTHER_CHRONOMETERS:
+                if o['name'] == name:
+                    return o.get('method', '')
+            return ''
+
         def _ch_add_row(self, preset_name=None, age='', age_sig='',
                         tc='', tc_sig=''):
             from PyQt5 import QtWidgets as _Q
@@ -531,9 +555,15 @@ def _build_dialog_class():
                 it.setTextAlignment(QtCore.Qt.AlignCenter)
                 self.chTable.setItem(r, c, it)
 
-            # per-row Tᴄ-band colour (click to change)
+            # Method (col 5): read-only, auto-filled from the chosen chronometer
+            mit = _Q.QTableWidgetItem(self._ch_method_for_name(combo.currentText()))
+            mit.setTextAlignment(QtCore.Qt.AlignCenter)
+            mit.setFlags(mit.flags() & ~QtCore.Qt.ItemIsEditable)
+            self.chTable.setItem(r, 5, mit)
+
+            # per-row Tᴄ-band colour (col 6, click to change)
             self.chTable.setCellWidget(
-                r, 5, self._ch_make_color_btn(BAND_PALETTE[r % len(BAND_PALETTE)]))
+                r, 6, self._ch_make_color_btn(BAND_PALETTE[r % len(BAND_PALETTE)]))
             self._ch_updating = False
 
         def _ch_make_color_btn(self, hexcol):
@@ -568,6 +598,7 @@ def _build_dialog_class():
             t, _rd = self._ch_tc_for_name(combo.currentText())
             if t is not None and not math.isnan(t):
                 self._ch_set_cell(r, 3, f'{t:.0f}')
+            self._ch_set_cell(r, 5, self._ch_method_for_name(combo.currentText()))
             self._ch_plot()
 
         def _ch_set_cell(self, r, c, text):
@@ -635,8 +666,8 @@ def _build_dialog_class():
             ca.blockSignals(True); cb.blockSignals(True)
             ca.setCurrentIndex(ib); cb.setCurrentIndex(ia)
             ca.blockSignals(False); cb.blockSignals(False)
-            # numeric cells (Age / ±  / Tᴄ / ±): swap the raw text
-            for c in range(1, 5):
+            # text cells (Age / ± / Tᴄ / ± / Method): swap the raw text
+            for c in range(1, 6):
                 ta = self.chTable.item(a, c)
                 tb = self.chTable.item(b, c)
                 sa = ta.text() if ta is not None else ''
@@ -649,8 +680,8 @@ def _build_dialog_class():
                         self.chTable.setItem(r, c, it)
                     it.setText(s)
             # band colour swatches: swap their colour value in place
-            ba = self.chTable.cellWidget(a, 5)
-            bb = self.chTable.cellWidget(b, 5)
+            ba = self.chTable.cellWidget(a, 6)
+            bb = self.chTable.cellWidget(b, 6)
             if ba is not None and bb is not None:
                 ba._color, bb._color = bb._color, ba._color
                 ba.setStyleSheet(f'background:{ba._color};border:1px solid #888;')
@@ -666,12 +697,15 @@ def _build_dialog_class():
                 asig = self._ch_cell_float(r, 2)
                 tc = self._ch_cell_float(r, 3)
                 tsig = self._ch_cell_float(r, 4)
-                cbtn = self.chTable.cellWidget(r, 5)
+                mit = self.chTable.item(r, 5)
+                method = mit.text() if mit is not None else ''
+                cbtn = self.chTable.cellWidget(r, 6)
                 color = getattr(cbtn, '_color', None) if cbtn else None
                 if age is None or tc is None:
                     continue
                 rows.append({'name': name, 'age': age, 'age_sig': asig,
-                             'tc': tc, 'tc_sig': tsig, 'color': color})
+                             'tc': tc, 'tc_sig': tsig, 'method': method,
+                             'color': color})
             return rows
 
         def _ch_cell_float(self, r, c):
@@ -741,8 +775,11 @@ def _build_dialog_class():
                                ms=7, color='#b41a1a', ecolor='#b41a1a',
                                elinewidth=1, capsize=3, zorder=3)
             for r in rows:
-                self.chAx.annotate(r['name'].split(' (')[0], (r['age'], r['tc']),
-                                   textcoords='offset points', xytext=(7, 6),
+                lbl = r['name'].split(' (')[0]
+                if r.get('method'):
+                    lbl += f"\n[{r['method']}]"
+                self.chAx.annotate(lbl, (r['age'], r['tc']),
+                                   textcoords='offset points', xytext=(7, 4),
                                    fontsize=8, color='#333')
 
             # segment cooling rates
