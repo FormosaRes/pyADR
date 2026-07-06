@@ -1,5 +1,5 @@
 ![logo](.work/logo.png)
-# pyADR — NTNU modified fork (v3.9.1)
+# pyADR — NTNU modified fork (v3.9.2)
 
 40Ar/39Ar data reduction tool with GUI. Modified fork of [pyADR](https://github.com/AndrewLiu0725/pyADR) (original by **An-Jun (Andrew) Liu**), now maintained by **PANG Chi-Hsiu (Academia Sinica)**.
 
@@ -148,9 +148,10 @@ python NTNU_DataReduction.py
 
 ## Changelog 摘要
 
-### v3.8.9 – v3.9.1 (2026-05 → 2026-07) — 摘要
+### v3.8.9 – v3.9.2 (2026-05 → 2026-07) — 摘要
 
-> **v3.9.1**：Single mineral 對照表拿掉捲軸（六列全顯示）；冷卻史新增 **Method 欄**標示定年方法（⁴⁰Ar/³⁹Ar、Rb–Sr、U–Pb、FT、(U-Th)/He），下拉加 **Rb–Sr** 系統，圖上點標籤也標方法。
+> **v3.9.2**：冷卻史圖清爽化 — 移除資料點旁礦物/方法文字（改由右側 Tᴄ 帶 + Method 欄識別）；Tᴄ 帶標籤改用礦物縮寫（Apatite fission track→AFT、Hornblende→Hbl…）。
+> **v3.9.1**：Single mineral 對照表拿掉捲軸（六列全顯示）；冷卻史新增 **Method 欄**標示定年方法（⁴⁰Ar/³⁹Ar、Rb–Sr、U–Pb、FT、(U-Th)/He），下拉加 **Rb–Sr** 系統。
 > **v3.9.0**：冷卻史細節收尾 — Tᴄ 參考帶寬**與 ±(°C) 同步**、帶**顏色可選**（Band 欄）、Single mineral 算出的 Tᴄ 可**一鍵加到 Cooling history**。
 > **v3.8.99**：冷卻史（T–t）加 **Save 圖片**（PNG/PDF/SVG）、**其他定年方法**（裂變徑跡 / (U-Th)/He / U-Pb 標稱 Tᴄ，Reiners & Brandon 2006）可與 Ar/Ar 混用、**Tᴄ 參考帶**（發表級 T–t path 風格）。
 > **v3.8.98**：冷卻史表格新增 **↑ / ↓** 按鈕，可上下移動列調整礦物順序（覆寫的 Tᴄ 隨列保留）。

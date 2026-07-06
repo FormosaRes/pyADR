@@ -8,6 +8,19 @@ GitHub Releases（tag）最新為 **v3.8.96（Latest，彙整 v3.8.94 → v3.8.9
 
 ---
 
+## V3.9.2（2026-07-06）— 冷卻史圖清爽化：移除點標籤 + Tᴄ 帶標籤改礦物縮寫
+
+冷卻史（T–t）圖兩項排版調整（使用者回饋）：
+
+- **移除資料點旁的礦物/方法文字**：點多時標籤互相重疊很雜。改成點只留紅點 + 誤差棒；定年計改由右側 Tᴄ 帶標籤與表格 Method 欄識別。
+- **Tᴄ 帶標籤改用礦物縮寫**（`ABBR`，Whitney & Evans 2010 礦物縮寫 + FT/He 標準縮寫）：「Apatite fission track Tᴄ」→「AFT Tᴄ」、Hornblende→Hbl、Muscovite→Ms、Biotite(0.29)→Bt(29)、K-feldspar(orthoclase)→Kfs-or、Zircon FT→ZFT、(U-Th)/He→ZHe/AHe，右側不再被長字撐開。
+
+驗證：self-test ALL PASS；offscreen 出圖確認點無文字、帶標籤為縮寫。`py_compile` 通過。不動 pipeline 輸出。
+
+檔案：`ClosureTemperature.py`（`ABBR` dict；移除點 annotate；band 標籤用 ABBR）；`.work/.app_info.txt` 3.9.1 → 3.9.2。
+
+---
+
 ## V3.9.1（2026-07-06）— 對照表拿掉捲軸 + 冷卻史標示定年方法（Ar/Ar、Rb/Sr…）
 
 ### 1. Single mineral 對照表全顯示

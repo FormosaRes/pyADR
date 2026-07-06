@@ -144,6 +144,24 @@ DEFAULT_BAND_HALF = 12.0
 BAND_PALETTE = ['#d7ead1', '#f6dbe6', '#fce3cf', '#d6e8f7',
                 '#e8dcf2', '#d9efe9', '#f2ead0', '#e3e3e3']
 
+# Short labels for the Tᴄ reference bands on the plot (mineral abbreviations
+# after Whitney & Evans 2010; FT/He systems by their standard acronyms).
+ABBR = {
+    'Clinopyroxene': 'Cpx', 'Orthopyroxene': 'Opx', 'Osumilite': 'Osm',
+    'Hornblende': 'Hbl', 'Muscovite': 'Ms', 'Phlogopite': 'Phl',
+    'K-feldspar (anorthoclase)': 'Kfs-anor',
+    'K-feldspar (sanidine)': 'Kfs-san',
+    'K-feldspar (cryptoperthite)': 'Kfs-cp',
+    'K-feldspar (orthoclase)': 'Kfs-or',
+    'Biotite (X_phl = 0.29)': 'Bt(29)', 'Biotite (X_phl = 0.46)': 'Bt(46)',
+    'Plagioclase (albite/oligoclase)': 'Pl-ab', 'Plagioclase (anorthite)': 'Pl-an',
+    'Zircon U–Pb': 'Zrn U–Pb', 'Monazite U–Th–Pb': 'Mnz',
+    'Titanite U–Pb': 'Ttn', 'Rutile U–Pb': 'Rt',
+    'Muscovite Rb–Sr': 'Ms Rb–Sr', 'Biotite Rb–Sr': 'Bt Rb–Sr',
+    'Zircon fission track': 'ZFT', 'Zircon (U-Th)/He': 'ZHe',
+    'Apatite fission track': 'AFT', 'Apatite (U-Th)/He': 'AHe',
+}
+
 
 def closure_temperature(E_kJ, D0_m2s, radius_um, geometry,
                         cooling_C_per_Myr, max_iter=200, tol=1e-9):
@@ -761,7 +779,7 @@ def _build_dialog_class():
                                           color=col, alpha=0.75, zorder=0)
                     self.chAx.axhline(tcv, color='#bbbbbb', lw=0.6, zorder=0)
                     self.chAx.annotate(
-                        nm.split(' (')[0] + ' Tᴄ', xy=(1.0, tcv),
+                        ABBR.get(nm, nm.split(' (')[0]) + ' Tᴄ', xy=(1.0, tcv),
                         xycoords=self.chAx.get_yaxis_transform(),
                         xytext=(4, 0), textcoords='offset points',
                         va='center', ha='left', fontsize=7, color='#555',
@@ -774,13 +792,8 @@ def _build_dialog_class():
             self.chAx.errorbar(ages, tcs, xerr=xerr, yerr=yerr, fmt='o',
                                ms=7, color='#b41a1a', ecolor='#b41a1a',
                                elinewidth=1, capsize=3, zorder=3)
-            for r in rows:
-                lbl = r['name'].split(' (')[0]
-                if r.get('method'):
-                    lbl += f"\n[{r['method']}]"
-                self.chAx.annotate(lbl, (r['age'], r['tc']),
-                                   textcoords='offset points', xytext=(7, 4),
-                                   fontsize=8, color='#333')
+            # (no per-point labels — the chronometers are identified by the
+            # Tᴄ reference bands on the right and the Method column.)
 
             # segment cooling rates
             segs = cooling_segments(list(zip(ages, tcs)))
