@@ -8,6 +8,37 @@ GitHub Releases（tag）最新仍為 **v3.8.54（Latest，彙整 v3.8.9 → v3.8
 
 ---
 
+## V3.8.95（2026-07-06）— Closure Temperature 入口搬家 + 礦物庫改用 Schaen et al. (2021) Table 5
+
+v3.8.94 的封閉溫度計算器兩處調整（使用者指定）：入口位置搬家、擴散參數庫全面改引 Schaen et al. (2021) 的 compilation。
+
+### 入口（UI 動線）
+- **主程式 Home 頁選單**：`Menu → Closure Temperature`（在 Parameter Setting 下方）。`UI/HomePage.py` 新增 `actionClosure_Temperature`，`NTNU_DataReduction.py` 新增 `showClosureTemp()` 接線（lazy import，失敗跳 warning 不 crash）。
+- **AutoPipeline**：移除 v3.8.94 的左上 **Tools** 選單，改成 **AgeCalc+Datum 頁左側按鈕列**（`_build_minimal_sidebar` 新參數 `with_closure=True`，只有 AgeCalcPage 開），按鈕 `Closure Temp` 放在 **Parameter 鈕正下方**。MassRatioPage 不加。
+
+### 礦物擴散參數庫（`ClosureTemperature.py` MINERAL_DB）
+改引 **Schaen et al. (2021), Interpreting and reporting ⁴⁰Ar/³⁹Ar geochronologic data, GSA Bulletin 133 (3–4), 461–487, Table 5**（nominal bulk closure temperatures compilation），5 個礦物 → **14 個定年計**：Cpx / Opx / Osumilite / Hornblende / Muscovite / Phlogopite / K-fsp（anorthoclase・sanidine・cryptoperthite・orthoclase）/ Biotite（X_phl 0.29・0.46）/ Plagioclase（ab-olig・an）。
+- **單位跟著 Table 5 改**：E 由 kcal/mol → **kJ/mol**、D₀ 由 cm²/s → **m²/s**（`closure_temperature()` signature 與 UI 標籤同步改；a 內部 µm → m）。使用者可直接拿論文表格數字對照。
+- 預設 preset 改 **Muscovite**（pyADR 最常 reduce 的相）、預設 a = 100 µm（Table 5 的假設）。
+- UI 引用標註：refLbl 顯示「原始文獻 + compiled in Schaen et al. (2021) Table 5」；右側 note 加 compilation 出處。
+
+### 已知例外：K-feldspar (anorthoclase)
+Table 5 的 anorthoclase（E=400 kJ/mol, D₀=4.4×10⁻³ m²/s, plane sheet）為**強烈 non-Arrhenian**（Cassata & Renne 2013 kinked Arrhenius 的高溫段參數），單域 Dodson 用這組參數算出 ~750 °C，**不等於**表列 nominal T_cb 380 °C（反推需 E≈253 kJ/mol 才會得 380）。處理：參數照發表值保留、DB 加 `nonarrhenian` flag、UI 選到該 preset 顯示 ⚠ 警語、self-test 列為 documented exception（驗 750 而非 380）。
+
+### 驗證
+- `python ClosureTemperature.py` self-test：**14 個定年計 vs Table 5 nominal T_cb（a=100 µm, 10 °C/Myr）全部 ±6 °C 內吻合**（除 anorthoclase 如上），單調性 + NaN 檢查照過，ALL PASS。
+- `py_compile` 通過（`ClosureTemperature.py` / `AutoPipeline.py` / `NTNU_DataReduction.py` / `UI/HomePage.py`）。
+- 不動 pipeline 科學輸出（純獨立工具 + UI 動線），免 NO.65 重跑。
+
+### 檔案改動
+- `ClosureTemperature.py`：MINERAL_DB 改 Schaen 2021 Table 5（14 entries, kJ/mol + m²/s）、`closure_temperature()` 單位改、docstring/引用/警語、self-test 改對 Table 5。
+- `AutoPipeline.py`：拔 Tools 選單；`_build_minimal_sidebar(..., with_closure)` + AgeCalcPage 啟用。
+- `NTNU_DataReduction.py`：`showClosureTemp()` + Home 選單接線。
+- `UI/HomePage.py`：`actionClosure_Temperature`。
+- `.work/.app_info.txt`：3.8.94 → 3.8.95
+
+---
+
 ## V3.8.94（2026-07-05）— 新增礦物 Closure Temperature 計算器（Dodson 1973）
 
 新功能：獨立的礦物封閉溫度（closure temperature）計算工具，估算 Ar 熱定年礦物（角閃石／白雲母／黑雲母／鉀長石）冷卻通過封閉溫度的 Tᴄ。跟 pipeline 數據解耦，純參數計算。

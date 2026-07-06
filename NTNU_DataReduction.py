@@ -2818,6 +2818,9 @@ class App():
         self.HomePage.actionParameter_Setting.triggered.connect(self.toPS)
         self.HomePage.actionAbout_pyADR.triggered.connect(self.systemInfo)
         self.HomePage.actionCheck_Update.triggered.connect(self.checkVersion)
+        # v3.8.95: Closure Temperature calculator (Dodson 1973, Schaen et al.
+        # 2021 Table 5) on the Home-page menu
+        self.HomePage.actionClosure_Temperature.triggered.connect(self.showClosureTemp)
 
         # click button on TypeSelect
         self.TypeSelect.MB.clicked.connect(self.toLRP_MB)
@@ -3092,6 +3095,21 @@ class App():
             _sg.y() + (_sg.height() - _fg.height()) // 2,
         )
         self.widget.setCurrentIndex(0)
+
+    def showClosureTemp(self):
+        """v3.8.95: Dodson (1973) closure-temperature calculator, opened from
+        the Home-page Menu. Standalone dialog; mineral diffusion parameters
+        follow Schaen et al. (2021) GSA Bulletin 133, 461-487, Table 5.
+        Math + DB live in ClosureTemperature.py (shared with AutoPipeline's
+        AgeCalc+Datum sidebar button)."""
+        try:
+            import ClosureTemperature
+            dlg = ClosureTemperature.ClosureTempDialog(self.widget)
+            dlg.exec_()
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(
+                self.widget, 'Closure Temperature',
+                'Closure-temperature tool unavailable: {}'.format(e))
 
     # popup message box
     def Popup(self, msg_type, msg_title, msg_content):

@@ -98,10 +98,16 @@ class Ui_MainWindow(object):
         self.actionAbout_pyADR.setObjectName("actionAbout_pyADR")
         self.actionCheck_Update = QtWidgets.QAction(MainWindow)
         self.actionCheck_Update.setObjectName("actionCheck_Update")
+        # v3.8.95: Dodson (1973) closure-temperature calculator
+        # (ClosureTemperature.py); wired in NTNU_DataReduction like
+        # actionParameter_Setting.
+        self.actionClosure_Temperature = QtWidgets.QAction(MainWindow)
+        self.actionClosure_Temperature.setObjectName("actionClosure_Temperature")
         self.menuMenu.addAction(self.actionAbout_pyADR)
         self.menuMenu.addAction(self.actionCheck_Update)
         self.menuMenu.addSeparator()
         self.menuMenu.addAction(self.actionParameter_Setting)
+        self.menuMenu.addAction(self.actionClosure_Temperature)
         self.menubar.addAction(self.menuMenu.menuAction())
 
         self.retranslateUi(MainWindow)
@@ -135,6 +141,7 @@ class Ui_MainWindow(object):
         self.actionParameter_Setting.setText(_translate("MainWindow", " Parameter Setting"))
         self.actionAbout_pyADR.setText(_translate("MainWindow", " About pyADR"))
         self.actionCheck_Update.setText(_translate("MainWindow", " Check Update"))
+        self.actionClosure_Temperature.setText(_translate("MainWindow", " Closure Temperature"))
 
 
 if __name__ == "__main__":

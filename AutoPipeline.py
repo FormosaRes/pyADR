@@ -543,11 +543,14 @@ def load_session_adr(path):
 # Load Blank / Load Sample switch back to CalcT0Page (stack index 0) and
 # fire the corresponding file dialog. Save/Open Session delegate to
 # CalcT0Page's session methods (single source of truth).
-def _build_minimal_sidebar(page, save_handler, save_label='Save'):
+def _build_minimal_sidebar(page, save_handler, save_label='Save',
+                           with_closure=False):
     """Return a QWidget sidebar to be placed on the left of MassRatioPage /
     AgeCalcPage. `page` is the host widget (used to walk up the parent
     chain to find AutoPipelineWindow). `save_handler` is bound at call
-    time so the right method fires for this page."""
+    time so the right method fires for this page. `with_closure=True`
+    (AgeCalcPage only) appends the Closure Temperature button below
+    Parameter (v3.8.95)."""
     sb = QtWidgets.QWidget()
     sb.setFixedWidth(110)
     sbl = QtWidgets.QVBoxLayout(sb)
@@ -617,7 +620,30 @@ def _build_minimal_sidebar(page, save_handler, save_label='Save'):
     page.paramBtn = btnParam
 
     # v3.8.85: 5 buttons (Return / Save / Open Session / Save Session / Parameter)
-    for b in (btnReturn, btnSave, btnOpenSess, btnSaveSess, btnParam):
+    btns = [btnReturn, btnSave, btnOpenSess, btnSaveSess, btnParam]
+
+    # v3.8.95: Closure Temperature calculator (Dodson 1973, Schaen et al.
+    # 2021 Table 5) below Parameter — AgeCalcPage (AgeCalc+Datum) only.
+    if with_closure:
+        btnClosure = _sb_btn('Closure\nTemp')
+        def _on_closure():
+            win = _find_window()
+            if win is not None and hasattr(win, '_show_closure_temp'):
+                win._show_closure_temp()
+                return
+            try:
+                import ClosureTemperature
+                dlg = ClosureTemperature.ClosureTempDialog(page)
+                dlg.exec_()
+            except Exception as e:
+                QtWidgets.QMessageBox.warning(
+                    page, 'Closure Temperature',
+                    f'Closure-temperature tool unavailable: {e}')
+        btnClosure.clicked.connect(_on_closure)
+        page.closureBtn = btnClosure
+        btns.append(btnClosure)
+
+    for b in btns:
         sbl.addWidget(b)
     sbl.addStretch()
     return sb
@@ -4517,7 +4543,8 @@ class AgeCalcPage(QtWidgets.QWidget):
         outer = QtWidgets.QHBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0); outer.setSpacing(0)
         self._sidebar = _build_minimal_sidebar(self, lambda: self._export(),
-                                               save_label='Save')
+                                               save_label='Save',
+                                               with_closure=True)
         outer.addWidget(self._sidebar)
         _content = QtWidgets.QWidget()
         outer.addWidget(_content, 1)
@@ -7306,9 +7333,11 @@ class AutoPipelineWindow(QtWidgets.QMainWindow):
     def _show_closure_temp(self):
         """v3.8.94: open the Dodson (1973) closure-temperature calculator.
         Standalone tool (not tied to the loaded run) for estimating the Tc of
-        Ar thermochronometers — hornblende / muscovite / biotite / K-feldspar
-        — from editable diffusion parameters, geometry, grain size and
-        cooling rate. Math + mineral DB live in ClosureTemperature.py."""
+        Ar thermochronometers from editable diffusion parameters, geometry,
+        grain size and cooling rate. v3.8.95: mineral DB follows Schaen et
+        al. (2021) Table 5; entry point moved from the Tools menu to the
+        AgeCalc+Datum sidebar (below Parameter). Math + DB live in
+        ClosureTemperature.py."""
         try:
             import ClosureTemperature
             dlg = ClosureTemperature.ClosureTempDialog(self)
@@ -7684,12 +7713,8 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
         _menu_help.addAction(_act_auto_guide)
         _act_auto_guide.triggered.connect(self._show_auto_guide)
 
-        # v3.8.94: Tools menu — Dodson (1973) closure-temperature calculator.
-        _menu_tools = _mb.addMenu('Tools')
-        _act_closure = QtWidgets.QAction(
-            'Closure Temperature (Dodson 1973)…', self)
-        _menu_tools.addAction(_act_closure)
-        _act_closure.triggered.connect(self._show_closure_temp)
+        # v3.8.95: Tools menu removed — Closure Temperature moved to the
+        # AgeCalc+Datum sidebar (below Parameter) and the pyADR Home menu.
 
         # Top bar: Mode/Fit/Blank/Signal chips + Pipeline progress + Run button
         # v3.8.21: pipeline moved BACK inside top_bar (was a separate strip in
