@@ -388,9 +388,17 @@ def _build_dialog_class():
             addBtn.clicked.connect(lambda: self._ch_add_row())
             rmBtn = QtWidgets.QPushButton('Remove row')
             rmBtn.clicked.connect(self._ch_remove_row)
+            upBtn = QtWidgets.QPushButton('↑')
+            upBtn.setToolTip('Move selected mineral up')
+            upBtn.setMaximumWidth(34)
+            upBtn.clicked.connect(lambda: self._ch_move_row(-1))
+            downBtn = QtWidgets.QPushButton('↓')
+            downBtn.setToolTip('Move selected mineral down')
+            downBtn.setMaximumWidth(34)
+            downBtn.clicked.connect(lambda: self._ch_move_row(+1))
             plotBtn = QtWidgets.QPushButton('Plot')
             plotBtn.clicked.connect(self._ch_plot)
-            for b in (addBtn, rmBtn, plotBtn):
+            for b in (addBtn, rmBtn, upBtn, downBtn, plotBtn):
                 brow.addWidget(b)
             brow.addStretch(1)
             left.addLayout(brow)
@@ -515,6 +523,47 @@ def _build_dialog_class():
             if r >= 0:
                 self.chTable.removeRow(r)
                 self._ch_plot()
+
+        def _ch_move_row(self, delta):
+            """Move the selected row up (delta=-1) or down (+1). Reorders the
+            table only; the cooling path is drawn sorted by age regardless, so
+            this is for tidying the input list, not the plot order."""
+            r = self.chTable.currentRow()
+            if r < 0:
+                return
+            t = r + delta
+            if t < 0 or t >= self.chTable.rowCount():
+                return
+            self._ch_swap_rows(r, t)
+            col = self.chTable.currentColumn()
+            self.chTable.setCurrentCell(t, col if col >= 1 else 1)
+            self._ch_plot()
+
+        def _ch_swap_rows(self, a, b):
+            from PyQt5 import QtWidgets as _Q
+            self._ch_updating = True
+            # mineral combos: swap the selection without firing the change
+            # handler (which would recompute/overwrite an edited Tᴄ).
+            ca = self.chTable.cellWidget(a, 0)
+            cb = self.chTable.cellWidget(b, 0)
+            ia, ib = ca.currentIndex(), cb.currentIndex()
+            ca.blockSignals(True); cb.blockSignals(True)
+            ca.setCurrentIndex(ib); cb.setCurrentIndex(ia)
+            ca.blockSignals(False); cb.blockSignals(False)
+            # numeric cells (Age / ±  / Tᴄ / ±): swap the raw text
+            for c in range(1, 5):
+                ta = self.chTable.item(a, c)
+                tb = self.chTable.item(b, c)
+                sa = ta.text() if ta is not None else ''
+                sb = tb.text() if tb is not None else ''
+                for r, s in ((a, sb), (b, sa)):
+                    it = self.chTable.item(r, c)
+                    if it is None:
+                        it = _Q.QTableWidgetItem()
+                        it.setTextAlignment(QtCore.Qt.AlignCenter)
+                        self.chTable.setItem(r, c, it)
+                    it.setText(s)
+            self._ch_updating = False
 
         def _ch_read_rows(self):
             rows = []

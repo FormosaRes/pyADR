@@ -1,5 +1,5 @@
 ![logo](.work/logo.png)
-# pyADR — NTNU modified fork (v3.8.97)
+# pyADR — NTNU modified fork (v3.8.98)
 
 40Ar/39Ar data reduction tool with GUI. Modified fork of [pyADR](https://github.com/AndrewLiu0725/pyADR) (original by **An-Jun (Andrew) Liu**), now maintained by **PANG Chi-Hsiu (Academia Sinica)**.
 
@@ -148,8 +148,9 @@ python NTNU_DataReduction.py
 
 ## Changelog 摘要
 
-### v3.8.9 – v3.8.97 (2026-05 → 2026-07) — 摘要
+### v3.8.9 – v3.8.98 (2026-05 → 2026-07) — 摘要
 
+> **v3.8.98**：冷卻史表格新增 **↑ / ↓** 按鈕，可上下移動列調整礦物順序（覆寫的 Tᴄ 隨列保留）。
 > **v3.8.97**：Closure Temperature 新增 **Cooling history (T–t) 分頁**：輸入多個定年計的年代 + 封閉溫度，繪出溫度–時間降溫曲線（含年代/溫度誤差棒、依年代連線、各段冷卻速率標註）。新增純函數 `cooling_segments()`。
 > **v3.8.96**：Home 頁新增 **Closure Temperature 主按鈕**（Argon Pipeline 下方）；計算器活化能 E 單位可切換 **kJ/mol ↔ kcal/mol**（切換不動 preset、Tᴄ 不變）。
 > **v3.8.95**：Closure Temperature 入口搬家：主程式 Home 頁 **Menu → Closure Temperature** + AutoPipeline **AgeCalc+Datum 左側按鈕列**（Parameter 下方），移除 v3.8.94 的 Tools 選單。礦物擴散參數庫改引 **Schaen et al. (2021) GSA Bulletin 133, 461–487, Table 5**，5 → **14 個 ⁴⁰Ar/³⁹Ar 定年計**（單位改 kJ/mol、m²/s，可直接對照論文表格）；self-test 14 個 nominal T_cb 全數 ±6 °C 吻合（anorthoclase 為 non-Arrhenian 已知例外，UI 有警語）。

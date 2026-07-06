@@ -8,6 +8,20 @@ GitHub Releases（tag）最新為 **v3.8.96（Latest，彙整 v3.8.94 → v3.8.9
 
 ---
 
+## V3.8.98（2026-07-06）— 冷卻史表格可上下移動列調整礦物順序
+
+冷卻史（T–t）分頁按鈕列新增 **↑ / ↓**（Add row 與 Remove row 之後、Plot 之前）：選一列後上/下移調整礦物排列順序。
+
+- `_ch_move_row(delta)` + `_ch_swap_rows(a, b)`：交換相鄰兩列的 Mineral 下拉選擇與 4 個數值格（Age / ± / Tᴄ / ±）。
+- combo 交換用 `blockSignals` 包住，避免觸發 mineral-changed handler 把使用者**手動覆寫的 Tᴄ 重算掉**（驗證：覆寫 Tᴄ=999 後移動，值跟著列走不被還原）。
+- 純表格重排；冷卻路徑本來就依年代排序繪製，故移動列只影響輸入清單的整理，不改圖上連線順序。
+
+驗證：self-test ALL PASS；offscreen 冒煙確認 Hornblende↔Muscovite 交換、Tᴄ 隨列移動、覆寫值保留。`py_compile` 通過。不動 pipeline 輸出。
+
+檔案：`ClosureTemperature.py`（↑/↓ 按鈕 + `_ch_move_row`/`_ch_swap_rows`）；`.work/.app_info.txt` 3.8.97 → 3.8.98。
+
+---
+
 ## V3.8.97（2026-07-06）— Closure Temperature 新增「冷卻史（T–t）」分頁：多礦物年代繪降溫曲線
 
 Closure Temperature dialog 改成兩個分頁：**Single mineral**（原單礦物計算器）+ 新增 **Cooling history (T–t)**。後者讓使用者輸入多個定年計的年代與封閉溫度，繪出溫度–時間降溫曲線並標各段冷卻速率。
