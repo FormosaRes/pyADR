@@ -8,6 +8,31 @@ GitHub Releases（tag）最新為 **v3.8.96（Latest，彙整 v3.8.94 → v3.8.9
 
 ---
 
+## V3.8.97（2026-07-06）— Closure Temperature 新增「冷卻史（T–t）」分頁：多礦物年代繪降溫曲線
+
+Closure Temperature dialog 改成兩個分頁：**Single mineral**（原單礦物計算器）+ 新增 **Cooling history (T–t)**。後者讓使用者輸入多個定年計的年代與封閉溫度，繪出溫度–時間降溫曲線並標各段冷卻速率。
+
+### 冷卻史分頁（`ClosureTemperature.py`）
+- **輸入表格**：每列一個定年計 — Mineral（下拉，14 個 Schaen 2021 preset 或 Custom）｜ Age (Ma) ± σ ｜ Tᴄ (°C) ± σ。
+- 選 preset 自動用「Tᴄ assumed cooling rate」（預設 10 °C/Myr、可改）＋該礦物 D₀/幾何/a=100 µm 算出 Tᴄ 填入，仍可手動覆寫；改 assumed rate 會重填所有 preset 列的 Tᴄ。
+- **Add row / Remove row / Plot** 按鈕；表格編輯即時重繪。
+- **T–t 圖**：(age, Tᴄ) 點帶年代與溫度誤差棒，依年代由老到新連成冷卻路徑；每點標礦物名、每段中點標冷卻速率（°C/Myr）；x 軸反轉（老在左、年輕在右趨向現在），y 軸溫度高在上。下方 info 列出各段速率。
+- 預設載入一組範例（Hornblende 40 → Muscovite 34 → Biotite 30 → K-feldspar 26 Ma），開分頁即見示範。
+
+### 純函數
+- 新增 `cooling_segments(points)`：輸入 (age_Ma, temp_C) 序列，回傳依年代由老到新排序的相鄰段 `{age0,t0,age1,t1,rate}`，rate = (T_old − T_young)/(age_old − age_young) °C/Myr；Δt ≤ 0（年代相同/亂序）回 NaN。無 Qt 依賴、self-test 覆蓋。
+
+### 驗證
+- `python ClosureTemperature.py` self-test：Table 5 的 14 定年計 + 單調性 + NaN + **`cooling_segments` 排序/速率/退化 NaN 全部通過**，ALL PASS。
+- offscreen 冒煙：兩分頁建立、seed 4 列 Tᴄ 自動填（hornblende 509）、段速率算出（≈19 °C/Myr）、加 Custom 列重繪正常；PNG 出圖檢查通過。
+- `py_compile` 通過。純新增分頁 + 獨立工具，不動 pipeline 科學輸出，免 NO.65 重跑。
+
+### 檔案改動
+- `ClosureTemperature.py`：`cooling_segments()`；dialog 改 QTabWidget 兩分頁；冷卻史表格/繪圖/邏輯（`_build_cooling_tab`、`_ch_*` 方法）；self-test 補測。
+- `.work/.app_info.txt`：3.8.96 → 3.8.97
+
+---
+
 ## V3.8.96（2026-07-06）— Home 頁 Closure Temperature 主按鈕 + E 單位可切換 kJ/kcal
 
 v3.8.95 的兩個 follow-up（使用者指定）：

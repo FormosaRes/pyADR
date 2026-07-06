@@ -151,6 +151,28 @@ def closure_temperature(E_kJ, D0_m2s, radius_um, geometry,
     return T - 273.15               # K → °C
 
 
+def cooling_segments(points):
+    """Segment-by-segment cooling rates for a T–t (cooling history) path.
+
+    `points` is an iterable of (age_Ma, temp_C). Points are sorted oldest →
+    youngest (descending age); between each adjacent pair the cooling rate is
+
+        rate = (T_older - T_younger) / (age_older - age_younger)   [°C/Myr]
+
+    which is positive for a monotonically cooling sample (older, deeper
+    chronometers closed hotter). Returns a list of dicts, one per segment:
+    {age0, t0, age1, t1, rate}. A segment with zero/negative Δt (two dates
+    equal or out of order) gets rate = nan.
+    """
+    pts = sorted(points, key=lambda p: p[0], reverse=True)   # old → young
+    segs = []
+    for (a0, t0), (a1, t1) in zip(pts, pts[1:]):
+        dt = a0 - a1
+        rate = (t0 - t1) / dt if dt > 0 else float('nan')
+        segs.append({'age0': a0, 't0': t0, 'age1': a1, 't1': t1, 'rate': rate})
+    return segs
+
+
 # =============================================================================
 #  Qt dialog (imported lazily; math above works without PyQt5)
 # =============================================================================
@@ -171,7 +193,7 @@ def _build_dialog_class():
         def __init__(self, parent=None):
             super().__init__(parent)
             self.setWindowTitle('Closure Temperature — Dodson (1973)')
-            self.setMinimumSize(920, 620)
+            self.setMinimumSize(940, 680)
             self._building = True
             self._build()
             self._building = False
@@ -179,7 +201,15 @@ def _build_dialog_class():
 
         # ── layout ──────────────────────────────────────────────────────────
         def _build(self):
-            root = QtWidgets.QHBoxLayout(self)
+            # v3.8.97: two tabs — the single-mineral calculator and a
+            # multi-mineral cooling-history (T–t) plot.
+            outer = QtWidgets.QVBoxLayout(self)
+            outer.setContentsMargins(0, 0, 0, 0)
+            self.tabs = QtWidgets.QTabWidget()
+            outer.addWidget(self.tabs)
+
+            single = QtWidgets.QWidget()
+            root = QtWidgets.QHBoxLayout(single)
             root.setContentsMargins(14, 14, 14, 14)
             root.setSpacing(14)
 
@@ -301,6 +331,274 @@ def _build_dialog_class():
 
             for e in (self.eEdit, self.d0Edit, self.radiusEdit, self.rateEdit):
                 e.textChanged.connect(self._on_manual_edit)
+
+            self.tabs.addTab(single, 'Single mineral')
+            self.tabs.addTab(self._build_cooling_tab(), 'Cooling history (T–t)')
+
+        # ── cooling-history (T–t) tab ───────────────────────────────────────
+        def _build_cooling_tab(self):
+            w = QtWidgets.QWidget()
+            root = QtWidgets.QHBoxLayout(w)
+            root.setContentsMargins(14, 14, 14, 14)
+            root.setSpacing(14)
+
+            left = QtWidgets.QVBoxLayout()
+            left.setSpacing(8)
+            lw = QtWidgets.QWidget()
+            lw.setLayout(left)
+            lw.setFixedWidth(430)
+            root.addWidget(lw, 0)
+
+            title = QtWidgets.QLabel('Cooling history (T–t path)')
+            title.setStyleSheet('font-size:16px;font-weight:bold;color:#1a5fb4;')
+            left.addWidget(title)
+
+            desc = QtWidgets.QLabel(
+                'Enter each dated chronometer: pick a mineral (its Dodson Tᴄ '
+                'is filled from the assumed cooling rate below, and stays '
+                'editable) and type the age. The plot connects (age, Tᴄ) into '
+                'a cooling path and labels each segment’s cooling rate.')
+            desc.setWordWrap(True)
+            desc.setStyleSheet('font-size:10px;color:#666;')
+            left.addWidget(desc)
+
+            rrow = QtWidgets.QHBoxLayout()
+            rrow.addWidget(QtWidgets.QLabel('Tᴄ assumed cooling rate (°C/Myr):'))
+            self.chRateEdit = QtWidgets.QLineEdit('10')
+            self.chRateEdit.setMaximumWidth(70)
+            self.chRateEdit.textChanged.connect(self._ch_refill_tc)
+            rrow.addWidget(self.chRateEdit)
+            rrow.addStretch(1)
+            left.addLayout(rrow)
+
+            self.chTable = QtWidgets.QTableWidget(0, 5)
+            self.chTable.setHorizontalHeaderLabels(
+                ['Mineral', 'Age (Ma)', '± (Ma)', 'Tᴄ (°C)', '± (°C)'])
+            self.chTable.verticalHeader().setVisible(False)
+            chh = self.chTable.horizontalHeader()
+            chh.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+            for c in range(1, 5):
+                chh.setSectionResizeMode(c, QtWidgets.QHeaderView.ResizeToContents)
+            self._ch_updating = False
+            self.chTable.itemChanged.connect(self._ch_on_item_changed)
+            left.addWidget(self.chTable, 1)
+
+            brow = QtWidgets.QHBoxLayout()
+            addBtn = QtWidgets.QPushButton('Add row')
+            addBtn.clicked.connect(lambda: self._ch_add_row())
+            rmBtn = QtWidgets.QPushButton('Remove row')
+            rmBtn.clicked.connect(self._ch_remove_row)
+            plotBtn = QtWidgets.QPushButton('Plot')
+            plotBtn.clicked.connect(self._ch_plot)
+            for b in (addBtn, rmBtn, plotBtn):
+                brow.addWidget(b)
+            brow.addStretch(1)
+            left.addLayout(brow)
+
+            # RIGHT: T–t plot
+            right = QtWidgets.QVBoxLayout()
+            right.setSpacing(6)
+            root.addLayout(right, 1)
+
+            self.chFig = Figure(figsize=(5.2, 4.6), dpi=100)
+            self.chFig.patch.set_facecolor('white')
+            self.chAx = self.chFig.add_subplot(111)
+            self.chCanvas = FigCanvas(self.chFig)
+            right.addWidget(self.chCanvas, 1)
+
+            self.chInfo = QtWidgets.QLabel('')
+            self.chInfo.setWordWrap(True)
+            self.chInfo.setStyleSheet('font-size:10px;color:#666;')
+            right.addWidget(self.chInfo)
+
+            # seed a worked example (mica–feldspar cooling of a mid-crustal rock)
+            self._ch_add_row(preset_name='Hornblende', age='40', age_sig='1')
+            self._ch_add_row(preset_name='Muscovite', age='34', age_sig='0.8')
+            self._ch_add_row(preset_name='Biotite (X_phl = 0.29)',
+                             age='30', age_sig='0.7')
+            self._ch_add_row(preset_name='K-feldspar (orthoclase)',
+                             age='26', age_sig='0.6')
+            self._ch_plot()
+            return w
+
+        def _ch_tc_for_preset(self, idx):
+            """Dodson Tᴄ (°C) for MINERAL_DB[idx] at the tab's assumed cooling
+            rate, using that mineral's own D0/geometry and a = 100 µm."""
+            m = MINERAL_DB[idx]
+            rate = self._read(self.chRateEdit)
+            if rate is None:
+                rate = 10.0
+            return closure_temperature(m['E'], m['D0'], 100.0,
+                                       m['geometry'], rate)
+
+        def _ch_add_row(self, preset_name=None, age='', age_sig='',
+                        tc='', tc_sig=''):
+            from PyQt5 import QtWidgets as _Q
+            self._ch_updating = True
+            r = self.chTable.rowCount()
+            self.chTable.insertRow(r)
+
+            combo = _Q.QComboBox()
+            for m in MINERAL_DB:
+                combo.addItem(m['name'])
+            combo.addItem('Custom…')
+            if preset_name is not None:
+                i = combo.findText(preset_name)
+                if i >= 0:
+                    combo.setCurrentIndex(i)
+            else:
+                combo.setCurrentIndex(combo.count() - 1)   # Custom
+            combo.currentIndexChanged.connect(
+                lambda _i, row=combo: self._ch_on_mineral_changed(row))
+            self.chTable.setCellWidget(r, 0, combo)
+
+            # auto-fill Tc from the chosen preset unless caller supplied one
+            if not tc and combo.currentIndex() < len(MINERAL_DB):
+                t = self._ch_tc_for_preset(combo.currentIndex())
+                tc = '' if math.isnan(t) else f'{t:.0f}'
+
+            for c, val in ((1, age), (2, age_sig), (3, tc), (4, tc_sig)):
+                it = _Q.QTableWidgetItem(str(val))
+                it.setTextAlignment(QtCore.Qt.AlignCenter)
+                self.chTable.setItem(r, c, it)
+            self._ch_updating = False
+
+        def _ch_row_of_combo(self, combo):
+            for r in range(self.chTable.rowCount()):
+                if self.chTable.cellWidget(r, 0) is combo:
+                    return r
+            return -1
+
+        def _ch_on_mineral_changed(self, combo):
+            r = self._ch_row_of_combo(combo)
+            if r < 0:
+                return
+            idx = combo.currentIndex()
+            if idx < len(MINERAL_DB):
+                t = self._ch_tc_for_preset(idx)
+                self._ch_set_cell(r, 3, '' if math.isnan(t) else f'{t:.0f}')
+            self._ch_plot()
+
+        def _ch_set_cell(self, r, c, text):
+            from PyQt5 import QtWidgets as _Q
+            self._ch_updating = True
+            it = self.chTable.item(r, c)
+            if it is None:
+                it = _Q.QTableWidgetItem()
+                it.setTextAlignment(QtCore.Qt.AlignCenter)
+                self.chTable.setItem(r, c, it)
+            it.setText(text)
+            self._ch_updating = False
+
+        def _ch_on_item_changed(self, _item):
+            if self._ch_updating:
+                return
+            self._ch_plot()
+
+        def _ch_refill_tc(self):
+            # Cooling-rate-for-Tc changed: refill Tc on every preset row that
+            # the user hasn't overridden is hard to know, so refill all preset
+            # rows (Custom rows keep their typed Tc).
+            if self._ch_updating:
+                return
+            for r in range(self.chTable.rowCount()):
+                combo = self.chTable.cellWidget(r, 0)
+                if combo is not None and combo.currentIndex() < len(MINERAL_DB):
+                    t = self._ch_tc_for_preset(combo.currentIndex())
+                    self._ch_set_cell(r, 3, '' if math.isnan(t) else f'{t:.0f}')
+            self._ch_plot()
+
+        def _ch_remove_row(self):
+            r = self.chTable.currentRow()
+            if r < 0:
+                r = self.chTable.rowCount() - 1
+            if r >= 0:
+                self.chTable.removeRow(r)
+                self._ch_plot()
+
+        def _ch_read_rows(self):
+            rows = []
+            for r in range(self.chTable.rowCount()):
+                combo = self.chTable.cellWidget(r, 0)
+                name = combo.currentText() if combo is not None else ''
+                age = self._ch_cell_float(r, 1)
+                asig = self._ch_cell_float(r, 2)
+                tc = self._ch_cell_float(r, 3)
+                tsig = self._ch_cell_float(r, 4)
+                if age is None or tc is None:
+                    continue
+                rows.append({'name': name, 'age': age, 'age_sig': asig,
+                             'tc': tc, 'tc_sig': tsig})
+            return rows
+
+        def _ch_cell_float(self, r, c):
+            it = self.chTable.item(r, c)
+            if it is None:
+                return None
+            try:
+                return float(it.text())
+            except (ValueError, TypeError):
+                return None
+
+        def _ch_plot(self):
+            self.chAx.clear()
+            rows = self._ch_read_rows()
+            if len(rows) == 0:
+                self.chAx.set_xlabel('Age (Ma)', fontsize=10)
+                self.chAx.set_ylabel('Temperature (°C)', fontsize=10)
+                self.chAx.grid(True, ls=':', alpha=0.4)
+                self.chInfo.setText('Add at least one chronometer '
+                                    '(age + Tᴄ) to draw a cooling path.')
+                self.chFig.tight_layout()
+                self.chCanvas.draw_idle()
+                return
+
+            ages = [r['age'] for r in rows]
+            tcs = [r['tc'] for r in rows]
+            xerr = [r['age_sig'] if r['age_sig'] is not None else 0.0
+                    for r in rows]
+            yerr = [r['tc_sig'] if r['tc_sig'] is not None else 0.0
+                    for r in rows]
+
+            # cooling path: connect points sorted old → young
+            order = sorted(range(len(rows)), key=lambda i: ages[i], reverse=True)
+            self.chAx.plot([ages[i] for i in order], [tcs[i] for i in order],
+                           '-', color='#1a5fb4', lw=1.6, zorder=2)
+            self.chAx.errorbar(ages, tcs, xerr=xerr, yerr=yerr, fmt='o',
+                               ms=7, color='#b41a1a', ecolor='#b41a1a',
+                               elinewidth=1, capsize=3, zorder=3)
+            for r in rows:
+                self.chAx.annotate(r['name'].split(' (')[0], (r['age'], r['tc']),
+                                   textcoords='offset points', xytext=(7, 6),
+                                   fontsize=8, color='#333')
+
+            # segment cooling rates
+            segs = cooling_segments(list(zip(ages, tcs)))
+            for s in segs:
+                if math.isnan(s['rate']):
+                    continue
+                xm = 0.5 * (s['age0'] + s['age1'])
+                ym = 0.5 * (s['t0'] + s['t1'])
+                self.chAx.annotate(f"{s['rate']:.0f} °C/Myr", (xm, ym),
+                                   textcoords='offset points', xytext=(6, -12),
+                                   fontsize=8, color='#1a5fb4')
+
+            self.chAx.set_xlabel('Age (Ma)', fontsize=10)
+            self.chAx.set_ylabel('Temperature (°C)', fontsize=10)
+            self.chAx.grid(True, ls=':', alpha=0.4)
+            if max(ages) > min(ages):
+                self.chAx.invert_xaxis()   # older left → younger (present) right
+            self.chFig.tight_layout()
+            self.chCanvas.draw_idle()
+
+            parts = []
+            for s in segs:
+                if math.isnan(s['rate']):
+                    continue
+                parts.append(f"{s['age0']:g}→{s['age1']:g} Ma: "
+                             f"{s['rate']:.1f} °C/Myr")
+            self.chInfo.setText(('Segment cooling rates — ' + '  |  '.join(parts))
+                                if parts else 'Need ≥2 chronometers for a rate.')
 
         def _num_edit(self):
             e = QtWidgets.QLineEdit()
@@ -483,4 +781,16 @@ if __name__ == '__main__':
     ])
     print(f"non-physical inputs → NaN: {'✓' if nan_ok else '✗ FAIL'}")
 
-    print('\nALL PASS' if (all_ok and mono and nan_ok) else '\nSOME CHECKS FAILED')
+    # cooling_segments: old→young ordering + rate = ΔT/Δt, order-independent
+    segs = cooling_segments([(30, 300), (40, 500), (34, 390)])
+    seg_ok = (len(segs) == 2
+              and segs[0]['age0'] == 40 and segs[0]['age1'] == 34
+              and abs(segs[0]['rate'] - (500 - 390) / (40 - 34)) < 1e-9
+              and abs(segs[1]['rate'] - (390 - 300) / (34 - 30)) < 1e-9)
+    # degenerate segment (equal ages) → NaN rate
+    seg_nan = math.isnan(cooling_segments([(10, 300), (10, 350)])[0]['rate'])
+    print(f"cooling_segments rates + ordering: {'✓' if seg_ok else '✗ FAIL'}")
+    print(f"cooling_segments Δt≤0 → NaN: {'✓' if seg_nan else '✗ FAIL'}")
+
+    ok_all = all_ok and mono and nan_ok and seg_ok and seg_nan
+    print('\nALL PASS' if ok_all else '\nSOME CHECKS FAILED')

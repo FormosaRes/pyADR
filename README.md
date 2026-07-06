@@ -1,5 +1,5 @@
 ![logo](.work/logo.png)
-# pyADR — NTNU modified fork (v3.8.96)
+# pyADR — NTNU modified fork (v3.8.97)
 
 40Ar/39Ar data reduction tool with GUI. Modified fork of [pyADR](https://github.com/AndrewLiu0725/pyADR) (original by **An-Jun (Andrew) Liu**), now maintained by **PANG Chi-Hsiu (Academia Sinica)**.
 
@@ -140,7 +140,7 @@ python NTNU_DataReduction.py
 | **Diagram Plots** | 出圖：age spectrum、normal / inverse isochron（York 2004 / Vermeesch）、Ca-K、Cl-K、degassing pattern（DFD/DFS/DFM）、3D 平面擬合 | age / datum CSV → PNG + 統計（plateau、WMA、MSWD、isochron age） |
 | **Datum Publication** | 產出投稿級 datum 總表（88 欄）與 isochron ratio 表（ISOr） | age / measurement CSV → publication CSV |
 | **Argon Pipeline** | 上述主鏈的批次自動化（Calculate T₀ → MassRatio → AgeCalc + Datum 一次跑完），含可編輯 J 即時重算、³⁶Ar-blank 敏感度、plateau 勾選、`.adr` session 存讀 | raw `.dat` 一組 → 全套輸出（CSV + PNG + datum） |
-| **Closure Temperature** | 獨立工具：Dodson (1973) 礦物封閉溫度 Tᴄ 計算器。14 個 ⁴⁰Ar/³⁹Ar 定年計 preset（Schaen et al. 2021 GSA Bull. 133, Table 5）或自訂 E / D₀ / 幾何 / 粒徑 / 冷卻速率；E 單位 kJ/kcal 可切換 | 擴散參數 + 冷卻速率 → Tᴄ、對照表、Tᴄ–冷卻速率曲線 |
+| **Closure Temperature** | 獨立工具，兩分頁：①**Single mineral** — Dodson (1973) 礦物封閉溫度 Tᴄ 計算器（14 個 ⁴⁰Ar/³⁹Ar 定年計 preset，Schaen et al. 2021 GSA Bull. 133, Table 5，或自訂 E / D₀ / 幾何 / 粒徑 / 冷卻速率；E 單位 kJ/kcal 可切換）②**Cooling history (T–t)** — 輸入多個定年計的年代 + Tᴄ，繪降溫曲線並標段間冷卻速率 | 擴散參數 + 冷卻速率 → Tᴄ、對照表、Tᴄ–冷卻速率曲線；多礦物 (age, Tᴄ) → T–t 冷卻路徑 + 冷卻速率 |
 
 > 與 pipeline 數據解耦的純工具：**Closure Temperature**（不讀 / 不寫任何樣品 CSV，只做參數計算）。
 
@@ -148,8 +148,9 @@ python NTNU_DataReduction.py
 
 ## Changelog 摘要
 
-### v3.8.9 – v3.8.96 (2026-05 → 2026-07) — 摘要
+### v3.8.9 – v3.8.97 (2026-05 → 2026-07) — 摘要
 
+> **v3.8.97**：Closure Temperature 新增 **Cooling history (T–t) 分頁**：輸入多個定年計的年代 + 封閉溫度，繪出溫度–時間降溫曲線（含年代/溫度誤差棒、依年代連線、各段冷卻速率標註）。新增純函數 `cooling_segments()`。
 > **v3.8.96**：Home 頁新增 **Closure Temperature 主按鈕**（Argon Pipeline 下方）；計算器活化能 E 單位可切換 **kJ/mol ↔ kcal/mol**（切換不動 preset、Tᴄ 不變）。
 > **v3.8.95**：Closure Temperature 入口搬家：主程式 Home 頁 **Menu → Closure Temperature** + AutoPipeline **AgeCalc+Datum 左側按鈕列**（Parameter 下方），移除 v3.8.94 的 Tools 選單。礦物擴散參數庫改引 **Schaen et al. (2021) GSA Bulletin 133, 461–487, Table 5**，5 → **14 個 ⁴⁰Ar/³⁹Ar 定年計**（單位改 kJ/mol、m²/s，可直接對照論文表格）；self-test 14 個 nominal T_cb 全數 ±6 °C 吻合（anorthoclase 為 non-Arrhenian 已知例外，UI 有警語）。
 > **v3.8.94**：新增 **Tools → Closure Temperature (Dodson 1973)** 礦物封閉溫度計算器。可選礦物 preset（角閃石／白雲母／黑雲母／鉀長石，內建 Harrison 1981/1985/2009、Grove & Harrison 1996、Foland 1974 擴散參數）或自訂 E / D₀ / 幾何 / 粒徑 / 冷卻速率，即時算 Tᴄ、對照表與 Tᴄ–冷卻速率曲線。純參數工具，與 pipeline 解耦。
