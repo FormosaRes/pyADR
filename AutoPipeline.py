@@ -321,6 +321,23 @@ def _sb_manual_on_style():
             'font-weight:bold;}'
             'QPushButton:hover{background:#fff4d0;}')
 
+# §8 段落標題：Georgia 12px 粗體 + 右側 1px HAIR 延伸線，無副標
+_HDR_LBL_SS = ('font-family:Georgia,serif;font-size:12px;font-weight:bold;'
+               f'color:{TXT2};background:transparent;border:none;')
+
+def _hdr_row(lbl):
+    """把既有標題 QLabel 包成「標題 + 右側 HAIR 延伸線」的一列。
+    傳入 QLabel（text 可之後動態 setText），回傳可 addWidget 的容器。"""
+    w = QtWidgets.QWidget()
+    hl = QtWidgets.QHBoxLayout(w)
+    hl.setContentsMargins(0, 0, 0, 0); hl.setSpacing(8)
+    ln = QtWidgets.QFrame()
+    ln.setFixedHeight(1)
+    ln.setStyleSheet(f'background:{HAIR};border:none;')
+    hl.addWidget(lbl)
+    hl.addWidget(ln, 1)
+    return w
+
 # ── helpers ─────────────────────────────────────────────────────────────────
 def _sf(v, d=0.0):
     try: return float(v)
@@ -1391,7 +1408,8 @@ class MvCanvas(QtWidgets.QWidget):
         gl.addStretch()
         for i in range(10):
             b = QtWidgets.QPushButton(str(i + 1))
-            b.setFixedSize(26, 24); b.setCheckable(True); b.setChecked(True)
+            # v3.9.8 (§5): 22px 方鈕（v3.8.17 的 26×24 依規格收回）
+            b.setFixedSize(22, 22); b.setCheckable(True); b.setChecked(True)
             b.setStyleSheet(self._cs(True))
             b.clicked.connect(lambda _, idx=i: self._toggle(idx))
             gl.addWidget(b)
@@ -1412,8 +1430,8 @@ class MvCanvas(QtWidgets.QWidget):
         sc_hdr_text = 'T\u2080 vs 2\u03c3' if self.ai == 0 else ''
         sc_hdr = QtWidgets.QLabel(sc_hdr_text)
         sc_hdr.setStyleSheet(
-            f'font-size:14px;font-weight:bold;color:{TXT2};'
-            f'border-top:1px solid {BRD};padding-top:2px;')
+            'font-family:Georgia,serif;font-size:12px;font-weight:bold;'
+            f'color:{TXT2};border-top:1px solid {HAIR};padding-top:2px;')
         sc_hdr.setToolTip('Manual mode: click any dot to select that cycle combo.')
         sc_hdr.setMinimumWidth(1)
         sc_hdr.setFixedHeight(22)  # same height across all 5 \u2192 divider aligns
@@ -1483,7 +1501,8 @@ class MvCanvas(QtWidgets.QWidget):
         best_hdr_text = 'Best per n' if self.ai == 0 else ''
         best_hdr = QtWidgets.QLabel(best_hdr_text)
         best_hdr.setStyleSheet(
-            f'font-size:14px;font-weight:bold;color:{TXT2};padding-top:2px;')
+            'font-family:Georgia,serif;font-size:12px;font-weight:bold;'
+            f'color:{TXT2};padding-top:2px;')
         best_hdr.setToolTip('Cycle count with the minimum residual error '
                             '(click to apply that mask).')
         best_hdr.setMinimumWidth(1)
@@ -1523,24 +1542,25 @@ class MvCanvas(QtWidgets.QWidget):
            z   : residual z-score (MAD-based) of this cycle vs current fit.
                  None → plain colour. z < 1.8 → healthy (blue);
                  1.8 ≤ z < 3.0 → suspicious (amber); z ≥ 3.0 → outlier (red)."""
+        # v3.9.8 (§5): 白底方鈕 — used = ACCENT 字+框、excluded = DANGER
+        # 字+框；z 分級的琥珀/警紅「底色」保留（診斷語意，非裝飾）。
         if not sel:
-            # excluded cycle — always greyed out red text
-            return (f'QPushButton{{background:#eeede8;color:#b41a1a;'
-                    f'border:1px solid {BRD2};border-radius:3px;'
+            return (f'QPushButton{{background:{WHITE};color:{DANGER};'
+                    f'border:1px solid {DANGER};border-radius:3px;'
                     f'font-size:12px;font-weight:bold;}}')
         # included: tint by z
         if z is not None and np.isfinite(z):
             if z >= 3.0:        # outlier — alert red
                 return (f'QPushButton{{background:#ffd6d6;color:#a01010;'
-                        f'border:1.5px solid #b41a1a;border-radius:3px;'
+                        f'border:1.5px solid {DANGER};border-radius:3px;'
                         f'font-size:12px;font-weight:bold;}}')
             if z >= 1.8:        # suspicious — amber
                 return (f'QPushButton{{background:#fff4d0;color:#8a6000;'
                         f'border:1.5px solid #c0a020;border-radius:3px;'
                         f'font-size:12px;font-weight:bold;}}')
         # healthy / no z available
-        return (f'QPushButton{{background:{BLUE_BG};color:#1a5fb4;'
-                f'border:1.5px solid #1a5fb4;border-radius:3px;'
+        return (f'QPushButton{{background:{WHITE};color:{ACCENT};'
+                f'border:1px solid {ACCENT};border-radius:3px;'
                 f'font-size:12px;font-weight:bold;}}')
 
     def _cycle_z_scores(self):
@@ -1811,7 +1831,7 @@ class MvCanvas(QtWidgets.QWidget):
         # excluded ×
         excl_idx = [i for i in range(nc) if mask[i] == 0]
         if excl_idx:
-            ax.plot(ts[excl_idx], vs[excl_idx], marker='x', color='#b41a1a',
+            ax.plot(ts[excl_idx], vs[excl_idx], marker='x', color=DANGER,
                     linewidth=0, markersize=7, markeredgewidth=1.5, zorder=5)
 
         t_range = np.linspace(ts[0], ts[-1], 50)
@@ -2274,15 +2294,17 @@ class CalcT0Page(QtWidgets.QWidget):
         self._step_tabs.setExpanding(False)
         self._step_tabs.setUsesScrollButtons(True)
         self._step_tabs.setDrawBase(False)
+        # v3.9.8 (§5): 底線式 tab — 透明底無方框，作用中 = ACCENT 粗體 +
+        # 2px ACCENT 底線；整列下方一條 HAIR 髮絲線（tab_wrap 畫）。
         self._step_tabs.setStyleSheet(
             'QTabBar::tab{'
-            f'background:#eeede8;border:1px solid {BRD};border-bottom:none;'
-            'border-top-left-radius:6px;border-top-right-radius:6px;'
-            'padding:6px 14px;margin-right:2px;font-size:11px;color:#444;'
+            'background:transparent;border:none;'
+            'padding:5px 13px;margin-right:2px;'
+            'font-family:Georgia,serif;font-size:11px;color:#777;'
             'min-width:50px;}'
-            'QTabBar::tab:selected{'
-            'background:white;color:#1a5fb4;font-weight:bold;}'
-            'QTabBar::tab:hover:!selected{background:#f5f4f0;}'
+            f'QTabBar::tab:selected{{color:{ACCENT};font-weight:bold;'
+            f'border-bottom:2px solid {ACCENT};}}'
+            'QTabBar::tab:hover:!selected{color:#444;}'
         )
         # _tab_step_map[index] = step name ('__BLANK__' or 'Temperature 1100°C')
         self._tab_step_map = {0: '__BLANK__'}
@@ -2292,6 +2314,10 @@ class CalcT0Page(QtWidgets.QWidget):
         self._tab_sync_lock = False
 
         tab_wrap = QtWidgets.QWidget()
+        tab_wrap.setObjectName('t0TabWrap')
+        tab_wrap.setStyleSheet(
+            f'QWidget#t0TabWrap{{border-bottom:1px solid {HAIR};'
+            'background:transparent;}')
         tab_l = QtWidgets.QHBoxLayout(tab_wrap)
         tab_l.setContentsMargins(8, 4, 0, 0); tab_l.setSpacing(0)
         tab_l.addWidget(self._step_tabs)
@@ -2305,10 +2331,8 @@ class CalcT0Page(QtWidgets.QWidget):
         cvl.setContentsMargins(4, 4, 4, 4); cvl.setSpacing(3)
         
         self._lbl_title = QtWidgets.QLabel('mV vs time (sec)')
-        self._lbl_title.setStyleSheet(
-            f'font-size:15px;font-weight:bold;color:{TXT2};'
-            f'border-bottom:1px solid {BRD};padding-bottom:2px;')
-        cvl.addWidget(self._lbl_title)
+        self._lbl_title.setStyleSheet(_HDR_LBL_SS)
+        cvl.addWidget(_hdr_row(self._lbl_title))   # §5 段落標題 + HAIR 線
         
         # 5 canvases in a horizontal row (shared by Blank and Signal).
         # v3.8.11: removed horizontal scroll wrapper. Canvases now share available
@@ -2356,11 +2380,9 @@ class CalcT0Page(QtWidgets.QWidget):
         # ── Degassing Pattern Overview (single panel) ──
         # v3.8.10: removed Panel ⑥ MC, ⑦ Bi-Dir, ⑧ Final Rec — only ⑤ kept.
         analysis_hdr_row = QtWidgets.QHBoxLayout()
-        analysis_hdr = QtWidgets.QLabel(
-            '<b style="font-size:15px;">Degassing Pattern Overview</b>')
-        analysis_hdr.setStyleSheet(
-            f'color:{TXT2};border-top:1px solid {BRD};padding-top:3px;margin-bottom:2px;')
-        analysis_hdr_row.addWidget(analysis_hdr, 1)
+        analysis_hdr = QtWidgets.QLabel('Degassing Pattern Overview')
+        analysis_hdr.setStyleSheet(_HDR_LBL_SS)
+        analysis_hdr_row.addWidget(_hdr_row(analysis_hdr), 1)   # §5 標題 + HAIR 線
         left_vb.addLayout(analysis_hdr_row)
 
         # Container for 2×2 grid
@@ -4391,12 +4413,15 @@ class MassRatioPage(QtWidgets.QWidget):
         has_negative = any(v < 0 for v in raw + net + sigma + ratio + ratio_sigma)
         
         # Temperature title with ! if negative values exist
+        # v3.9.8 (§6): 標題 + 右側 HAIR 細線
         title_text = f'<b>{step["name"]}</b>'
         if has_negative:
-            title_text = f'<b>{step["name"]} <span style="color:#b41a1a;">!</span></b>'
+            title_text = f'<b>{step["name"]} <span style="color:{DANGER};">!</span></b>'
         titleLbl = QtWidgets.QLabel(title_text)
-        titleLbl.setStyleSheet(f'font-size:15px;color:{TXT};background:transparent;')
-        vb.addWidget(titleLbl)
+        titleLbl.setStyleSheet(
+            f'font-family:Georgia,serif;font-size:13px;color:{TXT};'
+            'background:transparent;')
+        vb.addWidget(_hdr_row(titleLbl))
         
         # 5-isotope table (7 columns: Isotope, Raw, Net, Sigma, Ratio, Value, Ratio σ)
         ratio_names_col = ['Ar39/Ar40', 'Ar36/Ar40', 'Ar39/Ar36', 'Ar40/Ar36', 'Ar38/Ar36']
@@ -4419,23 +4444,30 @@ class MassRatioPage(QtWidgets.QWidget):
         header_height = tbl.horizontalHeader().height()
         tbl.setFixedHeight(header_height + 36 * 5 + 2)
         tbl.setStyleSheet(
-            f'QTableWidget{{font-size:14px;gridline-color:{BRD};font-family:"Courier New",monospace;background:{PNL};}}'
-            f'QHeaderView::section{{font-size:12px;background:#eeede8;border:1px solid {BRD2};padding:4px;}}')
-        
-        isotopes = ['³⁶Ar','³⁷Ar','³⁸Ar','³⁹Ar','⁴⁰Ar']
+            f'QTableWidget{{font-size:14px;gridline-color:{BRD};font-family:"Courier New",monospace;background:{WHITE};}}'
+            f'QHeaderView::section{{font-size:12px;background:{HDR};border:1px solid {BRD2};padding:4px;font-weight:normal;}}')
+
+        # v3.9.8 (§6): Isotope 欄不用上標、ISO 配色粗體；負值 DANGER 紅、
+        # σ 欄恆黑；Value 欄粗體。
+        isotopes = ['Ar36','Ar37','Ar38','Ar39','Ar40']
         for r in range(5):
-            def _ci(text, red=False):
+            def _ci(text, red=False, bold=False, color=None):
                 it = QtWidgets.QTableWidgetItem(str(text))
                 it.setTextAlignment(QtCore.Qt.AlignCenter)
-                if red: it.setForeground(QtGui.QColor('#b41a1a'))
+                if red:
+                    it.setForeground(QtGui.QColor(DANGER))
+                elif color:
+                    it.setForeground(QtGui.QColor(color))
+                if bold or color:
+                    f = it.font(); f.setBold(True); it.setFont(f)
                 return it
-            tbl.setItem(r, 0, _ci(isotopes[r]))
+            tbl.setItem(r, 0, _ci(isotopes[r], color=ISO[AR_NAMES[r]]))
             tbl.setItem(r, 1, _ci(f'{raw[r]:.6e}',         red=raw[r]<0))
             tbl.setItem(r, 2, _ci(f'{net[r]:.6e}',         red=net[r]<0))
-            tbl.setItem(r, 3, _ci(f'{sigma[r]:.3e}',       red=sigma[r]<0))
+            tbl.setItem(r, 3, _ci(f'{sigma[r]:.3e}'))                             # σ 恆黑
             tbl.setItem(r, 4, _ci(ratio_names_col[r]))                            # ratio label
-            tbl.setItem(r, 5, _ci(f'{ratio[r]:.6e}',       red=ratio[r]<0))      # ratio value
-            tbl.setItem(r, 6, _ci(f'{ratio_sigma[r]:.3e}', red=ratio_sigma[r]<0))
+            tbl.setItem(r, 5, _ci(f'{ratio[r]:.6e}',       red=ratio[r]<0, bold=True))
+            tbl.setItem(r, 6, _ci(f'{ratio_sigma[r]:.3e}'))                       # ratio σ 恆黑
         
         vb.addWidget(tbl)
         return container

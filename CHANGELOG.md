@@ -8,6 +8,30 @@ GitHub Releases（tag）最新為 **v3.8.96（Latest，彙整 v3.8.94 → v3.8.9
 
 ---
 
+## V3.9.8（2026-07-09）— Argon Pipeline 介面改版 step 4/5：段落標題 / tabs / 表格上色
+
+HANDOFF-QSS-spec 第 4 步（§5–6，§7 表格上色既有已符合），純樣式：
+
+**Calculate T₀ 頁（§5）**
+- **溫度分頁改底線式**：透明底無方框，作用中 = `ACCENT` 粗體 + 2px `ACCENT` 底線，其餘 #777；整列下方 1px `HAIR` 髮絲線（tab_wrap objectName 選擇器畫，避免污染子 widget）。
+- **段落標題統一**（`_HDR_LBL_SS` + `_hdr_row()` helper）：標題 Georgia 12px 粗體 + 右側 1px `HAIR` 延伸線，無副標。套用：mV vs time（動態 setText 保留）、Degassing Pattern Overview；MvCanvas 內 T₀ vs 2σ / Best per n 標題同步改 Georgia 12px（T₀ vs 2σ 的跨五欄分隔線改 `HAIR`）。
+- **Cycle 按鈕（1–10）**：26×24 → 22×22（v3.8.17 放大依規格收回）；白底，used = `ACCENT` 字+框、excluded = `DANGER` 字+框，12px 粗體。z 分級的琥珀（1.8≤z<3）/警紅（z≥3）底色**保留**（診斷語意非裝飾，Help 的 Cycle Selection Guide 依然成立）。
+- mV 圖排除點紅 × 改 `DANGER` 色。
+
+**Mass Ratio 頁（§6）**
+- 每溫度標題（Temperature xxx°C）+ 右側 `HAIR` 細線；負值警示「!」改 `DANGER`。
+- 表格 body 改白底；表頭 putty 不加粗。
+- Isotope 欄改 `Ar36`–`Ar40`（不用上標），`ISO` 配色粗體。
+- 負值 `DANGER` 紅、正值黑；**σ 欄（Sigma / Ratio σ）恆黑**（原本負 σ 也標紅，規格改為恆黑）；Value 欄粗體。
+
+**Age Calc 頁（§7 表格部分）**：負值紅已是 `#c0282d`（=DANGER，v3.8.64），無需改動；版面與底部 tabs 留給 step 5。
+
+驗證：`py_compile` 通過。GUI 目視由使用者跑 pyADR.bat 確認。
+
+檔案：`AutoPipeline.py`；`.work/.app_info.txt` 3.9.7 → 3.9.8。
+
+---
+
 ## V3.9.7（2026-07-09）— Argon Pipeline 介面改版 step 3/5：sidebar 間距與分組
 
 HANDOFF-QSS-spec 第 3 步（§4），純樣式與排序，所有按鈕物件與 signal 接線不動：
