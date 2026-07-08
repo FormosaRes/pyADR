@@ -8,6 +8,21 @@ GitHub Releases（tag）最新為 **v3.8.96（Latest，彙整 v3.8.94 → v3.8.9
 
 ---
 
+## V3.9.7（2026-07-09）— Argon Pipeline 介面改版 step 3/5：sidebar 間距與分組
+
+HANDOFF-QSS-spec 第 3 步（§4），純樣式與排序，所有按鈕物件與 signal 接線不動：
+
+- **統一樣式**：新增 `_sb_btn_style()`（padding 12px 2px、3px 圓角、12px Georgia）與 `_sb_manual_on_style()`（琥珀 #fff4d0 底 / #8a5a00 字 / 1.5px #c0a020 框 / 粗體）。按鈕棄 91×51 固定尺寸，改填滿欄寬；sidebar 寬 95/110 → 114、`spacing=0` → 3，組與組之間 10px 間距（無分隔線、無文字標籤）。
+- **T₀ 頁順序改為規格排法**：頂部兩下拉各帶 9px 灰標籤（Calc mode / Fit type）→ Load Blank / Load Sample / Save → Auto Blank / Auto Signal / Manual → Open Session / Save Session → Parameter → stretch → **HomePage 沉到最底**（原「Return」按鈕改名移位，物件同一顆，NTNU_DataReduction / File menu 的接線不受影響）。
+- **Mass Ratio / Age Calc 共用 sidebar**（`_build_minimal_sidebar`）分組：Return / Save → Open / Save Session → Parameter（AgeCalc 加 Closure Temp）。
+- `_apply_manual_style` 改用新樣式對；Manual off 回落 sidebar 標準樣式。
+
+驗證：`py_compile` 通過；sidebar 按鈕無其他 setStyleSheet 覆寫點（grep 確認）。GUI 目視由使用者跑 pyADR.bat 確認。
+
+檔案：`AutoPipeline.py`（`_sb_btn_style`/`_sb_manual_on_style` + CalcT0Page sidebar + `_build_minimal_sidebar` + `_apply_manual_style`）；`.work/.app_info.txt` 3.9.6 → 3.9.7。
+
+---
+
 ## V3.9.6（2026-07-09）— Argon Pipeline 介面改版 step 2/5：Run 按鈕 + 膠囊式 stepper
 
 HANDOFF-QSS-spec 第 2 步（§3.2 / §3.3），純樣式與 top bar 元件重排，不動計算與資料流：

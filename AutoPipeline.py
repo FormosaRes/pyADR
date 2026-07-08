@@ -306,6 +306,21 @@ def _run_btn_style():
             f"QPushButton:hover{{background:{ACCENT_D};}}"
             f"QPushButton:disabled{{background:#aaa;border-color:#aaa;}}")
 
+def _sb_btn_style():
+    """§4 sidebar 標準按鈕。"""
+    return (f'QPushButton{{background:{PNL};color:{TXT};border:1px solid {BRD};'
+            f'border-radius:3px;padding:12px 2px;font-size:12px;'
+            f'font-family:Georgia,serif;}}'
+            f'QPushButton:hover{{background:{BG};}}')
+
+def _sb_manual_on_style():
+    """§4 Manual 作用中 = 琥珀。"""
+    return ('QPushButton{background:#fff4d0;color:#8a5a00;'
+            'border:1.5px solid #c0a020;border-radius:3px;'
+            'padding:12px 2px;font-size:12px;font-family:Georgia,serif;'
+            'font-weight:bold;}'
+            'QPushButton:hover{background:#fff4d0;}')
+
 # ── helpers ─────────────────────────────────────────────────────────────────
 def _sf(v, d=0.0):
     try: return float(v)
@@ -585,14 +600,16 @@ def _build_minimal_sidebar(page, save_handler, save_label='Save',
     time so the right method fires for this page. `with_closure=True`
     (AgeCalcPage only) appends the Closure Temperature button below
     Parameter (v3.8.95)."""
+    # v3.9.7 (§4): 寬 114、spacing=3 統一小縫隙；按鈕棄 91×51 固定尺寸，
+    # 改 _sb_btn_style()（padding 12px 2px / 3px 圓角 / 12px 字）填滿欄寬。
     sb = QtWidgets.QWidget()
-    sb.setFixedWidth(110)
+    sb.setFixedWidth(114)
     sbl = QtWidgets.QVBoxLayout(sb)
-    sbl.setContentsMargins(2, 4, 2, 4); sbl.setSpacing(0)
+    sbl.setContentsMargins(2, 4, 2, 4); sbl.setSpacing(3)
 
     def _sb_btn(txt):
         b = QtWidgets.QPushButton(txt)
-        b.setFixedSize(91, 51)
+        b.setStyleSheet(_sb_btn_style())
         return b
 
     def _find_window():
@@ -653,11 +670,9 @@ def _build_minimal_sidebar(page, save_handler, save_label='Save',
     btnParam = _sb_btn('Parameter')
     page.paramBtn = btnParam
 
-    # v3.8.85: 5 buttons (Return / Save / Open Session / Save Session / Parameter)
-    btns = [btnReturn, btnSave, btnOpenSess, btnSaveSess, btnParam]
-
     # v3.8.95: Closure Temperature calculator (Dodson 1973, Schaen et al.
     # 2021 Table 5) below Parameter — AgeCalcPage (AgeCalc+Datum) only.
+    btnClosure = None
     if with_closure:
         btnClosure = _sb_btn('Closure\nTemp')
         def _on_closure():
@@ -675,10 +690,17 @@ def _build_minimal_sidebar(page, save_handler, save_label='Save',
                     f'Closure-temperature tool unavailable: {e}')
         btnClosure.clicked.connect(_on_closure)
         page.closureBtn = btnClosure
-        btns.append(btnClosure)
 
-    for b in btns:
-        sbl.addWidget(b)
+    # v3.9.7 (§4): 組與組之間 10px 間距（不畫分隔線、不放文字標籤）。
+    # 組 1 = Return / Save；組 2 = Open / Save Session；組 3 = Parameter (+ Closure)
+    groups = [[btnReturn, btnSave],
+              [btnOpenSess, btnSaveSess],
+              [btnParam] + ([btnClosure] if btnClosure is not None else [])]
+    for gi, grp in enumerate(groups):
+        if gi:
+            sbl.addSpacing(10)
+        for b in grp:
+            sbl.addWidget(b)
     sbl.addStretch()
     return sb
 
@@ -2137,20 +2159,23 @@ class CalcT0Page(QtWidgets.QWidget):
         hl = QtWidgets.QHBoxLayout()
         hl.setContentsMargins(0, 0, 0, 0); hl.setSpacing(0)
 
-        # v3.8.12: Sidebar copied 1:1 from DiagramPlots_SH layout —
-        # buttons setFixedSize(91, 51), spacing=0 so they touch like Qt
-        # Designer's absolute setGeometry produced. Two ComboBox dropdowns
-        # at top (parity with DiagramPlots_SH's color + marker pickers),
-        # here repurposed as σ method + fit type. No setStyleSheet anywhere
-        # → buttons render with OS-native Qt look.
-        sb  = QtWidgets.QWidget(); sb.setFixedWidth(95)
+        # v3.9.7 (§4): sidebar 寬 114、spacing=3；按鈕棄固定 91×51，改
+        # _sb_btn_style() 填滿欄寬。頂部兩個下拉各帶 9px 灰標籤，組與組
+        # 之間 10px 間距（無分隔線）。HomePage（原 Return）移到最底。
+        sb  = QtWidgets.QWidget(); sb.setFixedWidth(114)
         sbl = QtWidgets.QVBoxLayout(sb)
-        sbl.setContentsMargins(2, 4, 2, 4); sbl.setSpacing(0)
+        sbl.setContentsMargins(2, 4, 2, 4); sbl.setSpacing(3)
 
         def sb_btn(txt, col='default'):
             b = QtWidgets.QPushButton(txt)
-            b.setFixedSize(91, 51)
+            b.setStyleSheet(_sb_btn_style())
             return b
+
+        def sb_combo_lbl(txt):
+            l = QtWidgets.QLabel(txt)
+            l.setStyleSheet(
+                f'font-size:9px;color:{TXT3};background:transparent;')
+            return l
 
         # Dropdown 1: σ method (slot ≈ DiagramPlots_SH 'red' color picker)
         self.sigmaCombo = QtWidgets.QComboBox()
@@ -2162,7 +2187,8 @@ class CalcT0Page(QtWidgets.QWidget):
         idx = 0 if SIGMA_METHOD == 'standard' else 1
         self.sigmaCombo.setCurrentIndex(idx)
         self.sigmaCombo.currentIndexChanged.connect(self._on_sigma_method_changed)
-        self.sigmaCombo.setFixedSize(91, 30)
+        self.sigmaCombo.setFixedHeight(26)
+        sbl.addWidget(sb_combo_lbl('Calc mode'))
         sbl.addWidget(self.sigmaCombo)
 
         # Dropdown 2: fit type (slot ≈ DiagramPlots_SH 'o' marker picker)
@@ -2173,7 +2199,8 @@ class CalcT0Page(QtWidgets.QWidget):
         self.fitCombo.setCurrentIndex(0)
         self.fitCombo.currentIndexChanged.connect(
             lambda i: self._set_fit(self.fitCombo.itemData(i)))
-        self.fitCombo.setFixedSize(91, 30)
+        self.fitCombo.setFixedHeight(26)
+        sbl.addWidget(sb_combo_lbl('Fit type'))
         sbl.addWidget(self.fitCombo)
 
         # Buttons — 91×51, default Qt look, no stylesheets.
@@ -2202,11 +2229,17 @@ class CalcT0Page(QtWidgets.QWidget):
         self.btnL = QtWidgets.QPushButton(); self.btnL.hide()
         self.btnA = QtWidgets.QPushButton(); self.btnA.hide()
 
-        # v3.8.35: Open Session above Save Session (user-requested swap)
-        for b in (self.returnBtn, self.saveBtn, self.btnLdBlank, self.btnLdSig,
-                  self.btnAB, self.btnAS, self.btnM,
-                  self.btnOpenSession, self.btnSaveSession, self.paramBtn):
-            sbl.addWidget(b)
+        # v3.9.7 (§4) 分組：Load Blank / Load Sample / Save → Auto Blank /
+        # Auto Signal / Manual → Open Session / Save Session（v3.8.35 順序
+        # 保留）→ Parameter；HomePage（returnBtn）沉到最底（stretch 之後）。
+        self.returnBtn.setText('HomePage')
+        for grp in ([self.btnLdBlank, self.btnLdSig, self.saveBtn],
+                    [self.btnAB, self.btnAS, self.btnM],
+                    [self.btnOpenSession, self.btnSaveSession],
+                    [self.paramBtn]):
+            sbl.addSpacing(10)
+            for b in grp:
+                sbl.addWidget(b)
 
         # v3.8.18: Δt label moved out of sidebar into the top nav bar (chip
         # right of 'Current step'). Local widget kept as a hidden back-compat
@@ -2216,6 +2249,7 @@ class CalcT0Page(QtWidgets.QWidget):
         self.deltaTLbl.hide()
 
         sbl.addStretch()
+        sbl.addWidget(self.returnBtn)   # §4: HomePage 最底
 
         # v3.8.63: statusLbl routed to the window status bar (see _StatusProxy);
         # no small sidebar label here.
@@ -2986,11 +3020,11 @@ class CalcT0Page(QtWidgets.QWidget):
         """v3.8.38: single source of truth for Manual-mode UI state.
         Background color (amber) + Mode chip text indicate manual ON;
         button label stays plain 'Manual' to avoid a leftover '✓' after
-        toggling back (regression from v3.8.28 _open_session)."""
-        col = AMB_BG if self._manual else PNL
-        tc  = '#8a5a00' if self._manual else TXT
-        bc  = '#8a5a00' if self._manual else BRD
-        self.btnM.setStyleSheet(_btn_style(col, tc, bc))
+        toggling back (regression from v3.8.28 _open_session).
+        v3.9.7 (§4): amber = #fff4d0 / #8a5a00 / 1.5px #c0a020 bold;
+        off state falls back to the standard sidebar button style."""
+        self.btnM.setStyleSheet(
+            _sb_manual_on_style() if self._manual else _sb_btn_style())
         self.btnM.setText('Manual')   # always plain; color signals state
         if hasattr(self, '_chips'):
             self._chips['Mode'].setText('Manual' if self._manual else 'Auto')
