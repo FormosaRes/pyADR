@@ -8,6 +8,21 @@ GitHub Releases（tag）最新為 **v3.8.96（Latest，彙整 v3.8.94 → v3.8.9
 
 ---
 
+## V3.9.5（2026-07-09）— Argon Pipeline 介面改版 step 1/5：色碼常數收斂 + 全域 QSS
+
+依 HANDOFF-QSS-spec（Refined Classic 1a/2a/3a）第 9 節落地順序的第 1 步，**只動樣式，不動任何計算邏輯與資料流**：
+
+- **色碼常數收斂**（`AutoPipeline.py` 頂部）：新增 `ISO` 同位素配色 dict（36 藍 / 37 綠 / 38 琥珀 / 39 磚紅 / 40 紫，較舊值更柔和）、`HDR` / `WHITE` / `HAIR` / `ACCENT` / `ACCENT_D` / `ACCENT_BG` / `OK` / `WARN` / `DANGER` / `DANGER_BG`。`AR_COLS` 保留 list 介面（值改指 `ISO`），`BLUE_BG` 等 legacy 底色保留為 alias / 原值，所有既有 caller 不需改。
+- **`_sheet()` 全域 QSS 改版**：按鈕 padding 6px 8px + 3px 圓角；表格白底 + mono 11px；表頭 putty（`HDR`）+ Georgia 11px 不加粗；新增 `QLineEdit`/`QComboBox`/`QSpinBox`/`QDoubleSpinBox` 白底統一輸入框樣式；tab 過渡樣式（選中白底 + `ACCENT` 粗體，§5/§7 頁內 tab 樣式後續步驟覆寫）。
+
+後續：step 2 = Run 按鈕 + stepper（§3.2/3.3），step 3 = sidebar（§4），step 4 = 各頁段落標題/tabs/表格上色（§5–7），step 5 = Age Calc 版面（§7）。逐步經使用者確認再繼續。
+
+驗證：`py_compile` 通過；新常數名與既有全域無撞名（grep 確認）。純 QSS/常數，pipeline 輸出不變。
+
+檔案：`AutoPipeline.py`（§1 色碼常數 + `_sheet()`）；`.work/.app_info.txt` 3.9.4 → 3.9.5。
+
+---
+
 ## V3.9.4（2026-07-06）— 冷卻史段速率標籤不再壓到路徑線與資料點
 
 冷卻史（T–t）圖的段間冷卻速率標籤（如「19 °C/Myr」）原本放段中點、offset 往下，會壓到冷卻路徑線與紅色資料點。改成往右上偏移（offset 12,12、左下對齊）並加半透明白底 halo（`bbox` round pad，白底 alpha 0.7），標籤移到線的一側、即使靠近也因白底可讀，不再蓋線/點。

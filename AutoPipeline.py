@@ -238,18 +238,34 @@ def _propagate(T0, sT0, bT0, bsT0):
         'sig38_n'  : (sig38_n,   0,          abs(sig38_n) < 2),
     }
 
-# ── colour palette (matches HTML) ──────────────────────────────────────────
-AR_COLS  = ['#1a5fb4','#1c7a3a','#8a5a00','#b41a1a','#533ab7']
+# ── colour palette (Refined Classic, HANDOFF-QSS-spec §1) ───────────────────
+# 同位素配色（收斂後）；AR_COLS 保留 list 介面給既有 index 取用
+ISO = {'36':'#2b6cb0', '37':'#2f8f5b', '38':'#c98a1a', '39':'#cc4436', '40':'#6b4fc9'}
+AR_COLS  = [ISO['36'], ISO['37'], ISO['38'], ISO['39'], ISO['40']]
 AR_NAMES = ['36','37','38','39','40']
 
-BG   = '#f5f4f0'
-PNL  = '#f0f0f0'   # matches Fusion default
-BRD  = '#cccccc'
-BRD2 = '#bbbbbb'
-TXT  = '#222222'
-TXT2 = '#444444'
-TXT3 = '#888888'
-BLUE_BG = '#d6e8f7'
+BG        = '#f5f4f0'   # app 背景（暖米）
+PNL       = '#f0f0f0'   # 面板/按鈕面
+HDR       = '#eeede8'   # 表頭 / 未選 tab / chip 底（putty）
+WHITE     = '#ffffff'   # 圖表畫布 / 表格 body / 選中 tab
+BRD       = '#cccccc'   # 標準 1px 邊框
+BRD2      = '#bbbbbb'   # 表頭格邊框
+HAIR      = '#dddbd4'   # 段落標題細線 / chip 內分隔
+TXT       = '#222222'
+TXT2      = '#444444'
+TXT3      = '#888888'
+
+ACCENT    = '#1a5fb4'   # 主色（navy 藍）：主行動、選中、進度
+ACCENT_D  = '#144a8f'   # 主色深：按鈕沉底邊、hover
+ACCENT_BG = '#d6e8f7'   # 主色淡底：選中 chip / toggle
+
+OK        = '#2e7d52'
+WARN      = '#b45309'   # 琥珀；Manual 邊框用 #c0a020
+DANGER    = '#c0282d'   # 負值 / 錯誤紅
+DANGER_BG = '#fff0f0'
+
+# legacy 語意底色（既有 caller 仍引用）
+BLUE_BG = ACCENT_BG
 GRN_BG  = '#d0edda'
 AMB_BG  = '#fdf0d0'
 RED_BG  = '#fde8e8'
@@ -258,12 +274,22 @@ def _sheet():
     return f"""
 QWidget{{background:{BG};color:{TXT};font-family:Georgia,serif;font-size:11px;}}
 QLabel{{background:transparent;}}
-QPushButton{{background:{PNL};color:{TXT};border:1px solid {BRD};border-radius:2px;padding:5px 6px;}}
+
+/* 標準按鈕 */
+QPushButton{{background:{PNL};color:{TXT};border:1px solid {BRD};border-radius:3px;padding:6px 8px;}}
 QPushButton:hover{{background:{BG};}}
-QTableWidget{{gridline-color:{BRD};font-family:'Courier New',monospace;font-size:10px;}}
-QHeaderView::section{{background:#eeede8;border:1px solid {BRD2};padding:3px;font-family:Georgia,serif;font-size:10px;}}
-QTabBar::tab{{padding:4px 12px;border:1px solid {BRD};border-bottom:none;background:#eeede8;}}
-QTabBar::tab:selected{{background:{PNL};color:#1a5fb4;}}
+
+/* 表格 */
+QTableWidget{{gridline-color:{BRD};font-family:'Courier New',monospace;font-size:11px;background:{WHITE};}}
+QHeaderView::section{{background:{HDR};border:1px solid {BRD2};padding:4px 7px;font-family:Georgia,serif;font-size:11px;font-weight:normal;color:#333;}}
+
+/* 表單輸入 */
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox{{background:{WHITE};border:1px solid #cbcbcb;border-radius:3px;padding:3px 5px;font-family:'Courier New',monospace;font-size:11px;color:{TXT};}}
+QComboBox::drop-down{{border:none;}}
+
+/* tabs：全域先給過渡樣式，§5/§7 的頁內 tab 樣式落地後由各頁覆寫 */
+QTabBar::tab{{padding:4px 12px;border:1px solid {BRD};border-bottom:none;background:{HDR};}}
+QTabBar::tab:selected{{background:{WHITE};color:{ACCENT};font-weight:bold;}}
 QTabWidget::pane{{border:1px solid {BRD};}}
 """
 
