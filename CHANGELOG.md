@@ -8,6 +8,20 @@ GitHub Releases（tag）最新為 **v3.8.96（Latest，彙整 v3.8.94 → v3.8.9
 
 ---
 
+## V3.9.6（2026-07-09）— Argon Pipeline 介面改版 step 2/5：Run 按鈕 + 膠囊式 stepper
+
+HANDOFF-QSS-spec 第 2 步（§3.2 / §3.3），純樣式與 top bar 元件重排，不動計算與資料流：
+
+- **進度 stepper 改膠囊式**（§3.2）：原「圓點在上、字在下」絕對定位卡片（450×68 固定容器）改為 QHBoxLayout 水平膠囊，圓點（11px）+ 標籤並排。done/active = 實心 `ACCENT` 圓點 + `ACCENT` 粗體標籤；active 外加 `ACCENT_BG` 淡底膠囊 + 1px `ACCENT` 框；pending = 空心圓點（2px #999 邊框）+ #999 標籤。步間 2px 連接線回歸（v3.8.50 拿掉的是舊灰線），兩端 filled 才上 `ACCENT` 否則 `BRD`。無數字、無 ✓。點擊行為不變（`_pipe_click`：T₀ 導頁 / MR、Age 先跑 pipeline）。
+- **Run 按鈕**（§3.3）：新增模組級 `_run_btn_style()`（實心 `ACCENT`、`ACCENT_D` 沉底邊 2px、6px 圓角、9px 22px padding）。頁面文字改為 `Run Pipeline →` / `Age Calc + Datum →` / `Recompute ↻`（原 `↻ Recompute → Age Calc` / `↻ Recompute Pipeline`）。「Running…」執行中替換不變。
+- 內部：`_pipe_caps` 新增（膠囊 frame 清單）；`_pipe_circles`/`_pipe_labels`/`_pipe_lines`/`_pipe_status` 介面保留，`_refresh_pipe_visuals` 重寫為三態樣式。
+
+驗證：`py_compile` 通過；`_pipe_*` 引用點 grep 確認只剩建構與 refresh 兩處。GUI 目視由使用者跑 pyADR.bat 確認（本機 Claude shell 無法實例化 QApplication，見 memory）。
+
+檔案：`AutoPipeline.py`（stepper 重建 + `_run_btn_style()` + `_go` 文字 + `_refresh_pipe_visuals`）；`.work/.app_info.txt` 3.9.5 → 3.9.6。
+
+---
+
 ## V3.9.5（2026-07-09）— Argon Pipeline 介面改版 step 1/5：色碼常數收斂 + 全域 QSS
 
 依 HANDOFF-QSS-spec（Refined Classic 1a/2a/3a）第 9 節落地順序的第 1 步，**只動樣式，不動任何計算邏輯與資料流**：

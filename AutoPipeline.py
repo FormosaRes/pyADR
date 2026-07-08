@@ -298,6 +298,14 @@ def _btn_style(bg, col, brd):
             f'border-radius:2px;padding:5px 4px;font-size:10px;font-family:Georgia,serif;}}'
             f'QPushButton:hover{{background:{BG};}}')
 
+def _run_btn_style():
+    """§3.3 主行動按鈕（top bar 右上 Run）：實心 ACCENT + 沉底邊。"""
+    return (f"QPushButton{{background:{ACCENT};color:#fff;"
+            f"border:1px solid {ACCENT_D};border-bottom:2px solid {ACCENT_D};"
+            f"border-radius:6px;padding:9px 22px;font-size:13px;font-weight:bold;}}"
+            f"QPushButton:hover{{background:{ACCENT_D};}}"
+            f"QPushButton:disabled{{background:#aaa;border-color:#aaa;}}")
+
 # ── helpers ─────────────────────────────────────────────────────────────────
 def _sf(v, d=0.0):
     try: return float(v)
@@ -7789,11 +7797,18 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
         #   • No checkmark icons — just solid blue / grey circles
         # Click anywhere on a step card → _pipe_click(idx): idx 0 = navigate to
         # T₀ page; idx 1 / 2 = run pipeline then land on that page.
+        # v3.9.6 (§3.2 Refined Classic): 膠囊式 stepper — 圓點 + 標籤水平排列，
+        # done/active = 實心 ACCENT 圓點 + ACCENT 粗體標籤（active 外加
+        # ACCENT_BG 淡底膠囊 + 1px ACCENT 框）；pending = 空心圓點（2px #999
+        # 邊框）+ #999 標籤；步間 2px 連接線。無數字、無 ✓。
         pipe_container = QtWidgets.QWidget()
-        pipe_container.setFixedSize(450, 68)
+        pipe_container.setStyleSheet('background:transparent;border:none;')
+        pl = QtWidgets.QHBoxLayout(pipe_container)
+        pl.setContentsMargins(0, 0, 0, 0); pl.setSpacing(2)
         self._pipe_circles = []
         self._pipe_labels  = []
         self._pipe_lines   = []
+        self._pipe_caps    = []   # capsule frames — active 淡底膠囊
         # Status labels removed in v3.8.21 — keep an empty list for back-compat
         # so _refresh_pipe_visuals iteration logic doesn't need conditionals.
         self._pipe_status  = []
@@ -7803,57 +7818,34 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
         # navigate-only vs recompute (see _pipe_click / _pipeline_input_sig).
         self._last_run_sig = None
 
-        BLUE = '#1a5fb4'
-        GREY = '#bbbbbb'
-
         step_names = ['Calculate T₀', 'Mass Ratio', 'Age Calc + Datum']
-        circle_y    = 6
-        circle_size = 22
-        line_y      = circle_y + circle_size // 2 - 1   # center of circle, 2 px line
-        # Card x positions: 3 evenly spaced over 450 px container.
-        card_w   = 130
-        card_gap = (450 - 3 * card_w) // 2   # ≈ 30 px between cards
         for i, name in enumerate(step_names):
-            x = i * (card_w + card_gap)
-
-            # v3.8.50: connector lines removed (user disliked the grey lines
-            # under the circles / text). Stepper is now 3 standalone dots +
-            # labels. _pipe_lines stays empty so _refresh_pipe_visuals's
-            # guarded iteration is a no-op.
-
-            # ── Circle indicator ──
-            circle = QtWidgets.QLabel('●', pipe_container)
-            circle.setGeometry(x + card_w // 2 - circle_size // 2, circle_y,
-                               circle_size, circle_size + 4)
-            circle.setAlignment(QtCore.Qt.AlignCenter)
-            circle.setStyleSheet(
-                f'color:{GREY};font-size:24px;font-weight:bold;'
-                f'background:transparent;')
-            circle.setCursor(QtCore.Qt.PointingHandCursor)
-            circle.mousePressEvent = lambda e, idx=i: self._pipe_click(idx)
-            self._pipe_circles.append(circle)
-
-            # ── Step name below circle ──
-            name_lbl = QtWidgets.QLabel(name, pipe_container)
-            name_lbl.setAlignment(QtCore.Qt.AlignCenter)
-            name_lbl.setGeometry(x, circle_y + circle_size + 6, card_w, 18)
-            name_lbl.setStyleSheet(
-                f'color:#666;font-size:12px;font-weight:bold;'
-                f'background:transparent;')
-            name_lbl.setCursor(QtCore.Qt.PointingHandCursor)
-            name_lbl.mousePressEvent = lambda e, idx=i: self._pipe_click(idx)
+            cap = QtWidgets.QWidget()
+            cpl = QtWidgets.QHBoxLayout(cap)
+            cpl.setContentsMargins(10, 5, 10, 5); cpl.setSpacing(7)
+            dot = QtWidgets.QLabel()
+            dot.setFixedSize(11, 11)
+            name_lbl = QtWidgets.QLabel(name)
+            cpl.addWidget(dot); cpl.addWidget(name_lbl)
+            for w in (cap, dot, name_lbl):
+                w.setCursor(QtCore.Qt.PointingHandCursor)
+                w.mousePressEvent = lambda e, idx=i: self._pipe_click(idx)
+            pl.addWidget(cap)
+            self._pipe_caps.append(cap)
+            self._pipe_circles.append(dot)
             self._pipe_labels.append(name_lbl)
+            if i < 2:
+                line = QtWidgets.QFrame()
+                line.setFixedSize(14, 2)
+                pl.addWidget(line)
+                self._pipe_lines.append(line)
 
         tbl.addWidget(pipe_container)
         tbl.addStretch()
 
         # v3.8.21: Next button stays in top bar on the right.
         self.nextBtn = QtWidgets.QPushButton('Run Pipeline →')
-        self.nextBtn.setStyleSheet(
-            f'QPushButton{{background:#1a5fb4;color:white;border:1px solid #1a5fb4;'
-            f'border-radius:4px;padding:8px 16px;font-size:13px;font-weight:bold;}}'
-            f'QPushButton:hover{{background:#1c5fa0;}}'
-            f'QPushButton:disabled{{background:#aaa;border-color:#aaa;}}')
+        self.nextBtn.setStyleSheet(_run_btn_style())
         self.nextBtn.setFixedHeight(44)
         self.nextBtn.setEnabled(False)
         self.nextBtn.clicked.connect(self._next_action)
@@ -7908,10 +7900,10 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
             self.nextBtn.setText('Run Pipeline →')
             self.nextBtn.setEnabled(ready)
         elif idx == 1:
-            self.nextBtn.setText('↻ Recompute → Age Calc')
+            self.nextBtn.setText('Age Calc + Datum →')
             self.nextBtn.setEnabled(ready)
         elif idx == 2:
-            self.nextBtn.setText('↻ Recompute Pipeline')
+            self.nextBtn.setText('Recompute ↻')
             self.nextBtn.setEnabled(ready)
 
         self._refresh_pipe_visuals(idx)
@@ -7922,38 +7914,46 @@ Auto Blank/Signal 走 <code>Utilities.calculateT0()</code>（與 CalcT0Page 子�
                 and bool(getattr(self.t0Page, '_svt', {})))
 
     def _refresh_pipe_visuals(self, current_idx):
-        """v3.8.21 simplified rule: a step is BLUE if completed OR active,
-        GREY otherwise. No checkmark — just solid filled circles. Connector
-        line BLUE if both endpoints are blue, GREY otherwise.
+        """v3.9.6 (§3.2): done / active = 實心 ACCENT 圓點 + ACCENT 粗體標籤；
+        active 外加 ACCENT_BG 淡底膠囊 + 1px ACCENT 框；pending = 空心圓點
+        （2px #999 邊框）+ #999 標籤。連接線兩端都 filled 才上 ACCENT。
 
         Idx 0 (T₀) is "completed" the moment data is loaded — there's no
         separate compute stage for it (T₀ fitting runs inside the worker
         alongside MR/Age)."""
         self._state_done[0] = self._t0_has_data()
-        BLUE = '#1a5fb4'
-        GREY = '#bbbbbb'
 
-        # Per-circle blue flag
-        is_blue = [None, None, None]
-        for i in range(3):
-            is_blue[i] = self._state_done[i] or (i == current_idx)
+        filled = [self._state_done[i] or (i == current_idx) for i in range(3)]
 
         for i in range(3):
-            circle   = self._pipe_circles[i]
+            dot      = self._pipe_circles[i]
             name_lbl = self._pipe_labels[i]
-            colour = BLUE if is_blue[i] else GREY
-            text_col = BLUE if is_blue[i] else '#666666'
-            circle.setText('●')
-            circle.setStyleSheet(
-                f'color:{colour};font-size:24px;font-weight:bold;'
-                f'background:transparent;')
-            name_lbl.setStyleSheet(
-                f'color:{text_col};font-size:12px;font-weight:bold;'
-                f'background:transparent;')
-            # v3.8.50: connector lines removed — guard kept for back-compat
+            cap      = self._pipe_caps[i]
+            if filled[i]:
+                dot.setStyleSheet(
+                    f'background:{ACCENT};border:none;border-radius:5px;')
+                name_lbl.setStyleSheet(
+                    f'color:{ACCENT};font-size:12px;font-weight:bold;'
+                    f'background:transparent;border:none;')
+            else:
+                dot.setStyleSheet(
+                    'background:transparent;border:2px solid #999;'
+                    'border-radius:5px;')
+                name_lbl.setStyleSheet(
+                    'color:#999;font-size:12px;font-weight:bold;'
+                    'background:transparent;border:none;')
+            if i == current_idx:
+                cap.setStyleSheet(
+                    f'background:{ACCENT_BG};border:1px solid {ACCENT};'
+                    f'border-radius:13px;')
+            else:
+                cap.setStyleSheet(
+                    'background:transparent;border:1px solid transparent;'
+                    'border-radius:13px;')
             if i < 2 and i < len(self._pipe_lines):
-                line_col = BLUE if (is_blue[i] and is_blue[i + 1]) else GREY
-                self._pipe_lines[i].setStyleSheet(f'background:{line_col};')
+                line_col = ACCENT if (filled[i] and filled[i + 1]) else BRD
+                self._pipe_lines[i].setStyleSheet(
+                    f'background:{line_col};border:none;')
 
     def _pipeline_input_sig(self):
         """v3.8.51: cheap signature of every T0-page input that feeds the
