@@ -8,6 +8,25 @@ GitHub Releases（tag）最新為 **v3.8.96（Latest，彙整 v3.8.94 → v3.8.9
 
 ---
 
+## V3.9.9（2026-07-09）— Argon Pipeline 介面改版 step 5/5：Age Calc + Datum 版面
+
+HANDOFF-QSS-spec 第 5 步（§7），純樣式與元件歸位，計算與資料流不動：
+
+- **Summary chips**：putty 底大 banner 拿掉；八格（Total Fusion / Weighted Plateau / Normal Isochron / Inverse Isochron / Plateau MSWD / J value / Steps / Isochron method）各自改白底 + 1px 灰邊 chip，一排 space-between（格間 stretch）貼合內容，不特別藍色強調。**Isochron 兩格改兩行**：主值一行 + 下方小灰字 `MSWD … · n=… · (40/36)ₜ …`（rich text，僅顯示格式；`_info_norm`/`_info_inv` 匯出資料不動，無人讀 label.text()，grep 確認）。
+- **參數列三型按鈕**：`_primary_btn_style()`（唯一實心 ACCENT = Recalculate）/ `_outline_btn_style()`（Auto plateau、Compute、Age spectrum sensitivity）/ `_ghost_btn_style()`（Copy table）。**按鈕文字全英文**：「試算」→ Compute、「Age 譜敏感度」→ Age spectrum sensitivity、「不確定度皆 2σ」→ all uncertainties 2σ（tooltip 中文保留）。atm **±σ 改灰底 chip**（不可改視覺）。
+- **Show Temp labels on Isochron** 勾選格從參數列移入 Plot Controls（規格排法；物件同一顆，signal 不動，`_refresh_diagrams` 的 hasattr 保護仍在）。
+- **左欄**：Results per Step / Diagrams 標題改 §8 段落標題（Georgia 12px 粗體 + HAIR 延伸線）；Plot Controls Apply/Auto/Reset 改 primary/ghost。
+- **右欄縮圖**：每張白底 1px 框 + **putty 標題條**（objectName 選擇器，框內縮 1px 貼邊）；hover 框線用 `ACCENT`。
+- **底部 Excel 式分頁**：putty 未選 + 灰字；選中白底 + `ACCENT` 頂線 + 粗體（South 位置，圓角改下緣），與內容連成一體。
+
+規格未做（結構性，逾越純樣式）：Results per Step 沒加「#」欄（要動 populate 與 checkbox 邏輯）；右欄維持可勾選的 2×N 網格（v3.8.71 Show diagrams 機制），未鎖死成固定四張 2×2。
+
+驗證：`py_compile` 通過。GUI 目視由使用者跑 pyADR.bat 確認。
+
+檔案：`AutoPipeline.py`（`_primary/_outline/_ghost_btn_style` + AgeCalcPage banner/參數列/縮圖/底部 tabs + isochron chip 兩行）；`.work/.app_info.txt` 3.9.8 → 3.9.9。
+
+---
+
 ## V3.9.8（2026-07-09）— Argon Pipeline 介面改版 step 4/5：段落標題 / tabs / 表格上色
 
 HANDOFF-QSS-spec 第 4 步（§5–6，§7 表格上色既有已符合），純樣式：

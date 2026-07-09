@@ -321,6 +321,25 @@ def _sb_manual_on_style():
             'font-weight:bold;}'
             'QPushButton:hover{background:#fff4d0;}')
 
+# §7 參數列按鈕三型：primary（唯一實心 ACCENT）/ outline / ghost
+def _primary_btn_style():
+    return (f'QPushButton{{background:{ACCENT};color:#fff;'
+            f'border:1px solid {ACCENT_D};border-radius:3px;'
+            'font-size:11px;font-weight:bold;padding:3px 12px;}'
+            f'QPushButton:hover{{background:{ACCENT_D};}}')
+
+def _outline_btn_style():
+    return (f'QPushButton{{background:{WHITE};color:{ACCENT};'
+            f'border:1px solid {ACCENT};border-radius:3px;'
+            'font-size:11px;padding:3px 10px;}'
+            f'QPushButton:hover{{background:{ACCENT_BG};}}')
+
+def _ghost_btn_style():
+    return (f'QPushButton{{background:{WHITE};color:{TXT2};'
+            f'border:1px solid {BRD};border-radius:3px;'
+            'font-size:11px;padding:3px 10px;}'
+            f'QPushButton:hover{{background:{BG};}}')
+
 # §8 段落標題：Georgia 12px 粗體 + 右側 1px HAIR 延伸線，無副標
 _HDR_LBL_SS = ('font-family:Georgia,serif;font-size:12px;font-weight:bold;'
                f'color:{TXT2};background:transparent;border:none;')
@@ -4666,22 +4685,28 @@ class AgeCalcPage(QtWidgets.QWidget):
         self.exportBtn.clicked.connect(self._export)
         vb.addLayout(hdr)
         
-        # ═══ Summary banner (row 1: stat cells; row 2: controls) ═══
+        # ═══ Summary banner (row 1: stat chips; row 2: controls) ═══
+        # v3.9.9 (§7): banner 底框拿掉；每格改白底 + 1px 灰邊 chip，
+        # 一排 space-between（格間 stretch），格貼合內容，不特別藍色強調。
         self.summaryFrame = QtWidgets.QFrame()
         self.summaryFrame.setStyleSheet(
-            f'background:#eeede8;border:1px solid {BRD};border-radius:4px;')
+            'QFrame{background:transparent;border:none;}')
         sf_vl = QtWidgets.QVBoxLayout(self.summaryFrame)
-        sf_vl.setContentsMargins(12,6,12,6)
+        sf_vl.setContentsMargins(0,2,0,2)
         sf_vl.setSpacing(6)
-        
-        # Row 1: stats (6 cells)
+
+        # Row 1: stats (chips)
         sf_hl = QtWidgets.QHBoxLayout()
-        sf_hl.setSpacing(16)
-        
+        sf_hl.setSpacing(6)
+
         def stat_cell(label, w_width=None):
-            w = QtWidgets.QWidget()
+            w = QtWidgets.QFrame()
+            w.setStyleSheet(
+                f'QFrame{{background:{WHITE};border:1px solid {BRD};'
+                'border-radius:3px;}'
+                'QLabel{border:none;background:transparent;}')
             wl = QtWidgets.QVBoxLayout(w)
-            wl.setContentsMargins(0,0,0,0); wl.setSpacing(1)
+            wl.setContentsMargins(10,4,10,4); wl.setSpacing(1)
             lbl_k = QtWidgets.QLabel(label)
             lbl_k.setStyleSheet(f'font-size:10px;color:{TXT3};background:transparent;')
             val = QtWidgets.QLabel('—')
@@ -4691,29 +4716,29 @@ class AgeCalcPage(QtWidgets.QWidget):
             wl.addWidget(val)
             if w_width: w.setFixedWidth(w_width)
             return w, val
-        
+
         w1, self._stat_total = stat_cell('Total Fusion Age')
-        sf_hl.addWidget(w1)
         w2, self._stat_plateau = stat_cell('Weighted Plateau')
-        sf_hl.addWidget(w2)
         w3, self._stat_normiso = stat_cell('Normal Isochron')
-        sf_hl.addWidget(w3)
         w4, self._stat_invIso = stat_cell('Inverse Isochron')
-        sf_hl.addWidget(w4)
         # v3.8.5 (B1): MSWD label clarified as Plateau MSWD (regression MSWD
         # shown on the inverse isochron PNG itself via annotation).
         w5, self._stat_mswd = stat_cell('Plateau MSWD')
-        sf_hl.addWidget(w5)
         w6, self._stat_j = stat_cell('J value')
-        sf_hl.addWidget(w6)
         w7, self._stat_steps = stat_cell('Steps')
-        sf_hl.addWidget(w7)
+        for _w in (w1, w2, w3, w4, w5, w6, w7):
+            sf_hl.addWidget(_w)
+            sf_hl.addStretch(1)
         # v3.8.5 (A2): isochron regression method toggle.  v3.8.76: default York
         # (matches the always-York banner; OLS is unweighted/legacy). York 2004
         # uses both x,y errors per Schaen 2021.
-        _method_widget = QtWidgets.QWidget()
+        _method_widget = QtWidgets.QFrame()
+        _method_widget.setStyleSheet(
+            f'QFrame{{background:{WHITE};border:1px solid {BRD};'
+            'border-radius:3px;}'
+            'QLabel{border:none;background:transparent;}')
         _method_vl = QtWidgets.QVBoxLayout(_method_widget)
-        _method_vl.setContentsMargins(0,0,0,0); _method_vl.setSpacing(1)
+        _method_vl.setContentsMargins(10,4,10,4); _method_vl.setSpacing(1)
         _method_lbl = QtWidgets.QLabel('Isochron method')
         _method_lbl.setStyleSheet(f'font-size:10px;color:{TXT3};background:transparent;')
         self._isochron_method_combo = QtWidgets.QComboBox()
@@ -4729,8 +4754,7 @@ class AgeCalcPage(QtWidgets.QWidget):
             f'border:1px solid {BRD};border-radius:3px;}}')
         _method_vl.addWidget(_method_lbl)
         _method_vl.addWidget(self._isochron_method_combo)
-        sf_hl.addWidget(_method_widget)
-        sf_hl.addStretch()
+        sf_hl.addWidget(_method_widget)   # space-between：最後一格貼右緣
         sf_vl.addLayout(sf_hl)
         
         # Row 2: controls (atm ratio input + Temp label checkbox)
@@ -4747,8 +4771,12 @@ class AgeCalcPage(QtWidgets.QWidget):
         self.atmRatioEdit.setValidator(QtGui.QDoubleValidator(0.0, 1e6, 4))
         ctrl_hl.addWidget(self.atmRatioEdit)
         
+        # v3.9.9 (§7): ±σ 灰底灰字 = 不可改，default 同行不換行
         self.atmSigmaLbl = QtWidgets.QLabel(
             '<span style="font-size:10px;color:#888;">± 0.31 (default)</span>')
+        self.atmSigmaLbl.setStyleSheet(
+            f'background:{HDR};border:1px solid {BRD};border-radius:3px;'
+            'padding:2px 6px;')
         ctrl_hl.addWidget(self.atmSigmaLbl)
 
         # v3.8.84: editable J value. Change it then press Recalculate to re-run
@@ -4769,33 +4797,23 @@ class AgeCalcPage(QtWidgets.QWidget):
             '表格 / banner / 圖 / datum / export 全部一致更新。')
         ctrl_hl.addWidget(self.jEdit)
         
-        ctrl_hl.addSpacing(20)
-        
-        self.tempLabelCB = QtWidgets.QCheckBox('Show Temp labels on Isochron')
-        self.tempLabelCB.setStyleSheet('font-size:11px;')
-        self.tempLabelCB.setChecked(True)
-        self.tempLabelCB.stateChanged.connect(self._refresh_diagrams)
-        ctrl_hl.addWidget(self.tempLabelCB)
-        
-        ctrl_hl.addSpacing(20)
-        
+        # v3.9.9 (§7): Show Temp labels 勾選格移到 Plot Controls（見下方
+        # opts_hl）；Recalculate = 參數列唯一實心 ACCENT（primary）。
+        ctrl_hl.addSpacing(16)
+
         self.recalcBtn = QtWidgets.QPushButton('Recalculate')
-        self.recalcBtn.setStyleSheet(
-            _btn_style('#1a5fb4','white','#1a5fb4') +
-            'QPushButton{font-size:11px;padding:3px 10px;}')
+        self.recalcBtn.setStyleSheet(_primary_btn_style())
         self.recalcBtn.clicked.connect(self._recalculate_with_atm)
         ctrl_hl.addWidget(self.recalcBtn)
 
         # v3.8.79: Copy Summary table as TSV + global 2σ note (user works in 2σ).
         self.copyTblBtn = QtWidgets.QPushButton('Copy table')
         self.copyTblBtn.setToolTip('複製 Summary 表為 TSV（可直接貼到 Excel）')
-        self.copyTblBtn.setStyleSheet(
-            _btn_style('#888', 'white', '#888') +
-            'QPushButton{font-size:11px;padding:3px 10px;}')
+        self.copyTblBtn.setStyleSheet(_ghost_btn_style())
         self.copyTblBtn.clicked.connect(self._copy_summary)
         ctrl_hl.addWidget(self.copyTblBtn)
         ctrl_hl.addWidget(QtWidgets.QLabel(
-            '<span style="font-size:11px;color:#888;">不確定度皆 2σ</span>'))
+            '<span style="font-size:11px;color:#888;">all uncertainties 2σ</span>'))
 
         # v3.8.77: plateau step selection — Auto-plateau button + MSWD cutoff.
         # The Step column carries a checkbox; checked steps drive the weighted
@@ -4805,9 +4823,7 @@ class AgeCalcPage(QtWidgets.QWidget):
         self.autoPlateauBtn.setToolTip(
             '挑「最長連續、累積 ³⁹Ar ≥ 50%、MSWD ≤ cutoff」的 step 當 plateau。\n'
             '勾選欄在 Step 欄,可手動增減,banner 即時重算。')
-        self.autoPlateauBtn.setStyleSheet(
-            _btn_style('#2e7d52', 'white', '#2e7d52') +
-            'QPushButton{font-size:11px;padding:3px 10px;}')
+        self.autoPlateauBtn.setStyleSheet(_outline_btn_style())
         self.autoPlateauBtn.clicked.connect(self._auto_plateau)
         ctrl_hl.addWidget(self.autoPlateauBtn)
         ctrl_hl.addWidget(QtWidgets.QLabel(
@@ -4836,26 +4852,22 @@ class AgeCalcPage(QtWidgets.QWidget):
             f'QDoubleSpinBox{{background:white;border:1px solid {BRD};'
             f'padding:1px 4px;font-size:11px;}}')
         ctrl_hl.addWidget(self.ar36ScaleSpin)
-        self.ar36ScaleBtn = QtWidgets.QPushButton('試算')
+        self.ar36ScaleBtn = QtWidgets.QPushButton('Compute')
         self.ar36ScaleBtn.setToolTip(
             '把扣掉的 ³⁶Ar blank ×k 重算 age（不動存檔，k=1 還原）。\n'
             'k>1 = blank 變大 → net ³⁶ 變小 → 少扣大氣 → age 偏老。\n'
             'k<1 = blank 變小 → 多扣大氣 → age 偏年輕。\n'
             '看 plateau age / MSWD / ⁴⁰Ar(r)% 隨 k 怎麼變，對照 isochron 與 9.77 Ma。')
-        self.ar36ScaleBtn.setStyleSheet(
-            _btn_style('#8a5a00','white','#8a5a00') +
-            'QPushButton{font-size:11px;padding:3px 10px;}')
+        self.ar36ScaleBtn.setStyleSheet(_outline_btn_style())
         self.ar36ScaleBtn.clicked.connect(self._apply_ar36_scale)
         ctrl_hl.addWidget(self.ar36ScaleBtn)
         # v3.8.57: live Age-Spectrum sensitivity vs ³⁶Ar blank scale
-        self.ar36SpecBtn = QtWidgets.QPushButton('Age 譜敏感度')
+        self.ar36SpecBtn = QtWidgets.QPushButton('Age spectrum sensitivity')
         self.ar36SpecBtn.setToolTip(
             '開即時 Age Spectrum 視窗：拉桿縮放 ³⁶Ar blank\n'
             '（越小 → net ³⁶ 越大 → 多扣大氣 → age 偏年輕），\n'
             '看 spectrum 形狀怎麼變（疊現況 baseline 對照）。純 what-if，不動存檔。')
-        self.ar36SpecBtn.setStyleSheet(
-            _btn_style('#1a5fb4','white','#1a5fb4') +
-            'QPushButton{font-size:11px;padding:3px 10px;}')
+        self.ar36SpecBtn.setStyleSheet(_outline_btn_style())
         self.ar36SpecBtn.clicked.connect(self._show_ar36_spectrum_dialog)
         ctrl_hl.addWidget(self.ar36SpecBtn)
         self.ar36ScaleLbl = QtWidgets.QLabel('')
@@ -4875,9 +4887,9 @@ class AgeCalcPage(QtWidgets.QWidget):
         table_vl = QtWidgets.QVBoxLayout(table_w)
         table_vl.setContentsMargins(0,0,0,0); table_vl.setSpacing(4)
         
-        tbl_hdr = QtWidgets.QLabel('<b>Results per Step</b>')
-        tbl_hdr.setStyleSheet(f'font-size:13px;color:{TXT};padding:2px 0;')
-        table_vl.addWidget(tbl_hdr)
+        tbl_hdr = QtWidgets.QLabel('Results per Step')
+        tbl_hdr.setStyleSheet(_HDR_LBL_SS)
+        table_vl.addWidget(_hdr_row(tbl_hdr))   # §8 段落標題 + HAIR 線
         
         self.tbl=QtWidgets.QTableWidget(0,6)
         self.tbl.setHorizontalHeaderLabels(
@@ -4968,8 +4980,13 @@ class AgeCalcPage(QtWidgets.QWidget):
         self._plot_cb_group_fits.setChecked(True)
         self._plot_cb_overall_fit = QtWidgets.QCheckBox('Overall fit')
         self._plot_cb_overall_fit.setChecked(True)
+        # v3.9.9 (§7): Show Temp labels 從參數列移進 Plot Controls
+        self.tempLabelCB = QtWidgets.QCheckBox('Show Temp labels on Isochron')
+        self.tempLabelCB.setStyleSheet('font-size:11px;')
+        self.tempLabelCB.setChecked(True)
+        self.tempLabelCB.stateChanged.connect(self._refresh_diagrams)
         for _cb in (self._plot_cb_legend, self._plot_cb_group_fits,
-                    self._plot_cb_overall_fit):
+                    self._plot_cb_overall_fit, self.tempLabelCB):
             opts_hl.addWidget(_cb)
         opts_hl.addStretch()
         ctrl_vl.addLayout(opts_hl)
@@ -5043,16 +5060,13 @@ class AgeCalcPage(QtWidgets.QWidget):
         # Row 6: Apply / Auto / Reset
         btn_hl = QtWidgets.QHBoxLayout()
         applyBtn = QtWidgets.QPushButton('Apply')
-        applyBtn.setStyleSheet(_btn_style('#1a5fb4', 'white', '#1a5fb4') +
-                               'QPushButton{font-weight:bold;padding:5px 14px;}')
+        applyBtn.setStyleSheet(_primary_btn_style())
         applyBtn.clicked.connect(self._plot_apply)
         autoBtn = QtWidgets.QPushButton('Auto')
-        autoBtn.setStyleSheet(_btn_style('#888', 'white', '#888') +
-                              'QPushButton{padding:5px 12px;}')
+        autoBtn.setStyleSheet(_ghost_btn_style())
         autoBtn.clicked.connect(self._plot_auto)
         resetBtn = QtWidgets.QPushButton('Reset')
-        resetBtn.setStyleSheet(_btn_style('#888', 'white', '#888') +
-                               'QPushButton{padding:5px 12px;}')
+        resetBtn.setStyleSheet(_ghost_btn_style())
         resetBtn.clicked.connect(self._plot_reset)
         btn_hl.addStretch()
         btn_hl.addWidget(applyBtn)
@@ -5069,10 +5083,10 @@ class AgeCalcPage(QtWidgets.QWidget):
         dg_vl.setContentsMargins(4,0,0,0); dg_vl.setSpacing(4)
         
         dg_hdr = QtWidgets.QLabel(
-            '<b>Diagrams</b> <span style="font-size:10px;color:#888;">'
+            'Diagrams <span style="font-size:10px;font-weight:normal;color:#888;">'
             '(click image to enlarge · click ⚙ to adjust axis range)</span>')
-        dg_hdr.setStyleSheet(f'font-size:13px;color:{TXT};padding:2px 0;')
-        dg_vl.addWidget(dg_hdr)
+        dg_hdr.setStyleSheet(_HDR_LBL_SS)
+        dg_vl.addWidget(_hdr_row(dg_hdr))   # §8 段落標題 + HAIR 線
         
         dg_grid = QtWidgets.QGridLayout()
         dg_grid.setSpacing(6)
@@ -5091,18 +5105,19 @@ class AgeCalcPage(QtWidgets.QWidget):
             fr=QtWidgets.QFrame()
             fr.setFrameShape(QtWidgets.QFrame.Box)
             fr.setStyleSheet(f'QFrame{{border:1px solid {BRD};background:white;}}'
-                           f'QFrame:hover{{border:2px solid #1a5fb4;}}')
+                           f'QFrame:hover{{border:2px solid {ACCENT};}}')
             fr.setMinimumSize(220,180)
-            fvb=QtWidgets.QVBoxLayout(fr); fvb.setContentsMargins(4,4,4,4); fvb.setSpacing(2)
-            
-            # Header row: title + gear button
+            # v3.9.9 (§7): 白底 1px 框 + putty 標題條（框內縮 1px 讓標題條貼邊）
+            fvb=QtWidgets.QVBoxLayout(fr); fvb.setContentsMargins(1,1,1,1); fvb.setSpacing(2)
+
+            # Header strip: putty bar with title + gear button
             hdr_hl = QtWidgets.QHBoxLayout()
-            hdr_hl.setContentsMargins(0,0,0,0)
+            hdr_hl.setContentsMargins(6,2,2,2)
             h=QtWidgets.QLabel(f'<b>{title}</b>')
             h.setAlignment(QtCore.Qt.AlignCenter)
             h.setStyleSheet(f'font-size:11px;color:{TXT2};border:none;background:transparent;')
             hdr_hl.addWidget(h, 1)
-            
+
             gear_btn = QtWidgets.QPushButton('⚙')
             gear_btn.setFixedSize(20, 20)
             gear_btn.setStyleSheet('QPushButton{border:none;background:transparent;font-size:14px;}'
@@ -5111,7 +5126,10 @@ class AgeCalcPage(QtWidgets.QWidget):
             gear_btn.clicked.connect(lambda _, k=key, t=title: self._axis_dialog(k, t))
             hdr_hl.addWidget(gear_btn)
             hdr_w = QtWidgets.QWidget()
+            hdr_w.setObjectName('dgHdr')
             hdr_w.setLayout(hdr_hl)
+            hdr_w.setStyleSheet(
+                f'QWidget#dgHdr{{background:{HDR};border:none;}}')
             fvb.addWidget(hdr_w)
             
             l=QtWidgets.QLabel('(pending)')
@@ -5146,6 +5164,14 @@ class AgeCalcPage(QtWidgets.QWidget):
         tabs = QtWidgets.QTabWidget()
         tabs.setTabPosition(QtWidgets.QTabWidget.South)
         tabs.setDocumentMode(True)
+        # v3.9.9 (§7): Excel 式底部分頁 — putty 未選、選中白底 + ACCENT
+        # 頂線 + 粗體，與上方內容連成一體（South 位置故圓角在下緣）。
+        tabs.setStyleSheet(
+            f'QTabBar::tab{{background:{HDR};border:1px solid {BRD};'
+            'border-bottom-left-radius:4px;border-bottom-right-radius:4px;'
+            'padding:5px 13px;color:#666;}'
+            f'QTabBar::tab:selected{{background:{WHITE};color:{ACCENT};'
+            f'font-weight:bold;border-top:2px solid {ACCENT};}}')
 
         # Tab 1: Summary (existing splitter — results table + 4-thumbnail grid)
         _summary_w = QtWidgets.QWidget()
@@ -5847,10 +5873,12 @@ class AgeCalcPage(QtWidgets.QWidget):
                     _ext_n = mswd_n > 1.0
                     if _ext_n:
                         sage_n *= math.sqrt(mswd_n)
+                    # v3.9.9 (§7): 主值一行 + 下方小灰字（rich text 兩行）
                     self._stat_normiso.setText(
-                        self._pm(age_n, sage_n) + ' Ma  '
-                        f'(MSWD={mswd_n:.2f}{" ext" if _ext_n else ""}, n={len(iso_data)}, '
-                        f'(40/36)ₜ={b_n:.1f}±{2*sb_n:.1f})')
+                        self._pm(age_n, sage_n) + ' Ma'
+                        '<br><span style="font-size:10px;font-weight:normal;color:#888;">'
+                        f'MSWD {mswd_n:.2f}{" ext" if _ext_n else ""} · n={len(iso_data)} · '
+                        f'(40/36)ₜ {b_n:.1f}±{2*sb_n:.1f}</span>')
                     self._info_norm = (age_n, sage_n, mswd_n, len(iso_data), b_n)
                 else:
                     self._stat_normiso.setText(f'(MSWD={mswd_n:.2f}, slope ≤ 0)')
@@ -5890,10 +5918,12 @@ class AgeCalcPage(QtWidgets.QWidget):
                         if _ext_i:
                             sage_i *= math.sqrt(mswd_i)
                         atm_ratio = 1/b_i  # b_i = (36/40)_t, so 1/b_i = (40/36)_t
+                        # v3.9.9 (§7): 主值一行 + 下方小灰字（rich text 兩行）
                         self._stat_invIso.setText(
-                            self._pm(age_i, sage_i) + ' Ma  '
-                            f'(MSWD={mswd_i:.2f}{" ext" if _ext_i else ""}, n={len(iso_data)}, '
-                            f'(40/36)ₜ={atm_ratio:.1f})')
+                            self._pm(age_i, sage_i) + ' Ma'
+                            '<br><span style="font-size:10px;font-weight:normal;color:#888;">'
+                            f'MSWD {mswd_i:.2f}{" ext" if _ext_i else ""} · n={len(iso_data)} · '
+                            f'(40/36)ₜ {atm_ratio:.1f}</span>')
                         self._info_inv = (age_i, sage_i, mswd_i, len(iso_data), atm_ratio)
                     else:
                         self._stat_invIso.setText(f'(MSWD={mswd_i:.2f}, F ≤ 0)')
