@@ -8,6 +8,20 @@ GitHub Releases（tag）最新為 **v3.8.96（Latest，彙整 v3.8.94 → v3.8.9
 
 ---
 
+## V3.9.13（2026-07-09）— 修 ⁴⁰Ar(r)% 圖薰衣草底（DFR 漏設 axes 底色）
+
+使用者回饋：AgeCalc 的 ⁴⁰Ar(r)% 圖有薰衣草底，其他圖與 DiagramPlot 都沒有。根因：`Utilities.getRadiogenicPlot`（DFR，v3.8.66 新增）在 pyADR 樣式分支**沒有設 axes facecolor**，模組層 `sns.set()`（darkgrid）的 `#EAEAF2` 底色直接漏出。DFW/DFA/DFC 的既有寫法是 pyADR 分支 `set_facecolor('none')`（透明，讓 Qt 白底透出）。
+
+修法：DFR 補上與 DFW 相同的 else 分支（facecolor `'none'` + tick 朝外不畫 top/right），grid 行為不變。純渲染，無數學改動。
+
+同場加映（本日稍早，無版號）：RUN 端 `Utilities.py` 曾被 `claude/pyadr-diagram-styling-kcv69t` 分支版本污染（Diagram Style Editor 實驗線），已用 main 版蓋回。診斷法記錄於 memory：圖表樣式異常先比 RUN↔DEV 檔案 parity。
+
+驗證：`py_compile` 通過。使用者重啟 pyADR 後目視確認。
+
+檔案：`Utilities.py`（getRadiogenicPlot else 分支）；`.work/.app_info.txt` 3.9.12 → 3.9.13。
+
+---
+
 ## V3.9.12（2026-07-09）— diagram 樣式還原原版（AR_COLS 回復）
 
 使用者回饋：v3.9.5 把 `AR_COLS` 值換成收斂後的 ISO 配色，連帶 T₀ 頁 mV 圖 / T₀ range 圖 / degassing 圖等 matplotlib 圖表線色跑掉。還原：

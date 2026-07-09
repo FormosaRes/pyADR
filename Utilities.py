@@ -3259,8 +3259,13 @@ def getRadiogenicPlot(file, mask, constants,
                        bottom=True, left=True)
         for _sp in ax.spines.values():
             _sp.set_visible(True); _sp.set_linewidth(1.0); _sp.set_color('black')
-    elif _st.get('grid'):
-        ax.grid(True, alpha=0.25)
+    else:
+        # v3.9.13: 對齊 DFW/DFA/DFC 的 pyADR 分支 — axes 透明，否則
+        # sns.set() 的 darkgrid 薰衣草底會漏出來（v3.8.66 新增時漏掉）。
+        ax.set_facecolor('none')  # transparent → Qt widget bg shows through
+        ax.tick_params(which='both', direction='out', top=False, right=False)
+        if _st.get('grid'):
+            ax.grid(True, alpha=0.25)
 
     actual_xlim = tuple(float(v) for v in ax.get_xlim())
     actual_ylim = tuple(float(v) for v in ax.get_ylim())
