@@ -8,6 +8,22 @@ GitHub Releases（tag）最新為 **v3.8.96（Latest，彙整 v3.8.94 → v3.8.9
 
 ---
 
+## V3.9.12（2026-07-09）— diagram 樣式還原原版（AR_COLS 回復）
+
+使用者回饋：v3.9.5 把 `AR_COLS` 值換成收斂後的 ISO 配色，連帶 T₀ 頁 mV 圖 / T₀ range 圖 / degassing 圖等 matplotlib 圖表線色跑掉。還原：
+
+- `AR_COLS` 回復原版五色 `['#1a5fb4','#1c7a3a','#8a5a00','#b41a1a','#533ab7']`，圖表（線色、blank 虛線、圖表標題、³⁶–⁴⁰Ar 勾選框）全部回到原樣。
+- `ISO` dict 保留，但**只用於 UI 表格文字**（Mass Ratio 頁 Isotope 欄），不再進任何圖表。
+- mV 圖排除點紅 × 還原 `#b41a1a`（v3.9.8 曾改 DANGER）。
+
+分工原則（之後遵守）：**AR_COLS = matplotlib 圖表；ISO = UI 表格文字**。QSS/版面改動不碰 AR_COLS。
+
+驗證：`py_compile` 通過。
+
+檔案：`AutoPipeline.py`；`.work/.app_info.txt` 3.9.11 → 3.9.12。
+
+---
+
 ## V3.9.11（2026-07-09）— UI 改版 第二輪目視回饋：tab 裁字 + diagram 外框
 
 使用者跑 v3.9.10 後的兩項回饋，純樣式：

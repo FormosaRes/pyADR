@@ -239,9 +239,11 @@ def _propagate(T0, sT0, bT0, bsT0):
     }
 
 # ── colour palette (Refined Classic, HANDOFF-QSS-spec §1) ───────────────────
-# 同位素配色（收斂後）；AR_COLS 保留 list 介面給既有 index 取用
+# v3.9.12: AR_COLS 還原原版（使用者回饋：diagram 樣式要維持原樣）。
+# AR_COLS = matplotlib 圖表線色（mV / T₀ range / degassing 等）＋圖表標題；
+# ISO     = 只給 UI 表格文字上色（Mass Ratio Isotope 欄），不進圖表。
+AR_COLS  = ['#1a5fb4','#1c7a3a','#8a5a00','#b41a1a','#533ab7']
 ISO = {'36':'#2b6cb0', '37':'#2f8f5b', '38':'#c98a1a', '39':'#cc4436', '40':'#6b4fc9'}
-AR_COLS  = [ISO['36'], ISO['37'], ISO['38'], ISO['39'], ISO['40']]
 AR_NAMES = ['36','37','38','39','40']
 
 BG        = '#f5f4f0'   # app 背景（暖米）
@@ -1846,7 +1848,7 @@ class MvCanvas(QtWidgets.QWidget):
         # excluded ×
         excl_idx = [i for i in range(nc) if mask[i] == 0]
         if excl_idx:
-            ax.plot(ts[excl_idx], vs[excl_idx], marker='x', color=DANGER,
+            ax.plot(ts[excl_idx], vs[excl_idx], marker='x', color='#b41a1a',
                     linewidth=0, markersize=7, markeredgewidth=1.5, zorder=5)
 
         t_range = np.linspace(ts[0], ts[-1], 50)
