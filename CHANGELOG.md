@@ -8,6 +8,21 @@ GitHub Releases（tag）最新為 **v3.8.96（Latest，彙整 v3.8.94 → v3.8.9
 
 ---
 
+## V3.9.14（2026-07-09）— pyADR 圖表樣式定案：薰衣草底 + 白格線 + 白外框（同 DiagramPlot）
+
+使用者定義確認：**pyADR 樣式 = seaborn darkgrid 薰衣草底（#EAEAF2）+ 白格線 + 白色圖框**，以 DiagramPlot SH 為準；AutoPipeline（AgeCalc）各圖要一致。v3.9.13 誤把 DFR 壓成透明底，方向相反，本版修正並統一全部：
+
+- 六個繪圖函式的 pyADR 分支**移除 `set_facecolor('none')` 覆寫**（isochron DFN/DFI 的 `_style_axes`、DFW age spectrum、DFA Ca/K、DFC Cl/K、DFD degassing、DFR %⁴⁰Ar*），axes 保留 `sns.set()` 的薰衣草底與白格線。
+- DFR 移除 v3.9.13 的透明底與 `ax.grid(alpha=0.25)` 疊加，回到純 seaborn 樣式（DFR 原本就是對的）。
+- classic（黑白出版風）分支全部不動：白底、外框、朝外 tick 照舊。
+- figure 存檔仍是透明邊（`facecolor='none'`），在白色視窗上呈現白外框。
+
+驗證：`py_compile` 通過；`set_facecolor('none')` 全檔清零（grep）。使用者重啟後目視對照 DiagramPlot。
+
+檔案：`Utilities.py`（6 處 pyADR 分支）；`.work/.app_info.txt` 3.9.13 → 3.9.14。
+
+---
+
 ## V3.9.13（2026-07-09）— 修 ⁴⁰Ar(r)% 圖薰衣草底（DFR 漏設 axes 底色）
 
 使用者回饋：AgeCalc 的 ⁴⁰Ar(r)% 圖有薰衣草底，其他圖與 DiagramPlot 都沒有。根因：`Utilities.getRadiogenicPlot`（DFR，v3.8.66 新增）在 pyADR 樣式分支**沒有設 axes facecolor**，模組層 `sns.set()`（darkgrid）的 `#EAEAF2` 底色直接漏出。DFW/DFA/DFC 的既有寫法是 pyADR 分支 `set_facecolor('none')`（透明，讓 Qt 白底透出）。

@@ -800,7 +800,8 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
             for _sp in ax.spines.values():
                 _sp.set_visible(True); _sp.set_linewidth(1.0); _sp.set_color('black')
         else:
-            ax.set_facecolor('none')
+            # v3.9.14: pyADR = seaborn 薰衣草底 + 白格線（同 DiagramPlot SH），
+            # 不再覆寫 facecolor
             ax.tick_params(which='both', direction='out', top=False, right=False)
 
     def _iso_savefig(fig_obj, outpath):
@@ -1806,7 +1807,7 @@ def getSHStatistics(file, mask, constants, xlim=None, ylim=None, legend_name=Non
         for _sp in w.spines.values():
             _sp.set_visible(True); _sp.set_linewidth(1.0); _sp.set_color('black')
     else:
-        w.set_facecolor('none')  # transparent → Qt widget bg shows through
+        # v3.9.14: pyADR = seaborn 薰衣草底 + 白格線（同 DiagramPlot SH）
         w.tick_params(which='both', direction='out',
                          top=False, right=False)
     
@@ -2028,7 +2029,7 @@ def getSHStatistics(file, mask, constants, xlim=None, ylim=None, legend_name=Non
         for _sp in ax_a.spines.values():
             _sp.set_visible(True); _sp.set_linewidth(1.0); _sp.set_color('black')
     else:
-        ax_a.set_facecolor('none')  # transparent → Qt widget bg shows through
+        # v3.9.14: pyADR = seaborn 薰衣草底 + 白格線（同 DiagramPlot SH）
         ax_a.tick_params(which='both', direction='out',
                          top=False, right=False)
     ax_a.set_xlabel('Cumulative $^{39}$Ar Released(%)')
@@ -2143,7 +2144,7 @@ def getSHStatistics(file, mask, constants, xlim=None, ylim=None, legend_name=Non
         for _sp in ax_cl.spines.values():
             _sp.set_visible(True); _sp.set_linewidth(1.0); _sp.set_color('black')
     else:
-        ax_cl.set_facecolor('none')  # transparent → Qt widget bg shows through
+        # v3.9.14: pyADR = seaborn 薰衣草底 + 白格線（同 DiagramPlot SH）
         ax_cl.tick_params(which='both', direction='out',
                          top=False, right=False)
     ax_cl.set_xlabel('Cumulative $^{39}$Ar Released(%)')
@@ -3260,12 +3261,10 @@ def getRadiogenicPlot(file, mask, constants,
         for _sp in ax.spines.values():
             _sp.set_visible(True); _sp.set_linewidth(1.0); _sp.set_color('black')
     else:
-        # v3.9.13: 對齊 DFW/DFA/DFC 的 pyADR 分支 — axes 透明，否則
-        # sns.set() 的 darkgrid 薰衣草底會漏出來（v3.8.66 新增時漏掉）。
-        ax.set_facecolor('none')  # transparent → Qt widget bg shows through
+        # v3.9.14: pyADR = seaborn 薰衣草底 + 白格線（同 DiagramPlot SH）；
+        # v3.9.13 曾誤把 DFR 壓成透明底，方向修正：DFR 原本的薰衣草底
+        # 才是正確樣式，其他圖跟上。
         ax.tick_params(which='both', direction='out', top=False, right=False)
-        if _st.get('grid'):
-            ax.grid(True, alpha=0.25)
 
     actual_xlim = tuple(float(v) for v in ax.get_xlim())
     actual_ylim = tuple(float(v) for v in ax.get_ylim())
@@ -3564,7 +3563,7 @@ def getDegasPlot(file, mask, constants,
         for sp in ax.spines.values():
             sp.set_visible(True); sp.set_linewidth(1.0); sp.set_color('black')
     else:
-        ax.set_facecolor('none')
+        # v3.9.14: pyADR = seaborn 薰衣草底 + 白格線（同 DiagramPlot SH）
         ax.tick_params(which='both', direction='out', top=False, right=False)
 
     if show_legend:
