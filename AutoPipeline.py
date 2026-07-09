@@ -287,9 +287,9 @@ QHeaderView::section{{background:{HDR};border:1px solid {BRD2};padding:4px 7px;f
 QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox{{background:{WHITE};border:1px solid #cbcbcb;border-radius:3px;padding:3px 5px;font-family:'Courier New',monospace;font-size:11px;color:{TXT};}}
 QComboBox::drop-down{{border:none;}}
 
-/* tabs：全域先給過渡樣式，§5/§7 的頁內 tab 樣式落地後由各頁覆寫 */
+/* tabs：全域過渡樣式（選中不加粗 — Qt 不重算 tab 寬，粗體會裁字） */
 QTabBar::tab{{padding:4px 12px;border:1px solid {BRD};border-bottom:none;background:{HDR};}}
-QTabBar::tab:selected{{background:{WHITE};color:{ACCENT};font-weight:bold;}}
+QTabBar::tab:selected{{background:{WHITE};color:{ACCENT};}}
 QTabWidget::pane{{border:1px solid {BRD};}}
 """
 
@@ -2315,7 +2315,7 @@ class CalcT0Page(QtWidgets.QWidget):
             'padding:5px 13px;margin-right:2px;'
             'font-family:Georgia,serif;font-size:11px;color:#777;'
             'min-width:50px;}'
-            f'QTabBar::tab:selected{{color:{ACCENT};font-weight:bold;'
+            f'QTabBar::tab:selected{{color:{ACCENT};'
             f'border-bottom:2px solid {ACCENT};}}'
             'QTabBar::tab:hover:!selected{color:#444;}'
         )
@@ -5097,8 +5097,11 @@ class AgeCalcPage(QtWidgets.QWidget):
                                            ('DFC','Cl/K'),('DFD','Degassing')]):
             fr=QtWidgets.QFrame()
             fr.setFrameShape(QtWidgets.QFrame.Box)
-            fr.setStyleSheet(f'QFrame{{border:1px solid {BRD};background:white;}}'
-                           f'QFrame:hover{{border:2px solid {ACCENT};}}')
+            # v3.9.11: objectName 限定，外框不被上層 stylesheet 級聯蓋掉
+            fr.setObjectName('dgThumb')
+            fr.setStyleSheet(
+                f'QFrame#dgThumb{{border:1px solid {BRD};background:white;}}'
+                f'QFrame#dgThumb:hover{{border:2px solid {ACCENT};}}')
             fr.setMinimumSize(220,180)
             # v3.9.9 (§7): 白底 1px 框 + putty 標題條（框內縮 1px 讓標題條貼邊）
             fvb=QtWidgets.QVBoxLayout(fr); fvb.setContentsMargins(1,1,1,1); fvb.setSpacing(2)
@@ -5159,13 +5162,16 @@ class AgeCalcPage(QtWidgets.QWidget):
         tabs.setDocumentMode(True)
         # v3.9.9 (§7): Excel 式底部分頁 — putty 未選、選中白底 + ACCENT
         # 頂線 + 粗體，與上方內容連成一體（South 位置故圓角在下緣）。
-        # v3.9.10: tab 加大（min-width + padding），選中 tab 不再擠壓文字
+        # v3.9.11: 選中 tab 移除粗體 — Qt 不會為 selected 樣式重算 tab 寬，
+        # 粗體把字撐寬會被裁掉（使用者回饋「字會被蓋掉」）。選中改用
+        # ACCENT 字色 + 白底 + 頂線辨識。pane 邊框明確補回。
         tabs.setStyleSheet(
+            f'QTabWidget::pane{{border:1px solid {BRD};background:{WHITE};}}'
             f'QTabBar::tab{{background:{HDR};border:1px solid {BRD};'
             'border-bottom-left-radius:4px;border-bottom-right-radius:4px;'
             'padding:7px 18px;min-width:72px;color:#666;}'
             f'QTabBar::tab:selected{{background:{WHITE};color:{ACCENT};'
-            f'font-weight:bold;border-top:2px solid {ACCENT};padding-top:6px;}}')
+            f'border-top:2px solid {ACCENT};padding-top:6px;}}')
 
         # Tab 1: Summary (existing splitter — results table + 4-thumbnail grid)
         _summary_w = QtWidgets.QWidget()
@@ -6716,7 +6722,10 @@ class AgeCalcPage(QtWidgets.QWidget):
         # ── LEFT: plot ──
         plot_frame = QtWidgets.QFrame()
         plot_frame.setFrameShape(QtWidgets.QFrame.Box)
-        plot_frame.setStyleSheet(f'QFrame{{border:1px solid {BRD};background:white;}}')
+        # v3.9.11: objectName 限定，外框不被上層 stylesheet 級聯蓋掉
+        plot_frame.setObjectName('plotFrame')
+        plot_frame.setStyleSheet(
+            f'QFrame#plotFrame{{border:1px solid {BRD};background:white;}}')
         pf_vl = QtWidgets.QVBoxLayout(plot_frame)
         pf_vl.setContentsMargins(4, 4, 4, 4)
         big_lbl = QtWidgets.QLabel('(pending — Run Pipeline first)')

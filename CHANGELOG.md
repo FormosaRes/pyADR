@@ -8,6 +8,19 @@ GitHub Releases（tag）最新為 **v3.8.96（Latest，彙整 v3.8.94 → v3.8.9
 
 ---
 
+## V3.9.11（2026-07-09）— UI 改版 第二輪目視回饋：tab 裁字 + diagram 外框
+
+使用者跑 v3.9.10 後的兩項回饋，純樣式：
+
+- **選中 tab 字被蓋掉**：根因 = Qt 的 QTabBar 不會為 `:selected` 樣式重算 tab 寬度，`font-weight:bold` 把字撐寬就被右緣裁掉（「Age Spectrum」→「Age Spectrun」）。三處 tab 樣式（AgeCalc 底部 Excel 式、T₀ 溫度分頁、全域 `_sheet()`）的 selected 一律**移除粗體**，選中辨識改靠 ACCENT 字色 + 白底 + ACCENT 頂線/底線。
+- **Diagram 外框不見**：AgeCalc 各 diagram tab 的 `plot_frame` 與 Summary 縮圖 `QFrame` 原本用裸 `QFrame{…}` 規則，會被上層（QTabWidget setStyleSheet 後的級聯）干擾。改 **objectName 限定**（`QFrame#plotFrame` / `QFrame#dgThumb`），並在 tabs stylesheet 明確補回 `QTabWidget::pane` 邊框。hover ACCENT 框保留。
+
+驗證：`py_compile` 通過。
+
+檔案：`AutoPipeline.py`；`.work/.app_info.txt` 3.9.10 → 3.9.11。
+
+---
+
 ## V3.9.10（2026-07-09）— UI 改版 首輪目視回饋修正
 
 使用者跑 v3.9.9 後的四項回饋，全部純樣式：
