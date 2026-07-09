@@ -8,6 +8,21 @@ GitHub Releases（tag）最新為 **v3.8.96（Latest，彙整 v3.8.94 → v3.8.9
 
 ---
 
+## V3.9.10（2026-07-09）— UI 改版 首輪目視回饋修正
+
+使用者跑 v3.9.9 後的四項回饋，全部純樣式：
+
+- **Sidebar 組間大間隙取消**（三頁：Calculate T₀ / Mass Ratio / AgeCalc+Datum）：v3.9.7 的組間 10px addSpacing 拿掉，統一 spacing=3 緊排。按鈕順序不變。
+- **Isochron chips 的 (40/36)ₜ 移回主行**：v3.9.9 把它放下行小灰字，看不清楚。改為主行 `age ± σ Ma  (40/36)ₜ=…`（同主值字級），下行小灰字只留 `MSWD … · n=…`。
+- **底部 Excel 式 tab 加大**：padding 5px 13px → 7px 18px + min-width 72px，選中 tab（白底 + ACCENT 頂線）padding-top 補償 border，不再擠壓文字。
+- **Diagrams 標題後的提示字刪掉**（"(click image to enlarge · click ⚙ …)"），標題只留 Diagrams。
+
+驗證：`py_compile` 通過。
+
+檔案：`AutoPipeline.py`；`.work/.app_info.txt` 3.9.9 → 3.9.10。
+
+---
+
 ## V3.9.9（2026-07-09）— Argon Pipeline 介面改版 step 5/5：Age Calc + Datum 版面
 
 HANDOFF-QSS-spec 第 5 步（§7），純樣式與元件歸位，計算與資料流不動：

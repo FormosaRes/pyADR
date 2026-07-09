@@ -727,16 +727,12 @@ def _build_minimal_sidebar(page, save_handler, save_label='Save',
         btnClosure.clicked.connect(_on_closure)
         page.closureBtn = btnClosure
 
-    # v3.9.7 (§4): 組與組之間 10px 間距（不畫分隔線、不放文字標籤）。
-    # 組 1 = Return / Save；組 2 = Open / Save Session；組 3 = Parameter (+ Closure)
-    groups = [[btnReturn, btnSave],
-              [btnOpenSess, btnSaveSess],
-              [btnParam] + ([btnClosure] if btnClosure is not None else [])]
-    for gi, grp in enumerate(groups):
-        if gi:
-            sbl.addSpacing(10)
-        for b in grp:
-            sbl.addWidget(b)
+    # v3.9.10: 組間大間隙取消（使用者回饋），統一 spacing=3 緊排
+    btns = [btnReturn, btnSave, btnOpenSess, btnSaveSess, btnParam]
+    if btnClosure is not None:
+        btns.append(btnClosure)
+    for b in btns:
+        sbl.addWidget(b)
     sbl.addStretch()
     return sb
 
@@ -2268,17 +2264,15 @@ class CalcT0Page(QtWidgets.QWidget):
         self.btnL = QtWidgets.QPushButton(); self.btnL.hide()
         self.btnA = QtWidgets.QPushButton(); self.btnA.hide()
 
-        # v3.9.7 (§4) 分組：Load Blank / Load Sample / Save → Auto Blank /
+        # v3.9.7 (§4) 順序：Load Blank / Load Sample / Save → Auto Blank /
         # Auto Signal / Manual → Open Session / Save Session（v3.8.35 順序
         # 保留）→ Parameter；HomePage（returnBtn）沉到最底（stretch 之後）。
+        # v3.9.10: 組間大間隙取消（使用者回饋），統一 spacing=3 緊排。
         self.returnBtn.setText('HomePage')
-        for grp in ([self.btnLdBlank, self.btnLdSig, self.saveBtn],
-                    [self.btnAB, self.btnAS, self.btnM],
-                    [self.btnOpenSession, self.btnSaveSession],
-                    [self.paramBtn]):
-            sbl.addSpacing(10)
-            for b in grp:
-                sbl.addWidget(b)
+        for b in (self.btnLdBlank, self.btnLdSig, self.saveBtn,
+                  self.btnAB, self.btnAS, self.btnM,
+                  self.btnOpenSession, self.btnSaveSession, self.paramBtn):
+            sbl.addWidget(b)
 
         # v3.8.18: Δt label moved out of sidebar into the top nav bar (chip
         # right of 'Current step'). Local widget kept as a hidden back-compat
@@ -5082,9 +5076,8 @@ class AgeCalcPage(QtWidgets.QWidget):
         dg_vl = QtWidgets.QVBoxLayout(dg_w)
         dg_vl.setContentsMargins(4,0,0,0); dg_vl.setSpacing(4)
         
-        dg_hdr = QtWidgets.QLabel(
-            'Diagrams <span style="font-size:10px;font-weight:normal;color:#888;">'
-            '(click image to enlarge · click ⚙ to adjust axis range)</span>')
+        # v3.9.10: 標題後的提示字刪掉（使用者回饋）
+        dg_hdr = QtWidgets.QLabel('Diagrams')
         dg_hdr.setStyleSheet(_HDR_LBL_SS)
         dg_vl.addWidget(_hdr_row(dg_hdr))   # §8 段落標題 + HAIR 線
         
@@ -5166,12 +5159,13 @@ class AgeCalcPage(QtWidgets.QWidget):
         tabs.setDocumentMode(True)
         # v3.9.9 (§7): Excel 式底部分頁 — putty 未選、選中白底 + ACCENT
         # 頂線 + 粗體，與上方內容連成一體（South 位置故圓角在下緣）。
+        # v3.9.10: tab 加大（min-width + padding），選中 tab 不再擠壓文字
         tabs.setStyleSheet(
             f'QTabBar::tab{{background:{HDR};border:1px solid {BRD};'
             'border-bottom-left-radius:4px;border-bottom-right-radius:4px;'
-            'padding:5px 13px;color:#666;}'
+            'padding:7px 18px;min-width:72px;color:#666;}'
             f'QTabBar::tab:selected{{background:{WHITE};color:{ACCENT};'
-            f'font-weight:bold;border-top:2px solid {ACCENT};}}')
+            f'font-weight:bold;border-top:2px solid {ACCENT};padding-top:6px;}}')
 
         # Tab 1: Summary (existing splitter — results table + 4-thumbnail grid)
         _summary_w = QtWidgets.QWidget()
@@ -5873,12 +5867,13 @@ class AgeCalcPage(QtWidgets.QWidget):
                     _ext_n = mswd_n > 1.0
                     if _ext_n:
                         sage_n *= math.sqrt(mswd_n)
-                    # v3.9.9 (§7): 主值一行 + 下方小灰字（rich text 兩行）
+                    # v3.9.10: (40/36)ₜ 放主行 Ma 之後（使用者回饋：小字看
+                    # 不清）；下行小灰字只留 MSWD 與 n。
                     self._stat_normiso.setText(
-                        self._pm(age_n, sage_n) + ' Ma'
+                        self._pm(age_n, sage_n) + ' Ma  '
+                        f'(40/36)ₜ={b_n:.1f}±{2*sb_n:.1f}'
                         '<br><span style="font-size:10px;font-weight:normal;color:#888;">'
-                        f'MSWD {mswd_n:.2f}{" ext" if _ext_n else ""} · n={len(iso_data)} · '
-                        f'(40/36)ₜ {b_n:.1f}±{2*sb_n:.1f}</span>')
+                        f'MSWD {mswd_n:.2f}{" ext" if _ext_n else ""} · n={len(iso_data)}</span>')
                     self._info_norm = (age_n, sage_n, mswd_n, len(iso_data), b_n)
                 else:
                     self._stat_normiso.setText(f'(MSWD={mswd_n:.2f}, slope ≤ 0)')
@@ -5918,12 +5913,13 @@ class AgeCalcPage(QtWidgets.QWidget):
                         if _ext_i:
                             sage_i *= math.sqrt(mswd_i)
                         atm_ratio = 1/b_i  # b_i = (36/40)_t, so 1/b_i = (40/36)_t
-                        # v3.9.9 (§7): 主值一行 + 下方小灰字（rich text 兩行）
+                        # v3.9.10: (40/36)ₜ 放主行 Ma 之後（使用者回饋）；
+                        # 下行小灰字只留 MSWD 與 n。
                         self._stat_invIso.setText(
-                            self._pm(age_i, sage_i) + ' Ma'
+                            self._pm(age_i, sage_i) + ' Ma  '
+                            f'(40/36)ₜ={atm_ratio:.1f}'
                             '<br><span style="font-size:10px;font-weight:normal;color:#888;">'
-                            f'MSWD {mswd_i:.2f}{" ext" if _ext_i else ""} · n={len(iso_data)} · '
-                            f'(40/36)ₜ {atm_ratio:.1f}</span>')
+                            f'MSWD {mswd_i:.2f}{" ext" if _ext_i else ""} · n={len(iso_data)}</span>')
                         self._info_inv = (age_i, sage_i, mswd_i, len(iso_data), atm_ratio)
                     else:
                         self._stat_invIso.setText(f'(MSWD={mswd_i:.2f}, F ≤ 0)')
