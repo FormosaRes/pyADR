@@ -303,13 +303,31 @@ df = N&minus;2 (slope + intercept).</p>
 <tr><th>MSWD<sub>reg</sub> &asymp; 1</th><td>Ideal &mdash; well-behaved sample</td><td>Ages disagree but points fall on isochron line &mdash; trapped composition consistent, but ages dispersed (partial reset?)</td></tr>
 <tr><th>MSWD<sub>reg</sub> &gt; 1</th><td>Step ages agree but points scatter on isochron &mdash; trapped composition varies between steps</td><td>Both spread &mdash; significant geological complexity (excess Ar, hetero, partial loss)</td></tr>
 </table>
-<h3>Critical MSWD</h3>
-<p>Schaen et al. (2021) Eq. 2: <b>MSWD<sub>crit</sub> &asymp; 1 + 2&radic;(2/df)</b>.
-For df = 8, MSWD<sub>crit</sub> &asymp; 2.0.  MSWD beyond this rejects the
-assumption that scatter is purely analytical.</p>
-<p>When MSWD &gt; 1, pyADR (per Wendt &amp; Carl 1991) expands the
+<h3>Critical MSWD &mdash; two ways to get the threshold</h3>
+<p><b>Normal approximation</b> (Wendt &amp; Carl, 1991; quoted as Schaen et al. 2021 Eq. 2):
+<b>MSWD<sub>crit</sub> &asymp; 1 + 2&radic;(2/df)</b>. For df = 8, MSWD<sub>crit</sub> &asymp; 2.0.
+This is the large-df asymptotic limit of the exact distribution below and is
+systematically <i>too strict</i> at the low df typical of Ar-Ar step-heating
+(df = 5: 2.26 vs. the exact 2.57 &mdash; a ~14% gap).</p>
+<p><b>Exact (chi-square quantile)</b>: MSWD ~ &chi;&sup2;(df)/df, so the exact
+95% upper bound is <code>scipy.stats.chi2.ppf(0.975, df) / df</code>. This is
+the correct distribution &mdash; no large-df assumption needed.</p>
+<p style="background:#e8f4ea;padding:6px;border:1px solid #2e7d52;">
+<b>pyADR (from v3.9.15) uses the exact &chi;&sup2; quantile everywhere</b>
+(<code>PlaneFit3D._mswd_ci</code>, and <code>AutoPipeline._mswd_verdict</code>
+after the diagram-info color verdict was switched off the normal
+approximation). Through v3.8.82, <code>AutoPipeline._mswd_verdict</code> used
+the Wendt-Carl normal approximation <i>and</i> hardcoded df = N&minus;2 even
+when called for the plateau MSWD (which has df = N&minus;1) &mdash; two
+independent bugs that happened to partially cancel. Both are fixed as of
+v3.9.15: the verdict color now takes an explicit <code>df</code> argument from
+the caller (N&minus;1 for plateau, N&minus;2 for isochron regression) and
+compares against the exact quantile.</p>
+<p>When MSWD &gt; 1, pyADR (per Wendt &amp; Carl 1991) still expands the
 internal &sigma; by &radic;MSWD to give an &ldquo;external&rdquo; &sigma; that
-captures the excess dispersion.</p>
+captures the excess dispersion &mdash; that convention is unaffected by the
+critical-value fix above, which only changes the color-coded pass/fail
+threshold, not the &sigma;-inflation rule.</p>
 """
 
 _HELP_AGE_HTML = """
@@ -659,11 +677,26 @@ _HELP_MSWD_HTML_ZH = """
 <tr><th>MSWD<sub>reg</sub> &asymp; 1</th><td>理想 &mdash; 樣品乖巧</td><td>年齡不一致但點落在等時線上 &mdash; trapped 組成一致、年齡分散（部分重置？）</td></tr>
 <tr><th>MSWD<sub>reg</sub> &gt; 1</th><td>階段年齡一致但點在等時線上散開 &mdash; 各階段 trapped 組成不同</td><td>兩者皆散 &mdash; 明顯地質複雜性（過剩 Ar、不均質、部分流失）</td></tr>
 </table>
-<h3>臨界 MSWD</h3>
-<p>Schaen et al. (2021) Eq. 2：<b>MSWD<sub>crit</sub> &asymp; 1 + 2&radic;(2/df)</b>。
-df = 8 時 MSWD<sub>crit</sub> &asymp; 2.0。超過此值即否定「散布純為分析誤差」的假設。</p>
-<p>當 MSWD &gt; 1，pyADR（依 Wendt &amp; Carl 1991）把 internal &sigma; 乘 &radic;MSWD
-得到「external」&sigma; 以涵蓋多餘散布。</p>
+<h3>臨界 MSWD &mdash; 兩種算門檻的方式</h3>
+<p><b>常態近似</b>（Wendt &amp; Carl, 1991；Schaen et al. 2021 Eq. 2 轉引）：
+<b>MSWD<sub>crit</sub> &asymp; 1 + 2&radic;(2/df)</b>。df = 8 時 &asymp; 2.0。
+這是下面精確分布在 df 很大時的漸近極限，在 Ar-Ar step-heating 常見的低 df
+時系統性<i>偏嚴</i>（df = 5：常態近似 2.26 vs 精確值 2.57，差約 14%）。</p>
+<p><b>精確（卡方分位數）</b>：MSWD ~ &chi;&sup2;(df)/df，精確 95% 上界為
+<code>scipy.stats.chi2.ppf(0.975, df) / df</code>。這是正確的分布，不需要
+大樣本假設。</p>
+<p style="background:#e8f4ea;padding:6px;border:1px solid #2e7d52;">
+<b>pyADR 自 v3.9.15 起全面採精確 &chi;&sup2; 分位數</b>
+（<code>PlaneFit3D._mswd_ci</code>；<code>AutoPipeline._mswd_verdict</code>
+的圖表資訊面板顏色判準也已改用同一套，不再用常態近似）。v3.8.82 以前，
+<code>AutoPipeline._mswd_verdict</code> 用常態近似，<i>而且</i>不論呼叫者是
+plateau（df 應為 N&minus;1）還是 isochron 迴歸，內部都硬寫死 df = N&minus;2
+——是兩個各自獨立、恰好部分互相抵消的 bug。v3.9.15 已一併修正：verdict
+顏色函式現在接受呼叫者明確傳入的 <code>df</code>（plateau 傳 N&minus;1、
+isochron 迴歸傳 N&minus;2），並對照精確分位數判色。</p>
+<p>當 MSWD &gt; 1，pyADR（依 Wendt &amp; Carl 1991）仍把 internal &sigma; 乘
+&radic;MSWD 得到「external」&sigma; 以涵蓋多餘散布——這個慣例不受上面臨界值
+修正影響，修正的只是顏色判準的通過/警示門檻，不是 &sigma; 放大規則本身。</p>
 """
 
 _HELP_AGE_HTML_ZH = """

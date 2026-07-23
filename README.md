@@ -1,5 +1,5 @@
 ![logo](.work/logo.png)
-# pyADR — NTNU modified fork (v3.9.14)
+# pyADR — NTNU modified fork (v3.9.15)
 
 40Ar/39Ar data reduction tool with GUI. Modified fork of [pyADR](https://github.com/AndrewLiu0725/pyADR) (original by **An-Jun (Andrew) Liu**), now maintained by **PANG Chi-Hsiu (Academia Sinica)**.
 
@@ -147,6 +147,10 @@ python NTNU_DataReduction.py
 ---
 
 ## Changelog 摘要
+
+### v3.9.15 (2026-07-24)
+
+**MSWD 顏色判準改用精確 χ² 分位數，修 df 誤用 bug**。`AutoPipeline._mswd_verdict()` 原本用 Wendt-Carl (1991) 常態近似算臨界 MSWD，且不論 plateau（df 應為 N−1）或 isochron 迴歸（df=N−2）一律硬套 N−2——兩個各自獨立、方向相反、恰好部分互相抵消的 bug。改用 `scipy.stats.chi2.ppf` 精確分位數，並要求呼叫端傳入正確 df，與 `PlaneFit3D._mswd_ci()` 統一。中英 Help 頁 MSWD 段落補上兩種算法的對照說明。
 
 ### v3.8.9 – v3.9.4 (2026-05 → 2026-07) — 摘要
 

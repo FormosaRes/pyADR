@@ -1,5 +1,40 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
+## V3.9.15（2026-07-24）— MSWD critical value：常態近似 → 精確 χ² 分位數，修 df 不一致
+
+使用者(PANG)發現 `AutoPipeline._mswd_verdict()`（GUI 圖表資訊面板的 MSWD 顏色判準）跟
+`PlaneFit3D._mswd_ci()`（3D plane fit 用）算臨界 MSWD 的方法不一樣，要求先解釋差異再決定
+修法。核出兩個各自獨立的問題：
+
+1. **公式**：`_mswd_verdict()` 用 Wendt & Carl (1991) 常態近似 `1+2√(2/df)`；`_mswd_ci()` 用
+   `scipy.stats.chi2.ppf` 精確卡方分位數。常態近似是精確分布在 df→∞ 的漸近極限，在 Ar-Ar
+   isochron/plateau 常見的低 df（4–9）系統性偏嚴（df=5：常態近似 2.26 vs 精確 2.57，約差
+   14%），會把統計上其實正常的小樣本 isochron/plateau 誤標成 amber/red。
+2. **df 沒跟著呼叫者走**（獨立於第 1 點的另一個 bug）：`_mswd_verdict(mswd, n)` 內部硬寫死
+   `df = n-2`。isochron 迴歸呼叫時 df=n-2 是對的（斜率+截距兩個自由參數），但 plateau MSWD
+   本身是用 `df = n-1` 算的（`_update_isochron_stats` L5836 `mswd = chi2/(n-1)`，只有平均值
+   一個自由參數），plateau 呼叫 `_mswd_verdict` 時卻被硬套 n-2，兩者對不上。兩個 bug 方向相
+   反、會部分互相抵消，GUI 上不一定看得出明顯異常，但屬巧合非設計如此。
+
+**修法**：
+- `_mswd_verdict(mswd, n)` → `_mswd_verdict(mswd, df)`，改用 `scipy.stats.chi2.ppf(0.975, df) / df`
+  精確分位數，不再用常態近似。
+- `_mswd_line(mswd, n, df)` 新增 `df` 參數（`n` 仍用於顯示 "n=N"，`df` 專門給 verdict 判色）。
+- 三處呼叫點各自傳入正確 df：plateau `pl[3]-1`（N-1）、normal isochron `nm[3]-2`、inverse
+  isochron `iv[3]-2`（皆 N-2）。
+- `NTNU_DataReduction.py` 的 `_HELP_MSWD_HTML` / `_HELP_MSWD_HTML_ZH`（中英文說明頁）補上
+  「常態近似 vs 精確 χ²」對照段落，並註明 pyADR 現在全面採精確版、v3.8.82 以前的雙 bug 內容。
+- σ 放大規則（MSWD>1 時 ×√MSWD 給 external σ）不受影響，只改顏色判準的臨界值來源。
+
+驗證：`py_compile` 通過（AutoPipeline.py + NTNU_DataReduction.py）；`grep` 確認
+`_mswd_verdict`/`_mswd_line` 全部呼叫點簽名一致，無殘留舊式二參數呼叫。
+
+檔案：`AutoPipeline.py`（import + `_mswd_verdict` + `_mswd_line` + 3 處呼叫點）；
+`NTNU_DataReduction.py`（`_HELP_MSWD_HTML`、`_HELP_MSWD_HTML_ZH`）；`.work/.app_info.txt`
+3.9.14 → 3.9.15。
+
+---
+
 版本追蹤：V2.5 → V2.6 → V2.7 → V2.7.1 → V3.0 → V3.0.1 → V3.1 → V3.1.1 → V3.2 → V3.3 → V3.4 → V3.4.1 → V3.5 → V3.6 → V3.7 → V3.7.1 → V3.7.2 → V3.7.3 → V3.7.4 → V3.8.0 → V3.8.1 → V3.8.2 → V3.8.3 → V3.8.4 → V3.8.5 → V3.8.6 → V3.8.7 → V3.8.8 → V3.8.9 → V3.8.10 → V3.8.11 → V3.8.12 → V3.8.13 → V3.8.14 → V3.8.15 → V3.8.16 → V3.8.17 → V3.8.18 → V3.8.19 → V3.8.20 → V3.8.21 → V3.8.22 → V3.8.23 → V3.8.24 → V3.8.25 → V3.8.26 → V3.8.27 → V3.8.28 → V3.8.29 → V3.8.30 → V3.8.31 → V3.8.32 → V3.8.33 → V3.8.34 → V3.8.35 → V3.8.36 → V3.8.37 → V3.8.38 → V3.8.39 → V3.8.40 → V3.8.41 → V3.8.42 → V3.8.43 → V3.8.44 → V3.8.45 → V3.8.46 → V3.8.47 → V3.8.48 → V3.8.49 → V3.8.50 → V3.8.51 → V3.8.52 → V3.8.53 → V3.8.54 → V3.8.55 →（V3.8.56 reverted）→ V3.8.57 → V3.8.58 → V3.8.59 → V3.8.60 → V3.8.61 → V3.8.62 → V3.8.63 → V3.8.64 → V3.8.65 → V3.8.66 → V3.8.67 → V3.8.68 → V3.8.69 → V3.8.70 → V3.8.71 → V3.8.72 → V3.8.73 → V3.8.74 → V3.8.75 → V3.8.76 → V3.8.77 → V3.8.78 → V3.8.79 → V3.8.80 → V3.8.81 → V3.8.82 → V3.8.83 → V3.8.84 → V3.8.85 → V3.8.86 → V3.8.87 → V3.8.88
 最後整理日期：2026-06-14
 整理者：Claude (based on git-style diff across all versions)

@@ -33,6 +33,7 @@ warnings.filterwarnings('ignore', category=UserWarning, module='matplotlib')
 import numpy as np
 from PyQt5 import QtWidgets, QtCore, QtGui
 from scipy.optimize import curve_fit
+from scipy.stats import chi2 as _chi2   # v3.9.15: exact MSWD critical value
 import Utilities
 from Utilities import r2_score   # v3.8.81: was sklearn (dropped ~7s cold-start import)
 
@@ -378,13 +379,20 @@ def _is_neg_num(s):
     except Exception:
         return False
 
-def _mswd_verdict(mswd, n):
-    """v3.8.78: (color, label) for an MSWD given n points. 95% upper bound of a
-    well-behaved MSWD ≈ 1 + 2·√(2/(n−2)) (Wendt-Carl 1991). Green inside the
-    band, amber up to 2×, red beyond (excess scatter / disturbed)."""
-    if mswd is None or n is None or n < 3:
+def _mswd_verdict(mswd, df):
+    """v3.9.15: (color, label) for an MSWD given its degrees of freedom.
+    Exact 95% upper bound from MSWD ~ chi2(df)/df (matches PlaneFit3D._mswd_ci),
+    replacing the Wendt-Carl (1991) normal-approximation threshold used through
+    v3.8.82 (1 + 2·√(2/df)) — the normal approximation is systematically too
+    strict at the low df typical of Ar-Ar step-heating (e.g. df=5: 2.26 vs the
+    exact 2.57). Caller must pass the df matching how its MSWD was computed:
+    N-1 for plateau (WMA, one free parameter), N-2 for isochron regression
+    (slope + intercept) — through v3.8.82 this function hardcoded N-2 for
+    both, silently wrong for plateau callers. Green inside the band, amber up
+    to 2×, red beyond (excess scatter / disturbed)."""
+    if mswd is None or df is None or df < 1:
         return ('#888888', '')
-    hi = 1.0 + 2.0 * math.sqrt(2.0 / max(n - 2, 1))
+    hi = float(_chi2.ppf(0.975, df) / df)
     if mswd <= hi:
         return ('#2e7d52', 'OK')
     if mswd <= 2.0 * hi:
@@ -5573,9 +5581,9 @@ class AgeCalcPage(QtWidgets.QWidget):
             return (f"<span style='color:#888;font-size:11px;'>{label}</span><br>"
                     f"<span style='font-size:14px;'><b>{value}</b></span>")
 
-        def _mswd_line(mswd, n):
-            """colored 'MSWD x.xx · verdict · n=N' span (v3.8.78)."""
-            c, lab = _mswd_verdict(mswd, n)
+        def _mswd_line(mswd, n, df):
+            """colored 'MSWD x.xx · verdict · n=N' span (v3.8.78; exact-χ² df v3.9.15)."""
+            c, lab = _mswd_verdict(mswd, df)
             mt = (f"MSWD {mswd:.2f}" + (f" · {lab}" if lab else "")) if mswd is not None else ""
             return (f"<span style='color:{c};font-size:11px;'>"
                     f"{mt}{' · ' if mt else ''}n={n}</span>")
@@ -5583,7 +5591,7 @@ class AgeCalcPage(QtWidgets.QWidget):
         html = {}
         # Age Spectrum → plateau (colored MSWD) + total fusion
         _pl = (self._pm(pl[0], pl[1]) + " Ma" if pl else "—")
-        _plx = _mswd_line(pl[2], pl[3]) if pl else ""
+        _plx = _mswd_line(pl[2], pl[3], pl[3] - 1) if pl else ""   # plateau df = N-1
         _tot = (self._pm(tot[0], tot[1]) + " Ma" if tot else "—")
         _budline = ""
         if bud:
@@ -5602,7 +5610,7 @@ class AgeCalcPage(QtWidgets.QWidget):
         # Normal isochron
         if nm:
             html['DFN'] = (_row('Isochron age', self._pm(nm[0], nm[1]) + " Ma")
-                           + "<br>" + _mswd_line(nm[2], nm[3])
+                           + "<br>" + _mswd_line(nm[2], nm[3], nm[3] - 2)   # regression df = N-2
                            + "<br><br>" + _row('Trapped (⁴⁰/³⁶)', f"{nm[4]:.1f}"))
         else:
             html['DFN'] = _row('Isochron age', '— (need ≥3 steps)')
@@ -5626,7 +5634,7 @@ class AgeCalcPage(QtWidgets.QWidget):
                     _ref += (f"<br><span style='color:#c0282d;font-size:11px;'>"
                              f"與 plateau 不一致 (Δ={_d:.2f} Ma)</span>")
             html['DFI'] = (_row('Isochron age', self._pm(iv[0], iv[1]) + " Ma")
-                           + "<br>" + _mswd_line(iv[2], iv[3])
+                           + "<br>" + _mswd_line(iv[2], iv[3], iv[3] - 2)   # regression df = N-2
                            + "<br>" + _row('Trapped (⁴⁰/³⁶)', f"{_trap:.1f}")
                            + _ref)
         else:
