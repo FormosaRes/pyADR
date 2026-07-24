@@ -1,5 +1,47 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
+## V3.9.16（2026-07-24，影響科學輸出，NO.65 驗證前不發 Release）— calcAge 誤差傳遞：線性相加 → quadrature
+
+使用者(PANG)發現手上樣本連續溫階的 plateau/isochron MSWD 全部系統性偏低（0.0 幾），追查後
+確認是 `Utilities.py::calcAge` 內一批誤差傳遞公式從 v3.7.4（`calcAge` 從 V3.4.1 archive
+還原時，見該版 CHANGELOG「保留現狀的（待跟老師討論後再修）」）就用**線性相加相對誤差**
+（`(relA + relB) * value`），而不是正確的 **quadrature**（`sqrt(relA² + relB²) * value`）。
+同檔案內 `ratioSigma()` / `minusSigma()`、`AutoPipeline.py` 的 `_ratio_sigma()` 都已經是
+quadrature，calcAge 這批是內部手寫、沒呼叫這些 helper，naming 一致但公式不一致。
+
+**Root cause 影響鏈**：這批偏大的中間量（G_std/B_std/D_std 等）匯入 `F_std`，`F_std` 匯入
+`T_std`（= 每一階 age_std）。`AutoPipeline._update_isochron_stats` 用這個 age_std 算 plateau
+weighted-mean 的 MSWD（`chi2 = Σ((age-mean)/age_std)²`），分母系統性偏大 → MSWD 系統性偏低。
+影響所有用這版 pyADR 跑過 calcAge 的樣本，不是單一樣本的地質現象。
+
+**修法**：8 組（其中 3 組是 `_r_ratio_std` 附屬量）誤差傳遞公式改為 quadrature：
+`Ar_36_Ca_std`、`Ar_39_Ca_std`、`Ar_38_K_std`、`Ar_40_air_std`、`Ar_40_K_std`、
+`Ar_39_K_40_r_ratio_std`、`Ar_36_Air_40_r_ratio_std`、`Ar_39_K_36_Air_std`、
+`G_std`、`B_std`、`D_std`。`F_std` 本身的合併方式（`sqrt(G_std² + ...)`）原本就是對的，
+問題只在餵給它的這幾個輸入。年齡中心值不受影響（J、F 中心值沒動），只有 σ_age 變小、
+MSWD 會往 1 靠近。
+
+**這次沒動的（範圍外，留給後續）**：
+- `getJVolumeStatistics`（J value 計算，只有 `NTNU_DataReduction.py` 的 J Calculation 頁面呼叫）
+  有同款 pattern，是獨立的姊妹函式，這次刻意不動。
+- `AutoPipeline._update_isochron_stats` 目前用 `ar[47]`（T_std，含完整 J_std）算 plateau
+  MSWD；`calcAge` 其實同時回傳 `ar[49]`（T_int，用 J_int 排除同一次照射共用的 J 系統誤差）
+  沒被下游使用。同一次照射所有階共用同一個 J，比較「階與階之間」內部一致性理論上該用
+  T_int，J 的誤差只在最終報告年齡時加回一次。這是第二個、獨立於本次的成因，牽動
+  `_update_isochron_stats` 的呼叫端與 59-element return tuple 的下游索引，範圍更大，
+  這次不動，留待下次討論。
+- Ca/K 常數 0.52（vs 文獻 1.83）、F_std 一階近似（缺 (1−C4·D) 完整分母）、³⁶Ar(Cl) 大氣
+  校正——維持 v3.7.4 當時的擱置狀態不變。
+
+**驗證**：`py_compile Utilities.py` 通過；`grep` 確認 `calcAge` 函式體內（3015–3125 行）不再
+有殘留的線性相加 pattern。**尚未跑 NO.65 muscovite 對照**——照 SOP，這是影響科學輸出的改動，
+等 NO.65 重跑驗證（中心值應該幾乎不變、σ_age 應該變小、MSWD 應該從 0.0 幾往 1 靠近）過再考慮
+發 Release；此 commit 先留在獨立 branch 不動 main。
+
+檔案：`Utilities.py`（`calcAge` 函式體 + docstring）。
+
+---
+
 ## V3.9.15（2026-07-24）— MSWD critical value：常態近似 → 精確 χ² 分位數，修 df 不一致
 
 使用者(PANG)發現 `AutoPipeline._mswd_verdict()`（GUI 圖表資訊面板的 MSWD 顏色判準）跟

@@ -3018,10 +3018,19 @@ def calcAge(measurement_filename, J, J_std, J_int, constants):
 
     v3.7.4: Restored from V3.4.1 archive after the v3.7.x release HEAD shipped a
     truncated version (function ended mid-statement at `Ar_39_Ca = ...`).
-    Linear-error-propagation style preserved (same as getJVolumeStatistics
-    sister function).  Math review (Ca/K constant, quadrature vs linear σ,
-    36Ar(Cl) atmospheric correction) deferred to later release after
-    discussion with advisor — see notes/pyADR_math_audit_v1.md.
+
+    v3.9.16: Linear-error-propagation (`(relA + relB) * value`) replaced with
+    quadrature (`sqrt(relA**2 + relB**2) * value`) for every ratio_std derived
+    in this function (Ar_36_Ca_std, Ar_39_Ca_std, Ar_38_K_std, Ar_40_air_std,
+    Ar_40_K_std, the three _r_ratio_std terms, G_std, B_std, D_std).  This was
+    flagged but deliberately left as-is at v3.7.4 pending advisor discussion;
+    it systematically over-estimated every per-step age_std, which in turn
+    suppressed plateau/isochron MSWD (chi2/sigma^2 denominator inflated).
+    Center-value ages are unchanged; only sigma/MSWD move.  getJVolumeStatistics
+    (sister function, J-value calc only) has the same pre-existing pattern and
+    is intentionally NOT touched here — separate, still-open issue.
+    Ca/K constant (0.52 vs 1.83) and 36Ar(Cl) atmospheric correction remain
+    deferred per the original v3.7.4 note — see notes/pyADR_math_audit_v1.md.
 
     Returns 59-element list; key indices:
        18 Ar_39_K, 19 Ar_39_K_std
@@ -3058,30 +3067,30 @@ def calcAge(measurement_filename, J, J_std, J_int, constants):
     Ar_36_m = data[0, 0]
     Ar_36_m_std = data[0, 1]
     Ar_36_Ca = Ar_37_Ca * constants[2] #36Ar/37Ar(ca)
-    Ar_36_Ca_std = (Ar_37_Ca_std/Ar_37_Ca + constants[3]/constants[2]) * Ar_36_Ca #36Ar/37Ar(ca) std / 36Ar/37Ar(ca)
+    Ar_36_Ca_std = np.sqrt((Ar_37_Ca_std/Ar_37_Ca)**2 + (constants[3]/constants[2])**2) * Ar_36_Ca #36Ar/37Ar(ca) std / 36Ar/37Ar(ca)
     Ar_36_Air = Ar_36_m - Ar_36_Ca
     Ar_36_Air_std = minusSigma(Ar_36_m_std, Ar_36_Ca_std)
 
     Ar_39_m = data[3, 0]
     Ar_39_m_std = data[3, 1]
     Ar_39_Ca = Ar_37_Ca * constants[0] #39Ar/37Ar(ca)
-    Ar_39_Ca_std = (Ar_37_Ca_std/Ar_37_Ca + constants[1]/constants[0]) * Ar_39_Ca #39Ar/37Ar(ca) std /39Ar/37Ar(ca)
+    Ar_39_Ca_std = np.sqrt((Ar_37_Ca_std/Ar_37_Ca)**2 + (constants[1]/constants[0])**2) * Ar_39_Ca #39Ar/37Ar(ca) std /39Ar/37Ar(ca)
     Ar_39_K = Ar_39_m - Ar_39_Ca
     Ar_39_K_std = minusSigma(Ar_39_m_std, Ar_39_Ca_std)
 
     Ar_38_m = data[2, 0]
     Ar_38_m_std = data[2, 1]
     Ar_38_K = Ar_39_K * constants[6] #38Ar/39Ar(k)
-    Ar_38_K_std = (Ar_39_K_std/Ar_39_K + constants[7]/constants[6]) * Ar_38_K #38Ar/39Ar(k) std / 38Ar/39Ar(k)
+    Ar_38_K_std = np.sqrt((Ar_39_K_std/Ar_39_K)**2 + (constants[7]/constants[6])**2) * Ar_38_K #38Ar/39Ar(k) std / 38Ar/39Ar(k)
     Ar_38_Air = Ar_38_m - Ar_38_K
     Ar_38_Air_std = minusSigma(Ar_38_m_std, Ar_38_K_std)
 
     Ar_40_m = data[4, 0]
     Ar_40_m_std = data[4, 1]
     Ar_40_air = Ar_36_Air * constants[12] #40/36(a)
-    Ar_40_air_std = (Ar_36_Air_std/Ar_36_Air + constants[13]/constants[12]) * Ar_40_air #40/36(a) std / 40/36(a)
+    Ar_40_air_std = np.sqrt((Ar_36_Air_std/Ar_36_Air)**2 + (constants[13]/constants[12])**2) * Ar_40_air #40/36(a) std / 40/36(a)
     Ar_40_K = Ar_39_K * constants[4] #40Ar/39Ar(k)
-    Ar_40_K_std = (Ar_39_K_std/Ar_39_K + constants[5]/constants[4]) * Ar_40_K #40Ar/39Ar(k) std / 40Ar/39Ar(k)
+    Ar_40_K_std = np.sqrt((Ar_39_K_std/Ar_39_K)**2 + (constants[5]/constants[4])**2) * Ar_40_K #40Ar/39Ar(k) std / 40Ar/39Ar(k)
     Ar_40_radioactive = Ar_40_m - Ar_40_air - Ar_40_K
     Ar_40_radioactive_std = np.sqrt(Ar_40_m_std**2 + Ar_40_air_std**2 + Ar_40_K_std**2)
     Ar_40_radioactive_ratio = Ar_40_radioactive / data[4, 0]
@@ -3089,20 +3098,20 @@ def calcAge(measurement_filename, J, J_std, J_int, constants):
 
     # ratio calculation
     Ar_39_K_40_r_ratio =  Ar_39_K / Ar_40_radioactive
-    Ar_39_K_40_r_ratio_std = Ar_39_K_40_r_ratio*(Ar_39_K_std/Ar_39_K + Ar_40_radioactive_std/Ar_40_radioactive)
+    Ar_39_K_40_r_ratio_std = Ar_39_K_40_r_ratio*np.sqrt((Ar_39_K_std/Ar_39_K)**2 + (Ar_40_radioactive_std/Ar_40_radioactive)**2)
     Ar_36_Air_40_r_ratio = Ar_36_Air / Ar_40_radioactive
-    Ar_36_Air_40_r_ratio_std = Ar_36_Air_40_r_ratio*(Ar_36_Air_std/Ar_36_Air + Ar_40_radioactive_std/Ar_40_radioactive)
+    Ar_36_Air_40_r_ratio_std = Ar_36_Air_40_r_ratio*np.sqrt((Ar_36_Air_std/Ar_36_Air)**2 + (Ar_40_radioactive_std/Ar_40_radioactive)**2)
     Ar_39_K_36_Air = Ar_39_K / Ar_36_Air
-    Ar_39_K_36_Air_std = Ar_39_K_36_Air*(Ar_39_K_std/Ar_39_K + Ar_36_Air_std/Ar_36_Air)
+    Ar_39_K_36_Air_std = Ar_39_K_36_Air*np.sqrt((Ar_39_K_std/Ar_39_K)**2 + (Ar_36_Air_std/Ar_36_Air)**2)
 
     # Age calculation
     C1, C2, C3, C4 = constants[12], constants[2], constants[4], constants[0] #40/36(a) 36Ar/37Ar(ca) 40Ar/39Ar(k) 39Ar/37Ar(ca)
     G = Ar_40_m / Ar_39_m
-    G_std = G*(Ar_40_m_std/Ar_40_m + Ar_39_m_std/Ar_39_m)
+    G_std = G*np.sqrt((Ar_40_m_std/Ar_40_m)**2 + (Ar_39_m_std/Ar_39_m)**2)
     B = Ar_36_m / Ar_39_m
-    B_std = B*(Ar_36_m_std/Ar_36_m + Ar_39_m_std/Ar_39_m)
+    B_std = B*np.sqrt((Ar_36_m_std/Ar_36_m)**2 + (Ar_39_m_std/Ar_39_m)**2)
     D = Ar_37_m / Ar_39_m
-    D_std = D*(Ar_37_m_std/Ar_37_m + Ar_39_m_std/Ar_39_m)
+    D_std = D*np.sqrt((Ar_37_m_std/Ar_37_m)**2 + (Ar_39_m_std/Ar_39_m)**2)
     F = Ar_40_radioactive / Ar_39_K
     F_std = np.sqrt(G_std**2 + (C1*B_std)**2 + ((C4*G - C1*C4*B + C1*C2)*D_std)**2)
 
