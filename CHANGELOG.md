@@ -1,5 +1,56 @@
 # pyADR — NTNU_DataReduction / Utilities 更新日誌
 
+## V3.9.17（2026-08-20，影響科學輸出，NO.65 驗證前不發 Release）— DiagramPlot 的 Int age：λ 用錯 index + 沒換算成 Ma
+
+`getDFStatistics_sh` / `getDFStatistics_ls` 的 inverse-isochron age 讀 `constants[14]` 當 λ。
+`constants` 是 `.work/setting.csv` 的 22 個參數，**index 14 是 `Atmospheric Ratio 38/36(a)` = 0.1885**，
+λ 在 **index 16**（5.49e-10）。而且算完沒有 yr → Ma 換算。兩個錯疊起來 = 固定係數 **343.35**。
+
+### 這行從哪來
+從來沒被改過。初始 commit `afb2268`（2026-05-09，v3.7 NTNU fork）就是 `constants[14] #Lambda`，
+v3.8.0 (`c7686fc`) 把那整段重寫（F 從 `1/slope` 改成 `-b/a`）時周圍每一行都動，唯獨 λ 那行照抄。
+v3.8.75（2026-06-05）的多代理稽核已經抓到並記在本檔「找到但『沒動』」段，
+理由是單改 index 會顯示 ~9e6 年跟旁邊 Ma 欄混單位，要連 `/1e6` 一起改並在 GUI 驗證 —— 本版一起改完。
+
+### 影響範圍（逐條追過，只有兩個數字）
+壞的只有回傳的 `result[6]` / `result[7]`，也就是表上的 **「Int age」/「Int age std」**。流到：
+DiagramPlot **SH** 頁右下表第 13–14 格（`NTNU_DataReduction.py:4593/:5622`）、
+DiagramPlot **LS** 頁同兩格（`:4397/:5559`）、`summary.csv` 匯出（`:5458`）、
+LaserOB CSV 匯出（`:5377`）、`.adr` session 存的 `DF_result`（`:5488`）。
+
+**沒被影響**（全部查過）：
+- datum 表的 `Age(Ma)` / `Age_std` —— `calcAge` 本來就用 `constants[16]`
+- age spectrum / Weighted Plateau / Total Fusion Age —— `getSHStatistics` 用 `constants[16]` 且 `/1e6`
+- 同一次回傳的 WMA、MSWD（`result[4]/[5]`）—— 從 datum 的 `Age(Ma)` 欄算，沒碰 λ
+- 畫在 isochron 圖上的 group-fit `T=… Ma` 標註 —— λ 讀 datum CSV 第 86 欄再 `/1e6`
+- AutoPipeline 的 isochron age / banner —— 自己的 `LAMBDA_K = 5.49e-10` + `/1e6`，不讀 `result[6]`
+
+最後兩條解釋了為什麼肉眼抓不到：**同一張圖上畫出來的年齡是對的，旁邊表格那格是錯的**。
+
+### 檔案改動
+- `Utilities.py`：`getDFStatistics_ls` L557 / `getDFStatistics_sh` L1610 的 `constants[14]` → `constants[16]`，
+  T 與 T_std 各加 `/1e6`。
+- `.work/.app_info.txt`：3.9.16 → 3.9.17
+- `README.md`：版本字串 + Changelog 摘要
+
+### 驗證（headless，0621-01C = NO.65 muscovite，全 15 階）
+| 資料 | 方法 | Int age 舊 | Int age 新 | WMA（未變） | MSWD（未變） |
+|---|---|---|---|---|---|
+| `Session/reNo.65` | York | 0.02926 | **10.047 ± 0.392 Ma** | 10.2477 | 2.9858 |
+| `Session/reNo.65` | OLS | 0.02855 | **9.801 ± 1.257 Ma** | 10.2477 | 2.9858 |
+| `Publish/0621-01C` | York | 0.02929 | **10.056 ± 0.368 Ma** | 10.1839 | 1.5522 |
+| `Publish/0621-01C` | OLS | 0.02828 | **9.711 ± 1.220 Ma** | 10.1839 | 1.5522 |
+
+WMA 與 MSWD 前後完全相同 → 確認只有 Int age 這一對數字動到。新值與 NO.65 的 9.77 ± 0.28 Ma 對得上。
+
+### 待使用者做
+- [ ] 開 DiagramPlot SH / LS 目視：Int age 欄現在是 ~10 Ma 量級，與同列 WMA / Weighted Plateau 同單位
+- [ ] 欄位標題目前仍寫「Int age」沒帶單位（`UI/DiagramPlots_SH.py` row 13–14），要不要補「(Ma)」再說
+- [ ] `getJVolumeStatistics` 把 λ 寫死 5.531e-10（Renne 2010），與 setting.csv 的 5.49e-10 不一致 —— 另一條，未動
+
+---
+
+
 ## V3.9.16（2026-07-24，影響科學輸出，NO.65 驗證前不發 Release）— calcAge 誤差傳遞：線性相加 → quadrature
 
 使用者(PANG)發現手上樣本連續溫階的 plateau/isochron MSWD 全部系統性偏低（0.0 幾），追查後

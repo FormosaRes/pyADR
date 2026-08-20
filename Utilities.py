@@ -550,7 +550,11 @@ def getDFStatistics_ls(file, mask,constants, Ncolor, Nmaker):
     #       Schaen et al. (2021) GSA Bull. 133:461; Kuiper (2002) EPSL 203:501.
     J = float(data[1].split(',')[4])
     J_std = float(data[1].split(',')[5])
-    Lambda = float(constants[14])
+    # v3.9.17 FIX: λ is constants[16]; constants[14] is Atmospheric Ratio 38/36(a)
+    # (=0.1885). The wrong index was inherited from the NTNU v3.7 fork and survived
+    # the v3.8.0 rewrite. Sister call sites already use [16]: getSHStatistics (T_total)
+    # and calcAge. The /1e6 makes Int age Ma, matching every neighbouring age column.
+    Lambda = float(constants[16])
     if abs(intercept_inv) > 1e-300 and Lambda != 0:
         F = -slope_inv / intercept_inv
         # F = -b/a: dF/db = -1/a, dF/da = b/a^2
@@ -558,8 +562,8 @@ def getDFStatistics_ls(file, mask,constants, Ncolor, Nmaker):
              + (slope_inv * intercept_inv_std / intercept_inv ** 2) ** 2 \
              - 2.0 * (slope_inv / intercept_inv ** 3) * cov_si
         F_std = float(np.sqrt(abs(varF)))
-        T = np.log(1.0 + J * F) / Lambda
-        T_std = np.sqrt((J**2 * F_std**2 + F**2 * J_std**2) / ((Lambda * (1.0 + F * J))**2))
+        T = np.log(1.0 + J * F) / Lambda / 1e6          # yr -> Ma
+        T_std = np.sqrt((J**2 * F_std**2 + F**2 * J_std**2) / ((Lambda * (1.0 + F * J))**2)) / 1e6
     else:
         F = float('nan'); F_std = float('nan')
         T = float('nan'); T_std = float('nan')
@@ -1598,7 +1602,12 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
     try:
         J = float(data[1].split(',')[4])
         J_std = float(data[1].split(',')[5])
-        Lambda = float(constants[14])
+        # v3.9.17 FIX: λ is constants[16]; constants[14] is Atmospheric Ratio 38/36(a)
+        # (=0.1885). The wrong index was inherited from the NTNU v3.7 fork and survived
+        # the v3.8.0 rewrite. Sister call sites already use [16]: getSHStatistics
+        # (T_total) and calcAge. The /1e6 makes Int age Ma, matching every neighbouring
+        # age column and the group-fit T labels drawn on the isochron itself.
+        Lambda = float(constants[16])
 
         # v3.8 FIX: F = -slope/intercept of inverse isochron (Vermeesch 2024 p.398).
         # Previously F = 1/slope (= 1/b) was inconsistent with York convention Y=a+bX.
@@ -1618,10 +1627,10 @@ def getDFStatistics_sh(file, mask, constants, Ncolor, Nmaker,
             F_std = float(np.sqrt(abs(varF))) if np.isfinite(varF) else np.nan
 
             if np.isfinite(F):
-                T = np.log(1.0 + J * F) / Lambda
+                T = np.log(1.0 + J * F) / Lambda / 1e6          # yr -> Ma
                 if np.isfinite(F_std):
                     T_std = np.sqrt((J**2 * F_std**2 + F**2 * J_std**2) /
-                                    ((Lambda * (1.0 + F * J))**2))
+                                    ((Lambda * (1.0 + F * J))**2)) / 1e6
     except Exception:
         pass
     

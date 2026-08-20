@@ -1,5 +1,5 @@
 ![logo](.work/logo.png)
-# pyADR — NTNU modified fork (v3.9.16)
+# pyADR — NTNU modified fork (v3.9.17)
 
 40Ar/39Ar data reduction tool with GUI. Modified fork of [pyADR](https://github.com/AndrewLiu0725/pyADR) (original by **An-Jun (Andrew) Liu**), now maintained by **PANG Chi-Hsiu (Academia Sinica)**.
 
@@ -147,6 +147,14 @@ python NTNU_DataReduction.py
 ---
 
 ## Changelog 摘要
+
+### v3.9.17 (2026-08-20) — 影響科學輸出
+
+**DiagramPlot 的 Int age：λ 用錯 index，而且沒換算成 Ma**。`getDFStatistics_sh` / `_ls` 讀 `constants[14]`（= `Atmospheric Ratio 38/36(a)` = 0.1885）當 λ，λ 其實在 `constants[16]`（5.49e-10），算完也沒 `/1e6`；兩個錯疊起來是固定係數 **343.35**。這行從 v3.7 fork 進來就錯，v3.8.0 重寫那段時周圍全動、唯獨這行照抄，v3.8.75 稽核抓到但當時標記不動。影響面只有表上「Int age / Int age std」這兩格（含 `summary.csv`、LaserOB CSV、`.adr` 存的 `DF_result`）；datum 的 `Age(Ma)`、age spectrum、Weighted Plateau、Total Fusion Age、WMA、MSWD、圖上 group-fit 的 `T=… Ma` 標註、AutoPipeline 的 isochron age 全部不受影響。NO.65 (0621-01C) 驗證：Int age 0.0293 → **10.056 ± 0.368 Ma**（York），WMA 10.184 與 MSWD 1.552 前後不變。
+
+### v3.9.16 (2026-07-24) — 影響科學輸出
+
+**`calcAge` 誤差傳遞：線性相加 → quadrature**。`Ar_36_Ca_std` 等一批 ratio σ 從 `(relA + relB) * value` 改成 `sqrt(relA² + relB²) * value`，修正系統性高估的 per-step `age_std`（連帶壓低 plateau/isochron MSWD）。年代中心值不變，只有 σ 與 MSWD 會動。`getJVolumeStatistics` 有同樣的舊寫法，本版刻意不動。
 
 ### v3.9.15 (2026-07-24)
 
